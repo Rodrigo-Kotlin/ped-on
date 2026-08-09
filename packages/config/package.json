@@ -1,0 +1,7 @@
+{
+  "name": "@pedon/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Configurações compartilhadas do monorepo Ped-On (tsconfig base)",
+  "license": "UNLICENSED"
+}

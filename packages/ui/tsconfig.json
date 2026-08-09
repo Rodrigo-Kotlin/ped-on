@@ -1,0 +1,7 @@
+{
+  "extends": "@pedon/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src"]
+}

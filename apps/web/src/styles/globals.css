@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-pedon-navy: #081b2e;
+  --color-pedon-orange: #fb5904;
+  --color-pedon-orange-secondary: #fd8317;
+  --color-pedon-surface: #f5f7f9;
+  --color-pedon-text: #101827;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-pedon-surface text-pedon-text antialiased;
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      'Helvetica Neue',
+      Arial,
+      sans-serif;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-pedon-orange);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+    }
+  }
+}

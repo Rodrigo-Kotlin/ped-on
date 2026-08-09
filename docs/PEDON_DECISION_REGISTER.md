@@ -134,6 +134,47 @@
 - **Status:** APROVADA
 - **Decisão:** Realtime é gatilho de atualização; a fonte da verdade permanece no servidor.
 
+## Decisões Aprovadas (Prompt 01 — Fundação técnica web)
+
+### DEC-031 — TypeScript fixado em 5.9.x
+- **Status:** APROVADA
+- **Decisão:** TypeScript `^5.9.3` em todo o monorepo. O TypeScript 7.x (nativo/Go) não é
+  suportado pelo `typescript-eslint` nesta fase (`typescript >=4.8.4 <6.1.0`). A atualização
+  será reavaliada quando o ecossistema suportar.
+
+### DEC-032 — React Router v8 adotado
+- **Status:** APROVADA
+- **Decisão:** `react-router@^8` (declarative mode) como router oficial, importando de
+  `react-router`; o `RouterProvider` DOM vem de `react-router/dom`. A v8 removeu o pacote
+  `react-router-dom`. Nenhuma rota de negócio criada nesta etapa; o roteiro de rotas futuras
+  (`/login`, `/onboarding`, `/app/*`, `/menu/*`, `/pedido/*`, `/clube/*`) está documentado na
+  página técnica.
+
+### DEC-033 — PWA via vite-plugin-pwa
+- **Status:** APROVADA
+- **Decisão:** `vite-plugin-pwa` (registerType `autoUpdate`, generateSW) como fundação PWA.
+  Cache apenas de assets estáticos (js/css/html/svg/png/ico/woff2) via `globPatterns` +
+  `navigateFallback` para `index.html`. Sem `runtimeCaching`: nenhum cache de API/dados/tokens.
+  Ícones atuais são placeholders técnicos; ícones definitivos são pendência registrada.
+
+### DEC-034 — Testes: Vitest + Testing Library + Playwright
+- **Status:** APROVADA
+- **Decisão:** unit/componente com Vitest + jsdom + Testing Library + jest-dom; E2E com
+  Playwright (chromium). Viewports E2E: 360/768/1024/1440. Threshold inicial de coverage:
+  statements/lines/functions ≥ 70%, branches ≥ 50% (branch defensiva de fallback de rótulos de
+  tokens sem label; todos os tokens atuais possuem label).
+
+### DEC-035 — Tailwind CSS v4 (CSS-first)
+- **Status:** APROVADA
+- **Decisão:** Tailwind CSS v4 com `@tailwindcss/vite` e configuração CSS-first via `@theme`
+  (tokens em CSS custom properties `--color-pedon-*`). Sem dark mode nesta etapa.
+
+### DEC-036 — Consumo de pacotes internos via source exports
+- **Status:** APROVADA
+- **Decisão:** pacotes internos (`@pedon/ui`, `@pedon/test-utils`) são consumidos diretamente da
+  fonte (`exports` apontando para `./src/index.{ts,tsx}`), sem build intermediário. Vite/Vitest
+  resolvem `.ts` nativamente. Detalhes estruturais no `docs/adr/0001-internal-packages-source-exports.md`.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

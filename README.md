@@ -66,12 +66,20 @@ ped-on/
 pnpm install
 ```
 
-## Comandos disponíveis nesta etapa
+## Comandos disponíveis
 
-| Comando | Estado |
-|---|---|
-| `pnpm install` | Disponível |
-| lint / typecheck / test / build | PENDENTE — será criado no Prompt 01 |
+| Comando             | Descrição                                  |
+| ------------------- | ------------------------------------------ |
+| `pnpm install`      | Instala as dependências do workspace       |
+| `pnpm dev`          | Sobe o app web em dev (Vite, porta 5173)   |
+| `pnpm build`        | Build de produção (PWA em `apps/web/dist`) |
+| `pnpm preview`      | Preview do build de produção               |
+| `pnpm lint`         | ESLint                                     |
+| `pnpm typecheck`    | `tsc --noEmit` em todos os pacotes         |
+| `pnpm test:run`     | Testes unitários/componente (Vitest)       |
+| `pnpm test:e2e`     | Testes E2E (Playwright; requer build)      |
+| `pnpm format`       | Formata com Prettier                       |
+| `pnpm format:check` | Verifica formatação (CI)                   |
 
 ## Política de secrets
 
