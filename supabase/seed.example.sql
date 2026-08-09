@@ -1,0 +1,6 @@
+-- ============================================================
+-- PED-ON — Exemplo de seed (NÃO executar em produção)
+-- ============================================================
+-- Este arquivo é apenas um modelo de referência para seeds futuros.
+-- Nesta fase NÃO existem tabelas de negócio e nenhuma migration foi criada.
+-- Seeds de domínio serão definidos nas etapas correspondentes.

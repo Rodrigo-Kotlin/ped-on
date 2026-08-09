@@ -1,0 +1,53 @@
+# Dependências
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Ambiente — nunca commitar valores reais
+.env
+.env.*
+!.env.example
+
+# Supabase local
+supabase/.temp/
+supabase/.branches/
+supabase/.config.toml.bak
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
+# Coverage
+coverage/
+coverage.*.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Artefatos temporários
+*.tmp
+*.temp
+.tmp/
+.temp/
+.cache/
