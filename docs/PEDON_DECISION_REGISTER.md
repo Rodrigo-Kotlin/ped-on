@@ -277,6 +277,52 @@
   Cleanup apaga `auth.users` (cascade em `profiles`/`organization_members`) **e** `organizations`
   criadas (não possuem FK para `auth.users`, ficando órfãs se apenas o usuário for apagado).
 
+### DEC-045 — Auth no frontend: cliente oficial + provider + guards
+- **Status:** APROVADA
+- **Decisão:** cliente único `src/lib/supabase.ts` criado com `createClient` usando
+  `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` (publishable key, nunca `service_role`).
+  `AuthProvider` (React Context) centraliza `getSession()`/`onAuthStateChange`, expõe
+  `signIn/signUp/signOut/completeOnboarding` e carrega o `profiles` do usuário logado. Rotas são
+  protegidas por guards (`GuestOnly`, `RequireAuth`, `OnboardingGate`, `AppGate`) que redirecionam
+  conforme `authStatus` + `onboarding_status`; estado de carregamento inicial exibe tela de
+  "Carregando…" (evita flash de tela errada antes do `getSession` resolver). Telas usam
+  react-hook-form + zod para validação client-side antes de tocar a API.
+- **Motivação:** sessão gerenciada em um único lugar evita duplicação e desincronização; guards
+  declarativos no router mantêm as rotas legíveis e testáveis.
+
+### DEC-046 — Signup com confirmação de e-mail: UX "verifique seu e-mail"
+- **Status:** APROVADA
+- **Decisão:** a tela de cadastro considera `data.session === null` após `signUp` como
+  "e-mail de confirmação pendente" (confirmado que o projeto remoto tem email confirmation
+  HABILITADO — ver DEC-039) e exibe o estado "Confirme seu e-mail" em vez de redirecionar para o
+  app. Login com e-mail não confirmado cai em erro do Supabase exibido no alert da tela.
+- **Motivação:** sem isso o usuário veria "nada acontecer" após o cadastro.
+
+### DEC-047 — Onboarding pós-cadastro no frontend via RPC `complete_onboarding`
+- **Status:** APROVADA
+- **Decisão:** página `/onboarding` (protegida por `OnboardingGate`) coleta o nome da organização
+  e chama a RPC transacional `complete_onboarding(p_organization_name)`. Após sucesso, o
+  `AuthProvider` recarrega o perfil e o guard `OnboardingGate` redireciona para `/app`. A página
+  `/app` lista as organizações do usuário via TanStack Query (`organizations` + RLS) e oferece
+  sign out.
+- **Motivação:** mantém o fluxo transacional no banco (DEC-042) e o frontend apenas como camada de
+  apresentação.
+
+### DEC-048 — Vitest: pool `threads` em vez do padrão `forks`
+- **Status:** APROVADA
+- **Decisão:** `vitest.config.ts` define `pool: 'threads'`. No ambiente local (Windows, Node 24)
+  o pool padrão `forks` falhava ao iniciar os workers (timeout de 60s sem resposta); com
+  `threads` a suíte roda em segundos. Comportamento idêntico no CI (Linux).
+- **Motivação:** estabilidade e velocidade da suíte de testes em todos os ambientes.
+
+### DEC-049 — Testes de frontend: módulo supabase mockado por arquivo
+- **Status:** APROVADA
+- **Decisão:** testes unitários mockam `src/lib/supabase` com `vi.mock` (factory que importa o
+  singleton `supabaseMock` em `src/test/supabaseMock.ts`), com helper `mockFromQuery` para chains
+  `.select().eq().maybeSingle()` e `renderWithAuth` (QueryClient + AuthProvider + MemoryRouter).
+  Nenhum teste unitário toca a rede; o E2E Playwright cobre rotas reais (redirects sem sessão e
+  validação de formulário) e não depende de credenciais.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

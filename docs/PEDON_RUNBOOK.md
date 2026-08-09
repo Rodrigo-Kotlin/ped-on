@@ -250,9 +250,25 @@ Valores destinados ao browser (públicos, com RLS):
 - `VITE_SUPABASE_URL` = URL da API do projeto.
 - `VITE_SUPABASE_PUBLISHABLE_KEY` = publishable key do projeto.
 
-Configurar em Cloudflare Pages (Settings → Environment variables) quando o Prompt 03
-implementar o cliente Supabase (PASSO B). Valores já definidos localmente em `.env`
-(gitignored) para desenvolvimento. **Nunca** configurar secret key / `service_role` como `VITE_*`.
+O cliente Supabase já está implementado no frontend (Prompt 03, PASSO B) e lê essas duas
+variáveis em build time via `import.meta.env`. Sem elas a app roda com um endpoint placeholder
+(auth indisponível). **Único passo pendente para autenticação real em produção:** cadastrar as
+duas variáveis em Cloudflare Pages (Settings → Environment variables) e disparar um novo deploy
+(push ou redeploy). Valores já definidos localmente em `.env` (gitignored) para desenvolvimento.
+**Nunca** configurar secret key / `service_role` como `VITE_*`.
+
+### 17.5 Autenticação e rotas do frontend
+
+- Cliente: `apps/web/src/lib/supabase.ts` (`createClient` com as `VITE_*` acima).
+- Sessão: `AuthProvider` (`src/lib/auth/`) centraliza `getSession`/`onAuthStateChange` e expõe
+  `signIn`, `signUp`, `signOut`, `completeOnboarding` e o `profiles` do usuário.
+- Guards: `GuestOnly` (login/cadastro), `OnboardingGate` (`/onboarding`), `AppGate` (`/app`).
+- Rotas: `/` (landing), `/login`, `/cadastro`, `/onboarding`, `/app`.
+- Fluxo: cadastro → confirmação de e-mail (HABILITADO no projeto — ver DEC-039) → login →
+  onboarding (RPC `complete_onboarding`) → `/app` (lista organizações via RLS).
+- Testes: unitários mockam `src/lib/supabase` (`src/test/supabaseMock.ts`); E2E Playwright em
+  `apps/web/e2e/auth.spec.ts` cobre redirects sem sessão e validação de formulário (não depende
+  de credenciais).
 
 ## 18. Política de migrations (refinada)
 

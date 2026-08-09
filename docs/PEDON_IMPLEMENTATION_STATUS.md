@@ -11,17 +11,17 @@
 | BRANCH | `main` |
 | MODELO | Main-First monitorado |
 | FASE ATUAL | Fase 0 — Infraestrutura Integrada |
-| PROMPT ATUAL | Prompt 02 |
-| STATUS | COMPLETED |
-| ÚLTIMO COMMIT | `34f25aa` — chore: remove stale migrations gitkeep placeholder |
-| CLOUDFLARE | CONNECTED — projeto `ped-on`; production branch `main`; build `pnpm build`; output `apps/web/dist`; deployment URL `https://ped-on.pages.dev` |
-| SUPABASE | CONNECTED — projeto `ped-on`; project ref `zmuxkztnilnzjyyojbbr`; região South America (São Paulo); CLI 2.109.1; link local OK |
-| GITHUB | Repositório: `https://github.com/Rodrigo-Kotlin/ped-on` (visibilidade PUBLIC) — push para `main` concluído até `34f25aa` |
-| GITHUB ACTIONS | Workflow `CI` — Prompt 02: run `31335592453` (SHA `019cdd6`, success) e run `31338268116` (SHA `34f25aa`, success) |
-| MIGRATIONS APLICADAS | nenhuma nesta etapa |
-| TESTES | `pnpm format:check` (PASS); `pnpm lint` (PASS); `pnpm typecheck` (PASS); `pnpm test:run` (6/6 PASS); `pnpm build` (PASS — PWA generateSW, 16 precache entries, SW sem runtimeCaching); E2E Playwright (4/4 PASS — viewports 360/768/1024/1440); gitleaks 8.30.1 (PASS — nenhum leak); validação Cloudflare (HTTP 200, identidade Ped-On, assets/CSS/JS OK, manifest OK, SW ativo e controlando a página, SPA fallback OK, zero erros de console); validação Supabase não destrutiva (API gateway responde; `supabase migration list` remoto vazio — nenhuma migration aplicada; nenhuma tabela de domínio) |
-| PENDÊNCIAS | Ícones PWA definitivos (atuais são placeholders técnicos); aplicação do design system real (Tailwind v4 CSS-first configurado, base `index.css`); variáveis `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` a configurar no Cloudflare Pages quando o Prompt 03 implementar o cliente Supabase; TypeScript 7.x aguarda suporte do `typescript-eslint`; rotas de negócio ainda não implementadas (fora do escopo desta etapa) |
-| NEXT_STEP | Prompt 03 — Supabase Auth, identidade e modelo multiempresa inicial |
+| PROMPT ATUAL | Prompt 03 |
+| STATUS | COMPLETED (implementação); 1 pendência de produção: env vars no Cloudflare Pages |
+| ÚLTIMO COMMIT | `1f9079b` — feat: identidade, multiempresa e Supabase auth (Prompt 03) |
+| CLOUDFLARE | CONNECTED — projeto `ped-on`; production branch `main`; build `pnpm build`; output `apps/web/dist`; deployment URL `https://ped-on.pages.dev` (build com auth JÁ publicado — assets `index-og79jvmG.js`) |
+| SUPABASE | CONNECTED — projeto `ped-on`; project ref `zmuxkztnilnzjyyojbbr`; região South America (São Paulo); CLI 2.109.1; link local OK; migration `20260809221710_identity_tenant_foundation` APLICADA |
+| GITHUB | Repositório: `https://github.com/Rodrigo-Kotlin/ped-on` (visibilidade PUBLIC) — push para `main` concluído até `1f9079b` |
+| GITHUB ACTIONS | Workflow `CI` — Prompt 03: run `31342124765` (SHA `1f9079b`, success — Quality gates + E2E smoke tests) |
+| MIGRATIONS APLICADAS | `20260809221710_identity_tenant_foundation` (identidade + multiempresa: `profiles`, `organizations`, `organization_members`, `units`; RPCs `complete_onboarding` e `is_org_member`; RLS por tenant) |
+| TESTES | `pnpm format:check` (PASS); `pnpm lint` (PASS); `pnpm typecheck` (PASS); `pnpm test:run` (18/18 PASS — incluindo AuthProvider/guards/telas); coverage (77% stmts / 80% funcs / 59% branches — thresholds OK); `pnpm build` (PASS — PWA generateSW, 16 precache entries); E2E Playwright (24/24 PASS — 6 cenários × 4 viewports); gitleaks 8.30.1 (PASS — nenhum leak); banco/RLS `rls_integrity.test.mjs` (22 checks / 12 cenários PASS); validação produção (HTTP 200 + fallback SPA em `/login` `/cadastro` `/onboarding` `/app`; bundle deployado contém fluxo de auth) |
+| PENDÊNCIAS | **Cadastrar `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` em Cloudflare Pages (Settings → Environment variables) e disparar novo deploy** — sem isso, a app publicada usa cliente placeholder (auth indisponível em produção); ícones PWA definitivos (atuais são placeholders técnicos); TypeScript 7.x aguarda suporte do `typescript-eslint`; rotas de negócio de pedidos ainda não implementadas (próximo prompt) |
+| NEXT_STEP | Prompt 04 — aguarda definição (próximas funcionalidades de gestão de pedidos) |
 
 ---
 
@@ -32,3 +32,4 @@
 | Fase 0 — Fundação | Prompt 00 — Bootstrap controlado e registro de contexto | COMPLETED | `efcb205` | 2026-08-09 |
 | Fase 0 — Fundação | Prompt 01 — Scaffold técnico, qualidade e CI mínimo | COMPLETED | `f214362` | 2026-08-09 |
 | Fase 0 — Infraestrutura Integrada | Prompt 02 — Integrações de infraestrutura: Supabase + Cloudflare + GitHub | COMPLETED | `34f25aa` | 2026-08-09 |
+| Fase 0 — Infraestrutura Integrada | Prompt 03 — Supabase Auth, identidade e modelo multiempresa inicial | COMPLETED | `1f9079b` | 2026-08-09 |
