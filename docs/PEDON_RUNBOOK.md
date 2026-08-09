@@ -251,11 +251,12 @@ Valores destinados ao browser (públicos, com RLS):
 - `VITE_SUPABASE_PUBLISHABLE_KEY` = publishable key do projeto.
 
 O cliente Supabase já está implementado no frontend (Prompt 03, PASSO B) e lê essas duas
-variáveis em build time via `import.meta.env`. Sem elas a app roda com um endpoint placeholder
-(auth indisponível). **Único passo pendente para autenticação real em produção:** cadastrar as
-duas variáveis em Cloudflare Pages (Settings → Environment variables) e disparar um novo deploy
-(push ou redeploy). Valores já definidos localmente em `.env` (gitignored) para desenvolvimento.
-**Nunca** configurar secret key / `service_role` como `VITE_*`.
+variáveis em build time via `import.meta.env`. **Configuradas no Cloudflare Pages
+(Settings → Environment variables) e validadas em produção** (o bundle publicado injeta a URL
+real do Supabase; nenhum placeholder no build). Se precisar alterar, atualize as variáveis no
+dashboard e dispare um novo deploy (push ou redeploy). Valores também definidos localmente em
+`.env` (gitignored) para desenvolvimento. **Nunca** configurar secret key / `service_role` como
+`VITE_*`.
 
 ### 17.5 Autenticação e rotas do frontend
 
