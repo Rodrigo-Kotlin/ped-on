@@ -1,7 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProviders } from './providers';
+
+vi.mock('../lib/supabase', () =>
+  import('../test/supabaseMock').then((module) => ({
+    supabase: module.supabaseMock,
+  })),
+);
+
+import { resetSupabaseMock } from '../test/supabaseMock';
 
 function QueryProbe() {
   const query = useQuery({
@@ -13,6 +21,10 @@ function QueryProbe() {
 }
 
 describe('AppProviders', () => {
+  beforeEach(() => {
+    resetSupabaseMock();
+  });
+
   it('renderiza os filhos sem quebrar', () => {
     render(
       <AppProviders>

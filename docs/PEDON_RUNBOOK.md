@@ -29,6 +29,7 @@ A versão de pnpm é fixada em `package.json` via `packageManager`.
 | Rodar testes unitários | `pnpm test:run` | Disponível |
 | Rodar testes com watch | `pnpm test` | Disponível |
 | Rodar testes E2E | `pnpm test:e2e` | Disponível |
+| Rodar testes de banco/RLS | `$env:SUPABASE_DB_PASSWORD = '<senha>'; node supabase/tests/rls_integrity.test.mjs` | Disponível (conexão direta com o Supabase oficial) |
 | Rodar formatação | `pnpm format` | Disponível |
 | Verificar formatação | `pnpm format:check` | Disponível |
 | Rodar build | `pnpm build` | Disponível |
@@ -88,6 +89,27 @@ pnpm build
 Produz a saída PWA de produção em `apps/web/dist` (inclui `manifest.webmanifest` e service
 worker gerados pelo `vite-plugin-pwa`). O service worker cacheia somente assets estáticos;
 nenhuma rota de API/dados é cacheada.
+
+## 8.1 Como rodar testes de banco/RLS
+
+Teste de integração que valida migrations, isolamento multiempresa (RLS), idempotência e
+concorrência do onboarding. Requer acesso ao banco do projeto Supabase oficial (conexão direta,
+sem Docker local).
+
+```bash
+# PowerShell (Windows)
+$env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
+node supabase/tests/rls_integrity.test.mjs
+```
+
+Regras:
+
+- A senha vem da variável `SUPABASE_DB_PASSWORD` (nunca embutida no código/commit).
+- Conecta diretamente em `db.<project-ref>.supabase.co:5432` como `postgres`
+  (DEC-044) — não usar pooler de sessão para testes.
+- Cria usuários sintéticos descartáveis (`rls-*@pedon-test.invalid`) e limpa tudo ao final
+  (usuários + organizações criadas).
+- O teste falha com exit code != 0 se qualquer cenário reprovar.
 
 ## 9. Convenção de variáveis de ambiente
 
@@ -209,7 +231,11 @@ permanece responsável apenas pelos quality gates (não há workflow de deploy c
 | CLI | `supabase` 2.109.1 (sessão autenticada via CLI; token em secret manager, fora do Git) |
 | Link local | `supabase link --project-ref zmuxkztnilnzjyyojbbr` (executado — ref em `supabase/.temp/project-ref`) |
 | Config | `supabase/config.toml` (versionado; sem secrets) |
+| Migrations aplicadas | `20260809221710_identity_tenant_foundation` (única migration; Local = Remote) |
 | Projeto de sistema anterior (`firecheck`) | NÃO usado |
+
+Documentos de referência: `docs/PEDON_DATABASE_SCHEMA.md` (esquema) e
+`docs/PEDON_RLS_SECURITY.md` (modelo de segurança RLS).
 
 Procedimento de verificação de estado:
 - Projetos e vínculo: `supabase projects list` e `supabase link` (sem força).
@@ -224,8 +250,9 @@ Valores destinados ao browser (públicos, com RLS):
 - `VITE_SUPABASE_URL` = URL da API do projeto.
 - `VITE_SUPABASE_PUBLISHABLE_KEY` = publishable key do projeto.
 
-Configurar em Cloudflare Pages (Settings → Environment variables) somente quando o Prompt 03
-implementar o cliente Supabase. **Nunca** configurar secret key / `service_role` como `VITE_*`.
+Configurar em Cloudflare Pages (Settings → Environment variables) quando o Prompt 03
+implementar o cliente Supabase (PASSO B). Valores já definidos localmente em `.env`
+(gitignored) para desenvolvimento. **Nunca** configurar secret key / `service_role` como `VITE_*`.
 
 ## 18. Política de migrations (refinada)
 

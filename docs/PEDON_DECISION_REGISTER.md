@@ -204,6 +204,79 @@
   nunca será usada no browser. Variáveis de ambiente (nomes): `VITE_SUPABASE_URL` e
   `VITE_SUPABASE_PUBLISHABLE_KEY`.
 
+## Decisões Aprovadas (Prompt 03 — Supabase Auth, identidade e modelo multiempresa inicial)
+
+### DEC-039 — Supabase Auth (email + senha) e cliente oficial no frontend
+- **Status:** APROVADA
+- **Decisão:** adotar o Supabase Auth com fluxo de e-mail + senha como sistema de
+  autenticação do MVP. Instalar `@supabase/supabase-js` no app web e criar o cliente em
+  `apps/web/src/lib/supabase.ts` usando apenas `VITE_SUPABASE_URL` e
+  `VITE_SUPABASE_PUBLISHABLE_KEY` (publishable key, baixo privilégio, respeita RLS).
+  A sessão é gerenciada pelo cliente supabase-js (persistência local), com restauração via
+  `getSession`/`onAuthStateChange` no carregamento da aplicação.
+- **Contexto:** a secret key / `service_role` nunca é usada no browser (DEC-038).
+- **Atualização (2026-08-09):** o Supabase oficial vem com **confirmação de e-mail habilitada**
+  (configuração default do projeto; `signup` via REST exige e-mail confirmado e é limitado por
+  rate limit). Mantida como está (sem alteração manual via Dashboard, preservando o padrão
+  seguro). O frontend deve tratar o fluxo "verifique seu e-mail" e a restauração de sessão; os
+  testes de RLS usam usuários inseridos diretamente no `auth.users` (e-mail confirmado) via
+  conexão direta — nunca o fluxo de signup da API.
+
+### DEC-040 — `profiles` como identidade compartilhada (1:1 com `auth.users`)
+- **Status:** APROVADA
+- **Decisão:** criar a tabela pública `profiles` como espelho mínimo da identidade
+  (`id` = `auth.users.id` com FK `ON DELETE CASCADE`, `email`, `full_name`,
+  `onboarding_status` inicial `pending`, timestamps). Um trigger `security definer` cria o
+  registro automaticamente no `AFTER INSERT ON auth.users` (idempotente) e mantém o e-mail
+  sincronizado em mudanças. RLS: cada usuário autenticado pode ler e atualizar apenas o
+  próprio perfil; nenhuma operação de escrita é feita pelo browser (o trigger cuida da criação).
+
+### DEC-041 — Modelo multiempresa inicial
+- **Status:** APROVADA
+- **Decisão:** implementar o modelo de tenant inicial com as tabelas `organizations`,
+  `organization_members` (papéis `owner`/`member`, PK `(organization_id, user_id)`) e
+  `units` (1:N por organização). `organization_id` continua sendo o tenant principal
+  (DEC-001) e `unit_id` o escopo operacional (DEC-002). Nesta etapa, as tabelas de domínio
+  escopadas por tenant são criadas com políticas somente de leitura para membros da
+  organização; as operações de escrita do onboarding são feitas exclusivamente por RPC
+  transacional.
+
+### DEC-042 — Onboarding pós-cadastro via RPC transacional
+- **Status:** APROVADA
+- **Decisão:** o fluxo de primeiro acesso acontece em `/onboarding`. Um usuário recém-cadastrado
+  possui `onboarding_status = pending` e é redirecionado a `/onboarding`. Ao submeter o nome da
+  organização, o frontend chama a função `complete_onboarding` (segura, `security definer`), que
+  em uma única transação: cria a organização, insere o membro `owner`, cria a unidade inicial
+  e marca `onboarding_status = completed`. Chamadas duplicadas para um usuário já vinculado a uma
+  organização são recusadas (idempotência).
+
+### DEC-043 — Testes de banco e RLS
+- **Status:** APROVADA
+- **Decisão:** validar migrations e isolamento multiempresa com testes versionados em
+  `supabase/tests/` (pgTAP via `supabase test db` quando a stack local estiver disponível;
+  se indisponível, testes de integração equivalentes executados contra o ambiente oficial com
+  usuários sintéticos descartáveis, verificando RLS/cross-tenant e concorrência, com limpeza
+  dos dados sintéticos ao final). Nenhum teste de RLS depende de desabilitar RLS ou de
+  `service_role`.
+- **Execução (2026-08-09):** implementado `supabase/tests/rls_integrity.test.mjs` (Node + `pg`,
+  sem pgTAP porque o Docker local não está disponível). **22 checks / 12 cenários PASS**
+  (anon negado, profile próprio, cross-tenant, idempotência, concorrência, escrita direta
+  bloqueada). Cleanup verificado: banco sem dados sintéticos residuais.
+
+### DEC-044 — Testes de banco usam conexão direta, nunca pooler de sessão
+- **Status:** APROVADA
+- **Decisão:** os testes de integração de banco conectam diretamente em
+  `db.<project-ref>.supabase.co:5432` como `postgres` (setup/cleanup e simulação de sessões com
+  `SET ROLE`/`SET request.jwt.claims`). O pooler **session mode** (porta 6543) não é usado para
+  testes: ele reutiliza backends sem resetar `role`/claims entre clients, fazendo com que uma
+  conexão "admin" executasse como `authenticated` (vazamento de contexto — fonte do bug de
+  cleanup "permission denied for table users" e do cenário de trigger com resultado falso).
+- **Detalhes:** conexão direta exige o usuário `postgres` (e não `postgres.<ref>`); senha vem de
+  `SUPABASE_DB_PASSWORD` (presente no `.env` local, fora do Git). Sessões de aplicação são
+  simuladas com `SET ROLE authenticated` + `SET request.jwt.claims` em conexões dedicadas.
+  Cleanup apaga `auth.users` (cascade em `profiles`/`organization_members`) **e** `organizations`
+  criadas (não possuem FK para `auth.users`, ficando órfãs se apenas o usuário for apagado).
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

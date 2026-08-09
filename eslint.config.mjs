@@ -43,5 +43,11 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    files: ['supabase/**/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
   prettier,
 );

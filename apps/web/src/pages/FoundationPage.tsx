@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import { pedonTokens } from '@pedon/ui';
 
 const tokenLabels: Record<string, string> = {
@@ -14,10 +15,26 @@ export function FoundationPage() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 md:py-16">
       <header className="mb-8 md:mb-12">
-        <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">
-          Fundação técnica
-        </p>
-        <h1 className="mt-2 text-3xl font-bold text-pedon-navy md:text-5xl">Ped-On</h1>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">
+            Fundação técnica
+          </p>
+          <nav className="flex items-center gap-3" aria-label="Acesso">
+            <Link
+              to="/login"
+              className="rounded-md border border-pedon-navy/30 px-3 py-1.5 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5"
+            >
+              Entrar
+            </Link>
+            <Link
+              to="/cadastro"
+              className="rounded-md bg-pedon-navy px-3 py-1.5 text-sm font-medium text-white transition hover:bg-pedon-navy/90"
+            >
+              Criar conta
+            </Link>
+          </nav>
+        </div>
+        <h1 className="mt-4 text-3xl font-bold text-pedon-navy md:text-5xl">Ped-On</h1>
         <p className="mt-2 text-lg font-medium text-pedon-text md:text-2xl">
           Gestão de Pedidos Inteligente
         </p>
