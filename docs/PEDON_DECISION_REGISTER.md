@@ -175,6 +175,35 @@
   fonte (`exports` apontando para `./src/index.{ts,tsx}`), sem build intermediário. Vite/Vitest
   resolvem `.ts` nativamente. Detalhes estruturais no `docs/adr/0001-internal-packages-source-exports.md`.
 
+## Decisões Aprovadas (Prompt 02 — Integrações de infraestrutura)
+
+### DEC-037 — Ambiente Main-First monitorado do MVP
+- **Status:** APROVADA
+- **Decisão:** durante a construção monitorada do Core MVP: GitHub `main` será a branch oficial de
+  trabalho; commits aprovados serão enviados diretamente à `main`; Cloudflare Pages utilizará
+  `main` como production branch; o projeto Supabase oficial será utilizado diretamente para
+  desenvolvimento funcional e homologação contínua do MVP; migrations autorizadas serão aplicadas
+  diretamente nesse projeto Supabase; não haverá staging separado nesta fase inicial; todo avanço
+  deverá permanecer versionado, testável e auditável.
+- **Risco:** uma alteração incorreta na `main` pode chegar ao ambiente funcional rapidamente.
+- **Controles:** gates locais antes do push; GitHub CI obrigatório; commits atômicos; migrations
+  versionadas; migrations pequenas; validação pós-deploy; backup/rollback quando necessário;
+  nunca realizar alterações manuais silenciosas no banco; manter documentação de implementação
+  atualizada.
+- **Nota:** Main-First não significa ausência de controle — significa desenvolvimento funcional
+  direto com controles técnicos explícitos.
+
+### DEC-038 — Adiamento do cliente `@supabase/supabase-js` para o Prompt 03
+- **Status:** APROVADA
+- **Decisão:** `@supabase/supabase-js` **não** é instalado nesta etapa. Não há integração funcional
+  da aplicação com o Supabase a validar no Prompt 02 (proibido criar schema, login ou queries de
+  domínio). A instalação e o cliente (`apps/web/src/lib/supabase.ts`) ficam para o Prompt 03,
+  quando Auth/identidade forem implementados.
+- **Contexto:** o projeto Supabase novo usa as novas API keys: **publishable** (público, RLS) e
+  **secret** (somente backend). O frontend usará apenas a publishable key; `service_role`/secret
+  nunca será usada no browser. Variáveis de ambiente (nomes): `VITE_SUPABASE_URL` e
+  `VITE_SUPABASE_PUBLISHABLE_KEY`.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

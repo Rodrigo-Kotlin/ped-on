@@ -16,11 +16,12 @@
 | ÚLTIMO COMMIT | `f214362` — feat: scaffold web app with quality gates and CI |
 | CLOUDFLARE | Não configurado nesta etapa |
 | SUPABASE | Não configurado nesta etapa |
-| GITHUB | Repositório: `https://github.com/Rodrigo-Kotlin/ped-on` — push até Prompt 00 concluído |
+| GITHUB | Repositório: `https://github.com/Rodrigo-Kotlin/ped-on` (visibilidade PUBLIC) — push para `main` concluído até `439280b` |
+| GITHUB ACTIONS | Workflow `CI` — run `31335122133` (SHA `439280b4c8c9079f3d989accf5483df1710d9934`) — conclusion `success` |
 | MIGRATIONS APLICADAS | nenhuma nesta etapa |
 | TESTES | `pnpm format:check` (PASS); `pnpm lint` (PASS); `pnpm typecheck` (PASS); `pnpm test:run` (6/6 PASS); `pnpm build` (PASS — PWA generateSW, 16 precache entries, SW sem runtimeCaching); E2E Playwright (4/4 PASS — viewports 360/768/1024/1440); gitleaks 8.30.1 (PASS — nenhum leak); `pnpm dev` HTTP 200 |
-| PENDÊNCIAS | Ícones PWA definitivos (atuais são placeholders técnicos); validação do CI no runner GitHub (workflow criado, aguarda primeiro push); aplicação do design system real (Tailwind v4 CSS-first configurado, base `index.css`); TypeScript 7.x aguarda suporte do `typescript-eslint`; rotas de negócio ainda não implementadas (fora do escopo desta etapa) |
-| NEXT_STEP | Prompt 02 — etapa a definir conforme roadmap |
+| PENDÊNCIAS | Ícones PWA definitivos (atuais são placeholders técnicos); aplicação do design system real (Tailwind v4 CSS-first configurado, base `index.css`); TypeScript 7.x aguarda suporte do `typescript-eslint`; rotas de negócio ainda não implementadas (fora do escopo desta etapa) |
+| NEXT_STEP | Prompt 02 — Integrações de infraestrutura: Supabase + Cloudflare + GitHub |
 
 ---
 

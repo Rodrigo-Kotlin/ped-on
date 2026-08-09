@@ -35,6 +35,8 @@ A versão de pnpm é fixada em `package.json` via `packageManager`.
 | Executar web em dev | `pnpm dev` | Disponível |
 | Preview do build (local) | `pnpm preview` | Disponível |
 | Rodar Supabase local | `supabase start` | PENDENTE — será configurado em etapa posterior |
+| Verificar CLI Supabase | `supabase --version` | Disponível (2.109.1) |
+| Vincular ao projeto Supabase | `supabase link --project-ref <PROJECT_REF>` | Disponível (link real executado) |
 
 O script raiz roda em todos os workspaces (`pnpm -r`), exceto quando indicado.
 
@@ -109,6 +111,7 @@ nenhuma rota de API/dados é cacheada.
 - Migrations de domínio não são criadas na Fase 0.
 - Migrations devem ser versionadas em `supabase/migrations`.
 - Nenhuma migration de negócio pode existir antes de sua etapa ser oficialmente planejada.
+- Política completa (fluxo de 8 passos, proibições e estratégia Main-First): Seção 18 e 19.
 
 ## 12. Política de commits
 
@@ -159,3 +162,112 @@ nenhuma rota de API/dados é cacheada.
 - Job `e2e`: depende do `quality`; instala Chromium do Playwright e roda `pnpm test:e2e`,
   subindo o preview do build.
 - Disparo: push/PR para `main` e `workflow_dispatch`.
+
+## 17. Infraestrutura real
+
+### 17.1 GitHub
+
+| Item | Valor |
+|---|---|
+| Repositório | `Rodrigo-Kotlin/ped-on` (`https://github.com/Rodrigo-Kotlin/ped-on`) |
+| Visibilidade | PUBLIC (código-fonte acessível publicamente — nenhum secret pode existir no repositório) |
+| Branch oficial | `main` |
+| Modelo | Main-First monitorado (DEC-037) |
+| CI | GitHub Actions — workflow `CI`; gates de qualidade + E2E |
+
+### 17.2 Cloudflare Pages
+
+| Item | Valor |
+|---|---|
+| Projeto | `ped-on` |
+| Production branch | `main` |
+| Build command | `pnpm build` |
+| Output directory | `apps/web/dist` |
+| Root directory | raiz do repositório (monorepo) |
+| Node | `22` (fixado via `.nvmrc` na raiz) |
+| SPA routing | fallback `/* → /index.html 200` via `apps/web/public/_redirects` |
+| Deployment URL | `https://ped-on.pages.dev` |
+
+Procedimento de verificação de deployment:
+1. Cloudflare Dashboard → **Workers & Pages** → projeto `ped-on` → **Deployments**.
+2. Conferir último deployment com status `SUCCESS` e o commit SHA esperado.
+3. Validar `HTTP 200` em `https://ped-on.pages.dev/` e o título/identidade Ped-On.
+4. Validar rotas diretas (SPA): abrir uma URL direta de rota e confirmar que retorna
+   `index.html` (fallback), sem `404` do Cloudflare.
+
+Deploy automático: push em `main` → Cloudflare detecta → build → deploy. GitHub Actions
+permanece responsável apenas pelos quality gates (não há workflow de deploy concorrente).
+
+### 17.3 Supabase
+
+| Item | Valor |
+|---|---|
+| Projeto | `ped-on` |
+| Project ref | `zmuxkztnilnzjyyojbbr` |
+| Região | South America (São Paulo) |
+| API URL | `https://zmuxkztnilnzjyyojbbr.supabase.co` |
+| CLI | `supabase` 2.109.1 (sessão autenticada via CLI; token em secret manager, fora do Git) |
+| Link local | `supabase link --project-ref zmuxkztnilnzjyyojbbr` (executado — ref em `supabase/.temp/project-ref`) |
+| Config | `supabase/config.toml` (versionado; sem secrets) |
+| Projeto de sistema anterior (`firecheck`) | NÃO usado |
+
+Procedimento de verificação de estado:
+- Projetos e vínculo: `supabase projects list` e `supabase link` (sem força).
+- Conectividade não destrutiva: `GET https://<ref>.supabase.co/rest/v1/` (401 = gateway vivo).
+- Migrations aplicadas: `supabase migration list` (quando houver migrations versionadas).
+
+Procedimento futuro de migrations: ver Seção 18.
+
+### 17.4 Variáveis de ambiente do frontend (Cloudflare Pages)
+
+Valores destinados ao browser (públicos, com RLS):
+- `VITE_SUPABASE_URL` = URL da API do projeto.
+- `VITE_SUPABASE_PUBLISHABLE_KEY` = publishable key do projeto.
+
+Configurar em Cloudflare Pages (Settings → Environment variables) somente quando o Prompt 03
+implementar o cliente Supabase. **Nunca** configurar secret key / `service_role` como `VITE_*`.
+
+## 18. Política de migrations (refinada)
+
+Toda alteração de banco deverá:
+
+1. existir primeiro como arquivo em `supabase/migrations/`;
+2. possuir nome `timestamp + descrição objetiva`;
+3. ser revisada;
+4. passar pelos testes correspondentes;
+5. ser aplicada ao projeto Supabase por CLI ou mecanismo oficial
+   (`supabase db push` / `supabase db reset`);
+6. ser validada no banco;
+7. ser commitada/versionada;
+8. ser registrada em `PEDON_IMPLEMENTATION_STATUS.md`.
+
+**PROIBIDO:**
+
+- alterar schema manualmente pelo Dashboard sem migration correspondente;
+- editar migration já aplicada;
+- apagar migration aplicada para "corrigir" histórico;
+- aplicar SQL de produção que não esteja versionado;
+- alterações manuais silenciosas no banco.
+
+## 19. Estratégia de alterações de banco na Main (Main-First + deploy automático)
+
+Como o projeto usa Main-First e Cloudflare pode publicar a `main` automaticamente, para
+alterações futuras que dependam de migration preferir a sequência segura:
+
+- **PASSO A — banco primeiro:** migration backward-compatible → aplicar no Supabase → validar
+  banco → registrar.
+- **PASSO B — código depois:** código da aplicação que utiliza a nova estrutura → gates → push
+  `main` → Cloudflare deploy.
+
+Evitar que código novo chegue ao Cloudflare antes de o banco necessário existir. Alterações
+destrutivas deverão exigir estratégia específica (backup/rollback + janela de migração).
+
+## 20. Observabilidade da infraestrutura
+
+| Alvo | Como verificar |
+|---|---|
+| GitHub CI | `gh run list --workflow CI` / `gh run view <id>` (conclusão + SHA) |
+| Cloudflare | Dashboard → Workers & Pages → `ped-on` → Deployments (status + URL) |
+| Supabase | `supabase projects list`; `supabase migration list`; health não destrutivo da API |
+
+Nenhuma plataforma externa de observabilidade é utilizada nesta fase.
