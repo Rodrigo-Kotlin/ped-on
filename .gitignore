@@ -18,6 +18,11 @@ supabase/.temp/
 supabase/.branches/
 supabase/.config.toml.bak
 
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+.cloudflare/
+
 # Playwright
 test-results/
 playwright-report/
