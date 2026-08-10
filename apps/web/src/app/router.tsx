@@ -1,6 +1,10 @@
 import { createBrowserRouter, type RouteObject } from 'react-router';
+import { AppShell } from '../components/AppShell';
+import { AdminProvider } from '../lib/admin/AdminProvider';
+import { RequireManageUnit } from '../lib/admin/guards';
 import { AppGate, GuestOnly, OnboardingGate } from '../lib/auth/guards';
 import { AppPage } from '../pages/AppPage';
+import { ConfiguracoesPage } from '../pages/ConfiguracoesPage';
 import { FoundationPage } from '../pages/FoundationPage';
 import { LoginPage } from '../pages/LoginPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
@@ -42,9 +46,22 @@ export const appRoutes: RouteObject[] = [
         path: 'app',
         element: (
           <AppGate>
-            <AppPage />
+            <AdminProvider>
+              <AppShell />
+            </AdminProvider>
           </AppGate>
         ),
+        children: [
+          { index: true, element: <AppPage /> },
+          {
+            path: 'configuracoes',
+            element: (
+              <RequireManageUnit>
+                <ConfiguracoesPage />
+              </RequireManageUnit>
+            ),
+          },
+        ],
       },
       { path: '*', element: <NotFoundPage /> },
     ],

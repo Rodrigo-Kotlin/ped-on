@@ -10,7 +10,8 @@ vi.mock('../lib/supabase', () =>
   })),
 );
 
-import { mockFromQuery, resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
+import { resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
+import { AdminProvider } from '../lib/admin/AdminProvider';
 import { AppPage } from '../pages/AppPage';
 import { LoginPage } from '../pages/LoginPage';
 import { SignupPage } from '../pages/SignupPage';
@@ -275,24 +276,48 @@ describe('AppPage', () => {
     resetSupabaseMock();
   });
 
-  it('mostra mensagem de erro quando falha ao carregar organizações', async () => {
+  it('mostra a organização, a unidade selecionada e o link de configuração', async () => {
     supabaseMock.auth.getSession.mockResolvedValue({
       data: { session: makeSession() },
       error: null,
     });
-    supabaseMock.from.mockImplementation((table: string) => {
-      if (table === 'organizations') {
-        return {
-          select: () => Promise.resolve({ data: null, error: { message: 'erro de banco' } }),
-        };
-      }
-      return mockFromQuery({ data: null, error: null });
+    supabaseMock.rpc.mockResolvedValue({
+      data: {
+        profile: { id: 'user-1', full_name: 'João', email: 'joao@example.com' },
+        organization: { id: 'org-1', name: 'Cantina da Praça' },
+        role: 'owner',
+        units: [{ id: 'unit-1', name: 'Loja Centro', is_active: true }],
+      },
+      error: null,
     });
 
-    renderWithAuth(<AppPage />);
+    renderWithAuth(
+      <AdminProvider>
+        <AppPage />
+      </AdminProvider>,
+    );
 
-    expect(
-      await screen.findByText(/Não foi possível carregar suas organizações/),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Cantina da Praça' })).toBeInTheDocument();
+    expect(screen.getByText('Loja Centro')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Abrir configurações' })).toHaveAttribute(
+      'href',
+      '/app/configuracoes',
+    );
+  });
+
+  it('cai para estado vazio quando o contexto administrativo falha', async () => {
+    supabaseMock.auth.getSession.mockResolvedValue({
+      data: { session: makeSession() },
+      error: null,
+    });
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: { message: 'erro de banco' } });
+
+    renderWithAuth(
+      <AdminProvider>
+        <AppPage />
+      </AdminProvider>,
+    );
+
+    expect(await screen.findByText('Nenhuma unidade disponível.')).toBeInTheDocument();
   });
 });
