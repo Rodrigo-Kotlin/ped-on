@@ -4,12 +4,14 @@ import { AdminProvider } from '../lib/admin/AdminProvider';
 import { RequireManageUnit } from '../lib/admin/guards';
 import { AppGate, GuestOnly, OnboardingGate } from '../lib/auth/guards';
 import { AppPage } from '../pages/AppPage';
+import { CardapioPage } from '../pages/CardapioPage';
 import { CatalogoPage } from '../pages/CatalogoPage';
 import { ConfiguracoesPage } from '../pages/ConfiguracoesPage';
 import { FoundationPage } from '../pages/FoundationPage';
 import { LoginPage } from '../pages/LoginPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
+import { PublicMenuPage } from '../pages/PublicMenuPage';
 import { SignupPage } from '../pages/SignupPage';
 import { App } from './App';
 
@@ -44,6 +46,10 @@ export const appRoutes: RouteObject[] = [
         ),
       },
       {
+        path: 'menu/:publicSlug',
+        element: <PublicMenuPage />,
+      },
+      {
         path: 'app',
         element: (
           <AppGate>
@@ -55,6 +61,14 @@ export const appRoutes: RouteObject[] = [
         children: [
           { index: true, element: <AppPage /> },
           { path: 'catalogo', element: <CatalogoPage /> },
+          {
+            path: 'cardapio',
+            element: (
+              <RequireManageUnit>
+                <CardapioPage />
+              </RequireManageUnit>
+            ),
+          },
           {
             path: 'configuracoes',
             element: (
