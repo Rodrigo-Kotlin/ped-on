@@ -43,10 +43,12 @@ const menu: PublicMenuData = {
   categories: [],
 };
 
+const TEST_TRACKING_TOKEN = 'a'.repeat(32);
+
 const success = {
   order_number: 42,
-  tracking_token: '0123456789abcdef0123456789abcdef',
-  tracking_path: '/pedido/0123456789abcdef0123456789abcdef',
+  tracking_token: TEST_TRACKING_TOKEN,
+  tracking_path: `/pedido/${TEST_TRACKING_TOKEN}`,
   service_mode: 'pickup',
   payment_method: 'pix',
   subtotal: '29.90',

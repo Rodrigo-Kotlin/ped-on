@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 const SLUG = 'abcdef1234567890abcdef12';
-const TOKEN = '0123456789abcdef0123456789abcdef';
+const TOKEN = 'a'.repeat(32);
 
 const foundMenu = {
   found: true,
