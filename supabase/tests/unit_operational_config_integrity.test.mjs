@@ -190,11 +190,15 @@ async function run() {
     // Autorização e contrato de acesso
     // ============================================================
     {
-      console.log('Cenário 1 — defaults: config completa em unidade nunca configurada');
+      console.log(
+        'Cenário 1 — unidade nunca configurada: configured=false e accepting_orders=false',
+      );
       const { rows } = await ownerAS.query('select public.get_unit_operational_config($1) as cfg', [
         unitA1,
       ]);
       const cfg = rows[0].cfg;
+      ok(cfg.configured === false, 'configured=false para unidade nunca configurada');
+      ok(cfg.accepting_orders === false, 'accepting_orders=false para unidade nunca configurada');
       ok(cfg.timezone === 'America/Sao_Paulo', 'timezone default America/Sao_Paulo');
       ok(
         cfg.pickup_enabled === true && cfg.delivery_enabled === false,
@@ -204,7 +208,6 @@ async function run() {
         cfg.delivery_fee === '0.00' && cfg.min_order_value === '0.00',
         'valores default "0.00" como texto (numeric(12,2))',
       );
-      ok(cfg.accepting_orders === true, 'accepting_orders default true');
       ok(
         Array.isArray(cfg.business_hours) && cfg.business_hours.length === 7,
         'business_hours tem 7 dias',
@@ -218,6 +221,21 @@ async function run() {
           cfg.payment_methods.length === 4 &&
           cfg.payment_methods.every((p) => p.is_enabled === false),
         '4 métodos default desativados',
+      );
+    }
+
+    {
+      console.log('Cenário 1b — default do banco: accepting_orders=false');
+      const { rows } = await admin.query(
+        `select column_default
+         from information_schema.columns
+         where table_schema = 'public'
+           and table_name = 'unit_operational_settings'
+           and column_name = 'accepting_orders'`,
+      );
+      ok(
+        String(rows[0]?.column_default) === 'false',
+        `column_default de accepting_orders é false (atual: ${rows[0]?.column_default})`,
       );
     }
 
@@ -802,6 +820,127 @@ async function run() {
         [unitB1, defaultConfig()],
         'PED11',
         'owner A salvando unidade de Org B: PED11',
+      );
+    }
+    // ============================================================
+    // Acceptance hardening — regras server-authoritative de aceite
+    // ============================================================
+    {
+      console.log('Cenário 25 — accepting_orders=true exige ao menos um dia aberto: PED18');
+      const allClosed = Array.from({ length: 7 }, (_, i) => oneDay(i));
+      await expectError(
+        ownerAS,
+        'select public.save_unit_operational_config($1, $2)',
+        [unitA1, defaultConfig({ accepting_orders: true, business_hours: allClosed })],
+        'PED18',
+        'todos os 7 dias fechados com aceite ligado: PED18',
+      );
+    }
+
+    {
+      console.log(
+        'Cenário 26 — accepting_orders=true exige ao menos um pagamento habilitado: PED17',
+      );
+      const allDisabled = [
+        { method: 'cash', is_enabled: false },
+        { method: 'pix', is_enabled: false },
+        { method: 'credit_card', is_enabled: false },
+        { method: 'debit_card', is_enabled: false },
+      ];
+      await expectError(
+        ownerAS,
+        'select public.save_unit_operational_config($1, $2)',
+        [unitA1, defaultConfig({ accepting_orders: true, payment_methods: allDisabled })],
+        'PED17',
+        'nenhum pagamento habilitado com aceite ligado: PED17',
+      );
+    }
+
+    {
+      console.log('Cenário 27 — accepting_orders=true em unidade inativa: PED13');
+      await ownerAS.query('select public.set_unit_active($1, false)', [unitA2]);
+      await expectError(
+        ownerAS,
+        'select public.save_unit_operational_config($1, $2)',
+        [unitA2, defaultConfig({ accepting_orders: true })],
+        'PED13',
+        'aceite ligado em unidade inativa: PED13',
+      );
+    }
+
+    {
+      console.log('Cenário 28 — aceite ligado com dia aberto e pagamento habilitado: PASS');
+      const saved = await ownerAS.query(
+        'select public.save_unit_operational_config($1, $2) as cfg',
+        [unitA1, defaultConfig({ accepting_orders: true, delivery_fee: '10.00' })],
+      );
+      const cfg = saved.rows[0].cfg;
+      ok(cfg.configured === true, 'configured=true após persistir');
+      ok(cfg.accepting_orders === true, 'accepting_orders=true persistido');
+      ok(
+        cfg.business_hours.some((h) => h.is_open) && cfg.payment_methods.some((p) => p.is_enabled),
+        'estrutura pronta para receber pedidos',
+      );
+    }
+
+    {
+      console.log('Cenário 29 — accepting_orders=false aceita todos os dias fechados');
+      const allClosed = Array.from({ length: 7 }, (_, i) => oneDay(i));
+      const saved = await ownerAS.query(
+        'select public.save_unit_operational_config($1, $2) as cfg',
+        [unitA1, defaultConfig({ accepting_orders: false, business_hours: allClosed })],
+      );
+      ok(saved.rows[0].cfg.accepting_orders === false, 'accepting_orders=false persistido');
+      ok(
+        saved.rows[0].cfg.business_hours.every((h) => h.is_open === false),
+        'todos os dias fechados permitido com aceite desligado',
+      );
+    }
+
+    {
+      console.log('Cenário 30 — accepting_orders=false aceita nenhum pagamento habilitado');
+      const allDisabled = [
+        { method: 'cash', is_enabled: false },
+        { method: 'pix', is_enabled: false },
+        { method: 'credit_card', is_enabled: false },
+        { method: 'debit_card', is_enabled: false },
+      ];
+      const saved = await ownerAS.query(
+        'select public.save_unit_operational_config($1, $2) as cfg',
+        [unitA1, defaultConfig({ accepting_orders: false, payment_methods: allDisabled })],
+      );
+      ok(saved.rows[0].cfg.accepting_orders === false, 'accepting_orders=false persistido');
+      ok(
+        saved.rows[0].cfg.payment_methods.every((p) => p.is_enabled === false),
+        'nenhum pagamento habilitado permitido com aceite desligado',
+      );
+    }
+
+    {
+      console.log('Cenário 31 — rollback atômico também para as regras de aceite');
+      const base = defaultConfig({ accepting_orders: true, delivery_fee: '3.33' });
+      await ownerAS.query('select public.save_unit_operational_config($1, $2)', [unitA1, base]);
+      const allClosed = Array.from({ length: 7 }, (_, i) => oneDay(i));
+      await expectError(
+        ownerAS,
+        'select public.save_unit_operational_config($1, $2)',
+        [
+          unitA1,
+          defaultConfig({
+            accepting_orders: true,
+            delivery_fee: '9.99',
+            business_hours: allClosed,
+          }),
+        ],
+        'PED18',
+        'save com aceite ligado e dias fechados: PED18',
+      );
+      const after = await ownerAS.query('select public.get_unit_operational_config($1) as cfg', [
+        unitA1,
+      ]);
+      ok(
+        after.rows[0].cfg.delivery_fee === '3.33' && after.rows[0].cfg.accepting_orders === true,
+        'estado anterior preservado após falha das regras de aceite',
       );
     }
   } finally {
