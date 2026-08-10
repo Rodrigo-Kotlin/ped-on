@@ -1,5 +1,20 @@
 import { vi } from 'vitest';
 
+type RealtimeCallback = (payload: { new?: Record<string, unknown> }) => void;
+interface RealtimeRegistration {
+  channel: MockRealtimeChannel;
+  event: string;
+  callback: RealtimeCallback;
+}
+
+interface MockRealtimeChannel {
+  name: string;
+  on: ReturnType<typeof vi.fn>;
+  subscribe: ReturnType<typeof vi.fn>;
+}
+
+const realtimeRegistrations: RealtimeRegistration[] = [];
+
 export interface QueryResult<T> {
   data: T | null;
   error: unknown;
@@ -22,7 +37,7 @@ export function mockFromQuery<T>(result: QueryResult<T>) {
 }
 
 export function createSupabaseMock() {
-  return {
+  const mock = {
     auth: {
       getSession: vi.fn(),
       onAuthStateChange: vi.fn(),
@@ -32,15 +47,49 @@ export function createSupabaseMock() {
     },
     rpc: vi.fn(),
     from: vi.fn(),
+    channel: vi.fn(),
+    removeChannel: vi.fn(),
   };
+  mock.channel.mockImplementation((name: string) => {
+    const channel: MockRealtimeChannel = {
+      name,
+      on: vi.fn(),
+      subscribe: vi.fn(),
+    };
+    channel.on.mockImplementation(
+      (_type: string, filter: { event: string }, callback: RealtimeCallback) => {
+        realtimeRegistrations.push({ channel, event: filter.event, callback });
+        return channel;
+      },
+    );
+    channel.subscribe.mockImplementation(() => channel);
+    return channel;
+  });
+  mock.removeChannel.mockImplementation(async (channel: MockRealtimeChannel) => {
+    for (let index = realtimeRegistrations.length - 1; index >= 0; index -= 1) {
+      if (realtimeRegistrations[index]?.channel === channel) realtimeRegistrations.splice(index, 1);
+    }
+    return 'ok';
+  });
+  return mock;
 }
 
 export type SupabaseMock = ReturnType<typeof createSupabaseMock>;
 
 export const supabaseMock = createSupabaseMock();
 
+export function emitSupabaseRealtime(
+  event: 'INSERT' | 'UPDATE',
+  payload: { new?: Record<string, unknown> },
+) {
+  realtimeRegistrations
+    .filter((registration) => registration.event === event)
+    .forEach((registration) => registration.callback(payload));
+}
+
 export function resetSupabaseMock() {
   vi.clearAllMocks();
+  realtimeRegistrations.splice(0);
   supabaseMock.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
   supabaseMock.auth.onAuthStateChange.mockReturnValue({
     data: { subscription: { unsubscribe: vi.fn() } },
@@ -56,4 +105,25 @@ export function resetSupabaseMock() {
   supabaseMock.auth.signOut.mockResolvedValue({ error: null });
   supabaseMock.rpc.mockResolvedValue({ data: null, error: null });
   supabaseMock.from.mockImplementation(() => mockFromQuery({ data: null, error: null }));
+  supabaseMock.channel.mockImplementation((name: string) => {
+    const channel: MockRealtimeChannel = {
+      name,
+      on: vi.fn(),
+      subscribe: vi.fn(),
+    };
+    channel.on.mockImplementation(
+      (_type: string, filter: { event: string }, callback: RealtimeCallback) => {
+        realtimeRegistrations.push({ channel, event: filter.event, callback });
+        return channel;
+      },
+    );
+    channel.subscribe.mockImplementation(() => channel);
+    return channel;
+  });
+  supabaseMock.removeChannel.mockImplementation(async (channel: MockRealtimeChannel) => {
+    for (let index = realtimeRegistrations.length - 1; index >= 0; index -= 1) {
+      if (realtimeRegistrations[index]?.channel === channel) realtimeRegistrations.splice(index, 1);
+    }
+    return 'ok';
+  });
 }

@@ -147,6 +147,9 @@ describe('fetchPublicMenu', () => {
       operation: {
         configured: true,
         accepting_orders: true,
+        revision: '2026-08-10T12:00:00.000000Z',
+        open_now: true,
+        can_order_now: true,
         pickup_enabled: true,
         delivery_enabled: false,
         delivery_fee: '0.00',

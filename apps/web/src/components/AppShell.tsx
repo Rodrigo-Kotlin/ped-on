@@ -4,8 +4,8 @@ import { useAuth } from '../lib/auth/auth-context';
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return isActive
-    ? 'rounded-md bg-pedon-navy px-3 py-1.5 text-sm font-medium text-white transition hover:bg-pedon-navy/90'
-    : 'rounded-md border border-pedon-navy/20 px-3 py-1.5 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5';
+    ? 'inline-flex min-h-11 items-center rounded-md bg-pedon-navy px-3 py-1.5 text-sm font-medium text-white transition hover:bg-pedon-navy/90'
+    : 'inline-flex min-h-11 items-center rounded-md border border-pedon-navy/20 px-3 py-1.5 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5';
 }
 
 export function AppShell() {
@@ -43,7 +43,7 @@ export function AppShell() {
               onChange={(event) => selectUnit(event.target.value)}
               disabled={units.length === 0}
               aria-label="Selecionar unidade"
-              className="rounded-md border border-pedon-navy/20 bg-white px-3 py-1.5 text-sm text-pedon-text focus:border-pedon-orange focus:outline-none focus:ring-2 focus:ring-pedon-orange/30 disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-md border border-pedon-navy/20 bg-white px-3 py-1.5 text-sm text-pedon-text focus:border-pedon-orange focus:outline-none focus:ring-2 focus:ring-pedon-orange/30 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {units.map((unit) => (
                 <option key={unit.id} value={unit.id}>
@@ -57,7 +57,7 @@ export function AppShell() {
           <button
             type="button"
             onClick={() => void signOut()}
-            className="rounded-md border border-pedon-navy/30 px-3 py-1.5 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5"
+            className="min-h-11 rounded-md border border-pedon-navy/30 px-3 py-1.5 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5"
           >
             Sair
           </button>
@@ -69,9 +69,14 @@ export function AppShell() {
           Visão geral
         </NavLink>
         {role !== null && (
-          <NavLink to="/app/catalogo" className={navLinkClass}>
-            Catálogo
-          </NavLink>
+          <>
+            <NavLink to="/app/pedidos" className={navLinkClass}>
+              Pedidos
+            </NavLink>
+            <NavLink to="/app/catalogo" className={navLinkClass}>
+              Catálogo
+            </NavLink>
+          </>
         )}
         {(role === 'owner' || role === 'manager') && (
           <>
@@ -85,9 +90,9 @@ export function AppShell() {
         )}
       </nav>
 
-      <main className="flex-1 py-6">
+      <div className="flex-1 py-6">
         <Outlet />
-      </main>
+      </div>
     </div>
   );
 }

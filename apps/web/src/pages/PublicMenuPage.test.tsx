@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -11,6 +12,7 @@ vi.mock('../lib/supabase', () =>
 );
 
 import type { PublicMenuData, PublicMenuResult } from '../lib/menu/menu';
+import { CartProvider } from '../lib/cart/CartProvider';
 import { resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
 import { PublicMenuPage } from './PublicMenuPage';
 
@@ -22,6 +24,9 @@ const foundMenu: PublicMenuData = {
   operation: {
     configured: true,
     accepting_orders: true,
+    revision: '2026-08-10T12:00:00.000000Z',
+    open_now: true,
+    can_order_now: true,
     pickup_enabled: true,
     delivery_enabled: false,
     delivery_fee: '0.00',
@@ -77,7 +82,10 @@ function renderPublicMenu(result: PublicMenuResult, initialEntry = '/menu/abc') 
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
-            <Route path="/menu/:publicSlug" element={children} />
+            <Route
+              path="/menu/:publicSlug"
+              element={<CartProvider publicSlug="abc">{children}</CartProvider>}
+            />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
@@ -113,10 +121,10 @@ describe('PublicMenuPage', () => {
 
     expect(await screen.findByText('Refrigerante')).toBeInTheDocument();
     expect(screen.getByText('Indisponível')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('link', { name: /pedir|comprar|adicionar/i }),
+      screen.queryByRole('button', { name: 'Adicionar Refrigerante' }),
     ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Adicionar X-Salada' })).toBeInTheDocument();
   });
 
   it('exibe status de pedidos abertos quando a unidade aceita pedidos', async () => {
@@ -129,9 +137,26 @@ describe('PublicMenuPage', () => {
     renderPublicMenu({
       ...foundMenu,
       unit: { name: 'Loja Centro', is_active: false },
+      operation: { ...foundMenu.operation, can_order_now: false },
     });
 
-    expect(await screen.findByText('Pedidos encerrados no momento')).toBeInTheDocument();
+    expect(await screen.findByText('Pedidos indisponíveis no momento.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Adicionar/ })).not.toBeInTheDocument();
+  });
+
+  it('adiciona item e exibe CTA do carrinho com quantidade e subtotal exato', async () => {
+    const user = userEvent.setup();
+    renderPublicMenu(foundMenu);
+
+    const addButton = await screen.findByRole('button', { name: 'Adicionar X-Salada' });
+    await user.click(addButton);
+    await user.click(addButton);
+    expect(screen.getByRole('link', { name: /Ver carrinho \(2\).*R\$ 59,80/ })).toHaveAttribute(
+      'href',
+      '/menu/abc/carrinho',
+    );
+    expect(JSON.parse(window.localStorage.getItem('pedon:cart:abc')!).items).toHaveLength(1);
+    expect(JSON.parse(window.localStorage.getItem('pedon:cart:abc')!).items[0].quantity).toBe(2);
   });
 
   it('não vaza identificadores internos nem campos de fonte', async () => {

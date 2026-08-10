@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
-import { fetchPublicMenu, formatBRL } from '../lib/menu/menu';
+import { useCart } from '../lib/cart/cart-context';
+import { cartQuantity, cartSubtotalCents, isCartStale } from '../lib/cart/cart';
+import { formatBRL } from '../lib/money';
+import { publicMenuQueryOptions } from '../lib/menu/public-menu-query';
 import type { PublicMenuData } from '../lib/menu/menu';
 
 function formatDate(value: string): string {
@@ -11,13 +14,21 @@ function formatDate(value: string): string {
   });
 }
 
-function PublicMenuFound({ menu }: { menu: PublicMenuData }) {
-  const acceptingOrders = menu.unit.is_active && menu.operation.accepting_orders;
+function PublicMenuFound({ menu, publicSlug }: { menu: PublicMenuData; publicSlug: string }) {
+  const { cart, addItem, clearCart } = useCart();
+  const stale = isCartStale(cart, menu.menu.version_id);
+  const quantity = cartQuantity(cart);
+
+  function confirmClearCart() {
+    if (window.confirm('Limpar o carrinho antigo e começar novamente com este cardápio?')) {
+      clearCart();
+    }
+  }
 
   return (
-    <div className="min-h-svh bg-pedon-surface text-pedon-text">
+    <div className="min-h-svh bg-pedon-surface pb-24 text-pedon-text">
       <header className="border-b border-pedon-navy/10 bg-white px-4 py-5">
-        <div className="mx-auto w-full max-w-md">
+        <div className="mx-auto w-full max-w-lg">
           <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">
             {menu.organization.name}
           </p>
@@ -25,17 +36,34 @@ function PublicMenuFound({ menu }: { menu: PublicMenuData }) {
           <p
             role="status"
             className={`mt-3 inline-flex rounded-full px-3 py-1 text-sm font-medium ${
-              acceptingOrders
+              menu.operation.can_order_now
                 ? 'bg-emerald-100 text-emerald-800'
                 : 'bg-pedon-surface text-pedon-text/70'
             }`}
           >
-            {acceptingOrders ? 'Pedidos abertos agora' : 'Pedidos encerrados no momento'}
+            {menu.operation.can_order_now
+              ? 'Pedidos abertos agora'
+              : 'Pedidos indisponíveis no momento.'}
           </p>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-md px-4 py-6">
+      <div className="mx-auto w-full max-w-lg px-4 py-6">
+        {stale && (
+          <div role="alert" className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm text-amber-900">
+              O cardápio mudou. Seu carrinho antigo foi preservado e precisa ser refeito.
+            </p>
+            <button
+              type="button"
+              onClick={confirmClearCart}
+              className="mt-3 min-h-11 rounded-md bg-pedon-navy px-4 py-2 text-sm font-semibold text-white"
+            >
+              Limpar e refazer carrinho
+            </button>
+          </div>
+        )}
+
         {menu.categories.length === 0 ? (
           <p role="status" className="text-pedon-text/70">
             Este cardápio ainda não tem itens publicados.
@@ -53,23 +81,44 @@ function PublicMenuFound({ menu }: { menu: PublicMenuData }) {
                 </h2>
                 <ul className="mt-3 space-y-3">
                   {category.products.map((product) => (
-                    <li key={product.id} className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="flex flex-wrap items-center gap-2 font-medium text-pedon-navy">
-                          {product.name}
-                          {!product.is_available && (
-                            <span className="rounded bg-pedon-surface px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-pedon-text/60">
-                              Indisponível
-                            </span>
+                    <li
+                      key={product.id}
+                      className="rounded-lg border border-pedon-navy/10 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="flex flex-wrap items-center gap-2 font-medium text-pedon-navy">
+                            {product.name}
+                            {!product.is_available && (
+                              <span className="rounded bg-pedon-surface px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-pedon-text/60">
+                                Indisponível
+                              </span>
+                            )}
+                          </p>
+                          {product.description !== null && product.description !== '' && (
+                            <p className="mt-1 text-sm text-pedon-text/70">{product.description}</p>
                           )}
+                        </div>
+                        <p className="shrink-0 font-semibold text-pedon-text">
+                          {formatBRL(product.price)}
                         </p>
-                        {product.description !== null && product.description !== '' && (
-                          <p className="mt-0.5 text-sm text-pedon-text/70">{product.description}</p>
-                        )}
                       </div>
-                      <p className="shrink-0 font-medium text-pedon-text">
-                        {formatBRL(product.price)}
-                      </p>
+                      {product.is_available && menu.operation.can_order_now && !stale && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            addItem(menu.menu.version_id, {
+                              menu_item_id: product.id,
+                              name: product.name,
+                              unit_price: product.price,
+                            })
+                          }
+                          className="mt-3 min-h-11 w-full rounded-md border border-pedon-orange px-4 py-2 text-sm font-semibold text-pedon-orange transition hover:bg-orange-50"
+                          aria-label={`Adicionar ${product.name}`}
+                        >
+                          Adicionar
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -77,13 +126,25 @@ function PublicMenuFound({ menu }: { menu: PublicMenuData }) {
             );
           })
         )}
-      </main>
+      </div>
 
       <footer className="border-t border-pedon-navy/10 px-4 py-4">
-        <p className="mx-auto w-full max-w-md text-center text-xs text-pedon-text/50">
+        <p className="mx-auto w-full max-w-lg text-center text-xs text-pedon-text/50">
           Cardápio atualizado em {formatDate(menu.menu.published_at)} · Ped-On
         </p>
       </footer>
+
+      {quantity > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-pedon-navy/10 bg-white/95 p-3 backdrop-blur">
+          <Link
+            to={`/menu/${publicSlug}/carrinho`}
+            className="mx-auto flex min-h-12 w-full max-w-lg items-center justify-between rounded-lg bg-pedon-orange px-4 py-3 font-semibold text-white shadow-lg"
+          >
+            <span>Ver carrinho ({quantity})</span>
+            <span>{formatBRL(cartSubtotalCents(cart))}</span>
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
@@ -97,7 +158,7 @@ function PublicMenuMissing() {
       </p>
       <Link
         to="/"
-        className="mt-6 rounded-md bg-pedon-navy px-4 py-2.5 font-medium text-white transition hover:bg-pedon-navy/90"
+        className="mt-6 min-h-11 rounded-md bg-pedon-navy px-4 py-2.5 font-medium text-white"
       >
         Voltar ao início
       </Link>
@@ -106,45 +167,25 @@ function PublicMenuMissing() {
 }
 
 export function PublicMenuPage() {
-  const { publicSlug } = useParams<{ publicSlug: string }>();
-
-  const menuQuery = useQuery({
-    queryKey: ['public-menu', publicSlug ?? ''],
-    queryFn: () => fetchPublicMenu(publicSlug ?? ''),
-    enabled: publicSlug !== undefined && publicSlug !== '',
-  });
+  const { publicSlug = '' } = useParams<{ publicSlug: string }>();
+  const menuQuery = useQuery(publicMenuQueryOptions(publicSlug));
 
   if (menuQuery.isLoading) {
     return (
-      <div
-        className="flex min-h-svh items-center justify-center bg-pedon-surface"
-        role="status"
-        aria-live="polite"
-      >
+      <div className="flex min-h-svh items-center justify-center" role="status" aria-live="polite">
         <p className="text-pedon-text/60">Carregando cardápio…</p>
       </div>
     );
   }
-
   if (menuQuery.isError) {
     return (
-      <div className="flex min-h-svh flex-col items-center justify-center bg-pedon-surface px-4 text-center">
+      <div className="flex min-h-svh items-center justify-center px-4 text-center">
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           Não foi possível carregar o cardápio: {menuQuery.error.message}
         </p>
-        <Link
-          to="/"
-          className="mt-6 rounded-md bg-pedon-navy px-4 py-2.5 font-medium text-white transition hover:bg-pedon-navy/90"
-        >
-          Voltar ao início
-        </Link>
       </div>
     );
   }
-
-  if (menuQuery.data === undefined || menuQuery.data.found === false) {
-    return <PublicMenuMissing />;
-  }
-
-  return <PublicMenuFound menu={menuQuery.data} />;
+  if (menuQuery.data === undefined || menuQuery.data.found === false) return <PublicMenuMissing />;
+  return <PublicMenuFound menu={menuQuery.data} publicSlug={publicSlug} />;
 }

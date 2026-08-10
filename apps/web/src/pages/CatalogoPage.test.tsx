@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -408,6 +408,6 @@ describe('CatalogoPage', () => {
     expect(supabaseMock.rpc).toHaveBeenCalledWith('get_unit_catalog_admin', {
       p_unit_id: 'unit-2',
     });
-    expect(within(screen.getByRole('main')).queryByText('X-Salada')).not.toBeInTheDocument();
+    expect(screen.queryByText('X-Salada')).not.toBeInTheDocument();
   });
 });

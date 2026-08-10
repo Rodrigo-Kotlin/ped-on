@@ -1,4 +1,8 @@
 import { supabase } from '../supabase';
+import type { PaymentMethodCode } from '../orders/orders';
+
+export { formatBRL } from '../money';
+export type { PaymentMethodCode } from '../orders/orders';
 
 export interface MenuPublicationVersion {
   version_id: string;
@@ -31,8 +35,6 @@ export interface PublishMenuResult {
   category_count: number;
   product_count: number;
 }
-
-export type PaymentMethodCode = 'cash' | 'pix' | 'credit_card' | 'debit_card';
 
 export interface PublicMenuBusinessHour {
   weekday: number;
@@ -71,6 +73,9 @@ export interface PublicMenuData {
   operation: {
     configured: boolean;
     accepting_orders: boolean;
+    revision: string | null;
+    open_now: boolean;
+    can_order_now: boolean;
     pickup_enabled: boolean;
     delivery_enabled: boolean;
     delivery_fee: string;
@@ -149,9 +154,4 @@ export async function fetchPublicMenu(publicSlug: string): Promise<PublicMenuRes
     throw menuError(error);
   }
   return (data as PublicMenuResult | null) ?? { found: false };
-}
-
-export function formatBRL(price: string): string {
-  const [integer = '0', fraction = ''] = price.split('.');
-  return `R$ ${integer},${fraction.padEnd(2, '0')}`;
 }
