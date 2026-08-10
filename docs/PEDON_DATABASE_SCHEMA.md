@@ -1,7 +1,7 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On após o Prompt 06.
-> Fonte autoritativa: as seis migrations versionadas em `supabase/migrations/`, aplicadas no
+> Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On após o Prompt 07.
+> Fonte autoritativa: as oito migrations versionadas em `supabase/migrations/`, aplicadas no
 > projeto `ped-on` (ref `zmuxkztnilnzjyyojbbr`).
 
 ## 1. Estado das migrations
@@ -14,16 +14,18 @@
 | 4 | `20260810033118_unit_operational_config_hardening.sql` | validação defensiva de ETAs |
 | 5 | `20260810120000_unit_operational_config_acceptance_hardening.sql` | aceite seguro de pedidos e contrato `configured` |
 | 6 | `20260810122401_catalog_base.sql` | categorias, produtos e gestão administrativa do catálogo |
+| 7 | `20260810135051_menu_versioning_publication.sql` | versionamento imutável, publicação e cardápio público |
+| 8 | `20260810141000_menu_publication_slug_fix.sql` | correção do slug público (`gen_random_uuid` no lugar de `gen_random_bytes`) |
 
 Checkpoint oficial de 2026-08-10: `supabase migration list` apresenta Local == Remote para as
-seis versões; `supabase db lint --linked` retorna `No schema errors found`.
+oito versões; `supabase db lint --linked` retorna `No schema errors found`.
 
 ## 2. Convenções
 
 - PostgreSQL 17 no Supabase; objetos de negócio no schema `public`.
 - Identificadores em `snake_case`; UUIDs gerados por `gen_random_uuid()`.
 - `organization_id` é o tenant e `unit_id` é o escopo operacional.
-- Todas as dez tabelas `public` possuem RLS habilitado.
+- Todas as quatorze tabelas `public` possuem RLS habilitado.
 - Dinheiro usa `numeric(12,2)`, nunca `float`/`double`; RPCs devolvem valores monetários como
   string decimal.
 - Mutações administrativas e de domínio são server-authoritative via RPC; grants diretos são
@@ -45,6 +47,10 @@ seis versões; `supabase db lint --linked` retorna `No schema errors found`.
 | `unit_payment_methods` | meios de pagamento externos aceitos pela unidade |
 | `catalog_categories` | categorias mutáveis do catálogo de uma unidade |
 | `catalog_products` | produtos simples mutáveis de uma categoria/unidade |
+| `menu_versions` | snapshots comerciais imutáveis do cardápio de uma unidade |
+| `menu_version_categories` | categorias congeladas de uma versão |
+| `menu_version_products` | produtos congelados de uma versão |
+| `menu_publications` | ponte atual: slug público estável → versão CURRENT |
 
 ## 4. Identidade, tenant e RBAC
 
@@ -276,7 +282,118 @@ converte `price` para texto, preservando, por exemplo, `8.10`.
 
 As RPCs reutilizam `PED10`, `PED11` e `PED12` para autenticação, autorização e unidade ausente.
 
-## 7. Funções e triggers atuais
+## 7. Cardápio publicado (Prompt 07)
+
+### 7.1 `public.menu_versions`
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` PK default `gen_random_uuid()` | |
+| `organization_id` | `uuid` NOT NULL | parte da FK composta da unidade |
+| `unit_id` | `uuid` NOT NULL | FK `(organization_id,unit_id)` para `units`, cascade |
+| `version_number` | `integer` NOT NULL | `> 0`, derivado no servidor (`max+1`) |
+| `created_by` | `uuid` | FK `auth.users(id) ON DELETE SET NULL` |
+| `created_at` | `timestamptz` NOT NULL default `now()` | |
+
+Unique `menu_versions_unit_number_key (unit_id,version_number)`, unique
+`menu_versions_organization_unit_id_key (organization_id,unit_id,id)` e índice
+`menu_versions_unit_number_idx (unit_id,version_number desc)`.
+
+### 7.2 `public.menu_version_categories`
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` PK default `gen_random_uuid()` | |
+| `organization_id` | `uuid` NOT NULL | |
+| `unit_id` | `uuid` NOT NULL | |
+| `menu_version_id` | `uuid` NOT NULL | FK `(organization_id,unit_id,menu_version_id)` para a versão, cascade |
+| `source_category_id` | `uuid` | metadado interno de rastreabilidade; nunca exposto publicamente |
+| `name` | `text` NOT NULL | trimada; `1..80` |
+| `sort_order` | `integer` NOT NULL | `> 0` |
+| `created_at` | `timestamptz` NOT NULL default `now()` | |
+
+Unique `menu_version_categories_organization_version_id_key (organization_id,unit_id,menu_version_id,id)`
+e índice `menu_version_categories_order_idx (menu_version_id,sort_order,id)`.
+
+### 7.3 `public.menu_version_products`
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` PK default `gen_random_uuid()` | |
+| `organization_id` | `uuid` NOT NULL | |
+| `unit_id` | `uuid` NOT NULL | |
+| `menu_version_id` | `uuid` NOT NULL | FK composta para a versão, cascade |
+| `menu_category_id` | `uuid` NOT NULL | FK `(organization_id,unit_id,menu_version_id,id)` para a categoria do snapshot, cascade |
+| `source_product_id` | `uuid` | vínculo interno para o overlay de disponibilidade; nunca exposto |
+| `name` | `text` NOT NULL | trimada; `1..120` |
+| `description` | `text` | null ou trimada, `1..500` |
+| `price` | `numeric(12,2)` NOT NULL | `> 0` e `<= 9999999999.99` |
+| `sort_order` | `integer` NOT NULL | `> 0` |
+| `created_at` | `timestamptz` NOT NULL default `now()` | |
+
+Índice `menu_version_products_order_idx (menu_version_id,menu_category_id,sort_order,id)`.
+
+### 7.4 `public.menu_publications`
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `organization_id` | `uuid` NOT NULL | |
+| `unit_id` | `uuid` PK | FK `(organization_id,unit_id)` para `units`, cascade |
+| `public_slug` | `text` NOT NULL | único; 24 hex opacos, estável desde a primeira publicação |
+| `current_menu_version_id` | `uuid` NOT NULL | FK `(organization_id,unit_id,current_menu_version_id)` para a versão CURRENT |
+| `published_at` | `timestamptz` NOT NULL | |
+| `updated_at` | `timestamptz` NOT NULL default `now()` | trigger `set_menu_publications_updated_at` |
+
+No máximo uma linha por unidade. O slug nunca é rejeitado em republicação: reutilizado sempre.
+
+### 7.5 Publicação server-authoritative
+
+`publish_unit_menu(uuid)` (owner/manager da unidade, `can_manage_unit`):
+
+- adquire advisory locks `pedon:catalog:categories:unit:<unit>` e `pedon:menu:publish:<unit>`,
+  além do lock de produtos de cada categoria ativa (`pedon:catalog:products:category:<id>`);
+- captura somente o catálogo estruturalmente ativo (`is_active=true`); categorias sem ao menos um
+  produto ativo são omitidas; menu vazio falha com `PED31` sem criar versão;
+- cria a versão com `max(version_number)+1`, copia categorias/produtos elegíveis e atualiza a ponte
+  (insere com slug novo ou reutiliza o existente);
+- gera slug de 24 hex via `left(replace(gen_random_uuid()::text,'-',''),24)` com retry em
+  `unique_violation` (10 tentativas) e `PED32` se esgotar;
+- retorna `version_id`, `version_number`, `published_at`, `public_slug`, `public_path`,
+  `category_count`, `product_count`.
+
+`get_unit_menu_publication_admin(uuid)` (`can_access_unit`): devolve unidade, publicação atual,
+versão corrente e histórico (até 50 versões, ordem decrescente), somente leitura — sem rollback
+nesta fase.
+
+### 7.6 Leitura pública: `get_public_menu(text)`
+
+`security definer stable`, executável por `anon` e `authenticated`, somente via slug opaco
+(`^[a-f0-9]{24}$`); slug ausente/inválido retorna `{"found":false}`, sem erro. Devolve:
+
+- `organization.name`; `unit.name`, `unit.is_active`;
+- `menu.version_id`, `menu.version_number`, `menu.published_at`;
+- `operation.configured`, `operation.accepting_orders`, `operation.pickup_enabled`,
+  `operation.delivery_enabled`, `operation.delivery_fee`, `operation.minimum_order_amount`
+  (texto), `operation.estimated_pickup_minutes`, `operation.estimated_delivery_minutes`,
+  `operation.payment_methods` (4, com `is_enabled`), `operation.business_hours` (7 dias);
+- `categories[]` com `id`, `name`, `sort_order` e `products[]` com `id`, `name`, `description`,
+  `price` (texto), `sort_order`, `is_available`.
+
+IDs e preços vêm exclusivamente do snapshot; `is_available` é overlay dinâmico de
+`catalog_products.is_available` via `source_product_id` (fonte ausente/deletada ⇒ `false`).
+`anon` nunca lê as tabelas de menu/catálogo diretamente.
+
+### 7.7 Erros do cardápio publicado
+
+| SQLSTATE | Mensagem |
+|---|---|
+| `PED31` | `MENU_EMPTY` |
+| `PED32` | `PUBLICATION_CONFLICT` |
+
+`PED31`/`PED32` são exclusivos da publicação; `get_public_menu` não lança erros (retorna
+`found=false`).
+
+## 8. Funções e triggers atuais
 
 | Objeto | Contrato |
 |---|---|
@@ -294,6 +411,9 @@ As RPCs reutilizam `PED10`, `PED11` e `PED12` para autenticação, autorização
 | `get_unit_operational_config(uuid)` / `save_unit_operational_config(uuid,jsonb)` | contrato operacional completo |
 | `_validate_catalog_price(text)` | validador interno de preço do catálogo |
 | oito RPCs da Seção 6.4 | leitura e mutações server-authoritative do catálogo |
+| `publish_unit_menu(uuid)` | publicação imutável do cardápio (owner/manager) |
+| `get_unit_menu_publication_admin(uuid)` | leitura administrativa da publicação e histórico |
+| `get_public_menu(text)` | cardápio público anônimo via slug (anon) |
 
 Todas as funções desta tabela, exceto `set_updated_at()`, são `security definer` com
 `search_path=''`; `get_my_admin_context`, helpers de acesso e getters são `stable` quando aplicável,
@@ -312,7 +432,7 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `PED04` | `LAST_ACTIVE_UNIT` |
 | `PED05` | `UNIT_NAME_TOO_LONG` |
 
-## 8. RLS e ACLs
+## 9. RLS e ACLs
 
 | Tabela | SELECT autenticado | Escrita direta |
 |---|---|---|
@@ -324,26 +444,35 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | três tabelas operacionais | sem policy seletora; acesso via RPC | sem grant/policy |
 | `catalog_categories` | policy `can_access_unit(unit_id)` | I/U/D revogados |
 | `catalog_products` | policy `can_access_unit(unit_id)` | I/U/D revogados |
+| `menu_versions` | policy `can_access_unit(unit_id)` | sem grant/policy |
+| `menu_version_categories` | policy `can_access_unit(unit_id)` | sem grant/policy |
+| `menu_version_products` | policy `can_access_unit(unit_id)` | sem grant/policy |
+| `menu_publications` | policy `can_access_unit(unit_id)` | sem grant/policy |
 
-Nas tabelas do catálogo, `SELECT` foi concedido a `authenticated` e `anon`, mas só existe policy
-`TO authenticated`. Portanto `anon` pode emitir a consulta e recebe zero linhas; não existe acesso
-público efetivo. As oito RPCs do catálogo tiveram `EXECUTE` explicitamente revogado de `PUBLIC` e
-`anon` e concedido somente a `authenticated`; o helper `_validate_catalog_price` também é revogado
-de `authenticated`.
+Nas tabelas do catálogo e do cardápio publicado, `SELECT` foi concedido a `authenticated` (e a
+`anon` somente nas duas tabelas do catálogo mutável), mas só existe policy `TO authenticated`.
+Portanto `anon` pode emitir a consulta e recebe zero linhas; não existe acesso público efetivo
+direto. As RPCs do catálogo, a publicação e a leitura administrativa tiveram `EXECUTE`
+explicitamente revogado de `PUBLIC` e `anon` e concedido somente a `authenticated`; o helper
+`_validate_catalog_price` também é revogado de `authenticated`. `get_public_menu` é a única
+superfície pública de leitura do cardápio.
 
-## 9. Produção e validação
+## 10. Produção e validação
 
-Checkpoint do Prompt 06:
+Checkpoint do Prompt 07:
 
-- migration `20260810122401_catalog_base.sql` aplicada oficialmente; seis migrations Local ==
+- migrations `20260810135051_menu_versioning_publication.sql` e
+  `20260810141000_menu_publication_slug_fix.sql` aplicadas oficialmente; oito migrations Local ==
   Remote;
 - `supabase db lint --linked`: sem erros;
-- banco: catálogo 123/123, operacional 80/80, RBAC 31/31 e RLS 22/22 PASS;
+- banco: publicação 121/121, catálogo 123/123, operacional 80/80, RBAC 31/31 e RLS 22/22 PASS;
 - testes cobrem grants, RLS, direct writes, cross-unit/cross-tenant, FKs compostas, preço decimal,
-  flags independentes, atomicidade e concorrência de `sort_order`;
+  flags independentes, atomicidade e concorrência de `sort_order`, menu vazio, snapshot imutável,
+  slug estável/opaco, overlay de disponibilidade, isolamento e publicações concorrentes;
 - cleanup automático remove organizações e usuários sintéticos, sem dados residuais esperados.
 
-## 10. Ainda não implementado
+## 11. Ainda não implementado
 
-O catálogo atual é administrativo e mutável. Versionamento, publicação imutável, leitura anônima
-de cardápio, imagens, carrinho, pedidos e snapshots comerciais ainda não fazem parte deste schema.
+O catálogo atual é administrativo e mutável; o cardápio publicado é um snapshot imutável com
+leitura anônima via RPC. Imagens, carrinho, pedidos e snapshots comerciais dos pedidos ainda não
+fazem parte deste schema.

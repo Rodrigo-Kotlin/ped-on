@@ -6,7 +6,7 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 2B — Catálogo administrativo. O Prompt 06 está concluído com:
+Fase 2C — Cardápio: versionamento e publicação imutável. O Prompt 07 está concluído com:
 
 - Supabase Auth, identidade, onboarding e tenant;
 - RBAC `owner`/`manager`/`operator` com acesso por unidade;
@@ -14,10 +14,14 @@ Fase 2B — Catálogo administrativo. O Prompt 06 está concluído com:
 - configuração operacional por unidade;
 - catálogo administrativo por unidade com categorias e produtos simples;
 - preço decimal exato e disponibilidade operacional separada do estado estrutural;
+- cardápio público anônimo via slug opaco a partir de snapshot comercial imutável, com overlay
+  dinâmico de disponibilidade;
+- publicação `owner`/`manager` com histórico de versões;
 - PWA em Cloudflare Pages e CI no GitHub Actions.
 
-O catálogo atual é mutável e autenticado. Versionamento, publicação imutável, cardápio público,
-imagens, carrinho e pedidos ainda não estão implementados.
+O catálogo atual é mutável e autenticado; o cardápio público é um snapshot imutável lido
+exclusivamente via `get_public_menu`. Imagens, carrinho, checkout e pedidos ainda não estão
+implementados (Prompt 08).
 
 ## Objetivo do MVP
 
@@ -58,8 +62,8 @@ ped-on/
 │   ├── test-utils/                # Utilitários de teste
 │   └── ui/                        # Componentes compartilhados
 ├── supabase/
-│   ├── migrations/                # Seis migrations versionadas até Prompt 06
-│   ├── tests/                     # Quatro suítes de integração DB
+│   ├── migrations/                # Oito migrations versionadas até Prompt 07
+│   ├── tests/                     # Cinco suítes de integração DB
 │   ├── functions/                 # Espaço para Edge Functions
 │   └── seed.example.sql           # Seed de exemplo, sem dados reais
 ├── docs/                          # Continuidade, schema, RLS e operação
@@ -80,10 +84,13 @@ ped-on/
 | `/app`               | área administrativa e seleção de unidade    |
 | `/app/catalogo`      | categorias e produtos por unidade           |
 | `/app/configuracoes` | configuração operacional da unidade         |
+| `/app/cardapio`      | publicação e cardápio público               |
+| `/menu/:slug`        | cardápio público do cliente (sem sessão)    |
 
 `/app/catalogo` permite leitura a owner, manager e operator autorizados. Owner/manager gerenciam a
 estrutura; operator altera somente a disponibilidade de produtos. `/app/configuracoes` é restrita a
-owner/manager autorizados.
+owner/manager autorizados. `/app/cardapio` exige owner/manager para publicar; `/menu/:slug` é
+público e lê apenas `get_public_menu`.
 
 ## Requisitos locais
 
@@ -116,7 +123,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O projeto oficial possui seis migrations Local == Remote:
+O projeto oficial possui oito migrations Local == Remote:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -124,6 +131,8 @@ O projeto oficial possui seis migrations Local == Remote:
 4. `20260810033118_unit_operational_config_hardening.sql`
 5. `20260810120000_unit_operational_config_acceptance_hardening.sql`
 6. `20260810122401_catalog_base.sql`
+7. `20260810135051_menu_versioning_publication.sql`
+8. `20260810141000_menu_publication_slug_fix.sql`
 
 Fluxo linked:
 
@@ -147,18 +156,19 @@ node supabase/tests/rls_integrity.test.mjs
 node supabase/tests/rbac_units_integrity.test.mjs
 node supabase/tests/unit_operational_config_integrity.test.mjs
 node supabase/tests/catalog_integrity.test.mjs
+node supabase/tests/menu_publication_integrity.test.mjs
 ```
 
 Não rode em paralelo: a suíte RBAC herdada possui uma contagem global frágil durante um cenário.
-Resultados oficiais: RLS 22/22, RBAC 31/31, operacional 80/80 e catálogo 123/123. As suítes criam
-fixtures descartáveis e fazem cleanup automático.
+Resultados oficiais: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123 e publicação
+121/121. As suítes criam fixtures descartáveis e fazem cleanup automático.
 
 ## Qualidade validada
 
-- frontend unit/component: 30/30;
-- E2E: 56/56 em 360/768/1024/1440, incluindo catálogo 16/16;
+- frontend unit/component: 55/55;
+- E2E: 92/92 em 360/768/1024/1440, incluindo cardápio/publicação 36/36;
 - format, lint, typecheck, build, Gitleaks v8.30.1 e db lint: PASS;
-- GitHub CI run `31390204057`: quality + E2E `SUCCESS`;
+- GitHub CI run `31407263950`: quality + E2E `SUCCESS`;
 - produção: `https://ped-on.pages.dev`.
 
 ## Segurança e secrets
@@ -166,8 +176,9 @@ fixtures descartáveis e fazem cleanup automático.
 - Nunca commitar tokens, senhas, chaves Supabase, `service_role` ou credenciais.
 - `.env` real não entra no repositório; usar `.env.example` como referência.
 - O browser usa apenas `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`.
-- Catálogo tem RLS por unidade e escrita exclusivamente por RPC.
-- `anon` recebe zero linhas das tabelas mutáveis do catálogo e não executa suas RPCs.
+- Catálogo e cardápio têm RLS por unidade e escrita exclusivamente por RPC.
+- `anon` recebe zero linhas das tabelas mutáveis do catálogo e não executa suas RPCs; o cardápio
+  público é lido somente via `get_public_menu`.
 - O PWA não adiciona cache de API, dados privados ou tokens.
 
 ## Documentação
@@ -179,4 +190,5 @@ fixtures descartáveis e fazem cleanup automático.
 - `docs/PEDON_RLS_SECURITY.md` — RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md` — operação local, Supabase, CI e deploy
 
-Próximo passo oficial: Prompt 07 — Versionamento e publicação imutável do cardápio.
+Próximo passo oficial: Prompt 08 — Carrinho, checkout guest, pedido idempotente e Central de
+Pedidos.

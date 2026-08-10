@@ -1,6 +1,6 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On após o Prompt 06. Ambiente oficial: modelo Main-First monitorado,
+> Guia operacional do Ped-On após o Prompt 07. Ambiente oficial: modelo Main-First monitorado,
 > Supabase vinculado e Cloudflare Pages em produção.
 
 ## 1. Pré-requisitos e versões
@@ -52,8 +52,8 @@ pnpm test:e2e
 gitleaks detect --source . --redact --log-level warn
 ```
 
-Checkpoint do Prompt 06: formato, lint, typecheck, build e Gitleaks v8.30.1 PASS; frontend
-unit/component 30/30; E2E 56/56 em 360/768/1024/1440, incluindo catálogo 16/16.
+Checkpoint do Prompt 07: formato, lint, typecheck, build e Gitleaks v8.30.1 PASS; frontend
+unit/component 55/55; E2E 92/92 em 360/768/1024/1440, incluindo cardápio/publicação 36/36.
 
 ## 4. Variáveis e secrets
 
@@ -90,9 +90,11 @@ Na ordem:
 4. `20260810033118_unit_operational_config_hardening.sql`
 5. `20260810120000_unit_operational_config_acceptance_hardening.sql`
 6. `20260810122401_catalog_base.sql`
+7. `20260810135051_menu_versioning_publication.sql`
+8. `20260810141000_menu_publication_slug_fix.sql`
 
-Checkpoint Prompt 06: Local == Remote para as seis versões; migration do catálogo aplicada
-oficialmente; db lint sem erros.
+Checkpoint Prompt 07: Local == Remote para as oito versões; migrations do catálogo, do cardápio
+publicado e do slug aplicadas oficialmente; db lint sem erros.
 
 ### 5.2 Fluxo linked não destrutivo
 
@@ -131,7 +133,7 @@ Os testes conectam diretamente em `db.zmuxkztnilnzjyyojbbr.supabase.co:5432` com
 simulam sessões com `SET ROLE`/claims. Não usar pooler de sessão: reutilização de backend pode vazar
 role/claims entre clients.
 
-Execute os quatro scripts **sequencialmente, nunca em paralelo**:
+Execute os cinco scripts **sequencialmente, nunca em paralelo**:
 
 ```powershell
 $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
@@ -139,6 +141,7 @@ node supabase/tests/rls_integrity.test.mjs
 node supabase/tests/rbac_units_integrity.test.mjs
 node supabase/tests/unit_operational_config_integrity.test.mjs
 node supabase/tests/catalog_integrity.test.mjs
+node supabase/tests/menu_publication_integrity.test.mjs
 ```
 
 | Script | Checkpoint |
@@ -147,6 +150,7 @@ node supabase/tests/catalog_integrity.test.mjs
 | `rbac_units_integrity.test.mjs` | 31/31 PASS |
 | `unit_operational_config_integrity.test.mjs` | 80/80 PASS |
 | `catalog_integrity.test.mjs` | 123/123 PASS |
+| `menu_publication_integrity.test.mjs` | 121/121 PASS |
 
 A execução sequencial é obrigatória porque o teste RBAC herdado possui uma verificação de contagem
 global de `membership_units`; outra suíte inserindo vínculos simultaneamente pode produzir falso
@@ -194,6 +198,28 @@ persiste `numeric(12,2)`.
 `is_active` e `is_available` são independentes. Desativar categoria não propaga flags aos produtos.
 O catálogo é mutável e administrativo; não usá-lo como API pública de cardápio.
 
+### 8.2 Cardápio publicado (Prompt 07)
+
+Rota administrativa: `/app/cardapio` (owner/manager publicam; operador apenas lê via
+`get_unit_menu_publication_admin`). Rota pública: `/menu/:slug`.
+
+| Operação | RPC obrigatória | Roles |
+|---|---|---|
+| Publicar cardápio | `publish_unit_menu` | owner/manager |
+| Ler publicação/histórico | `get_unit_menu_publication_admin` | owner/manager/operator autorizados |
+| Ler cardápio público | `get_public_menu` | anon/authenticated |
+
+A publicação cria um snapshot comercial imutável a partir do catálogo estruturalmente ativo e
+mantém um slug público opaco e estável. Nenhuma escrita direta é permitida nas tabelas
+`menu_versions`, `menu_version_categories`, `menu_version_products` ou `menu_publications`. O
+cardápio público é lido somente via `get_public_menu`; `anon` nunca consulta as tabelas
+diretamente.
+
+| Código | Tratamento |
+|---|---|
+| `PED31` | menu vazio (sem produtos ativos); ajustar catálogo e republicar |
+| `PED32` | conflito raro de slug; republicar |
+
 ### 8.1 Erros do catálogo
 
 | Código | Tratamento |
@@ -233,10 +259,12 @@ Rota: `/app/configuracoes`, restrita a owner e manager autorizado por `RequireMa
 | `/app` | área administrativa e contexto de unidade |
 | `/app/catalogo` | catálogo por unidade; todos os roles leem, RBAC por ação |
 | `/app/configuracoes` | configuração operacional; owner/manager |
+| `/app/cardapio` | publicação e histórico do cardápio; owner/manager |
+| `/menu/:slug` | cardápio público do cliente, sem sessão |
 | `*` | página não encontrada |
 
 Fluxo Auth permanece: cadastro, confirmação de e-mail, login, onboarding e área administrativa. O
-Prompt 06 não alterou Auth e enviou zero e-mails. A homologação real do Prompt 03/05 permanece
+Prompt 07 não alterou Auth e enviou zero e-mails. A homologação real do Prompt 03/05 permanece
 válida: confirmação pelo Supabase built-in mailer, redirect para `https://ped-on.pages.dev`, login,
 onboarding, restauração de sessão, logout/relogin e cleanup; incidente antigo de `SITE_URL` em
 localhost está resolvido.
@@ -251,14 +279,14 @@ localhost está resolvido.
 | Workflow | `.github/workflows/ci.yml`, nome `CI` |
 
 Job `quality`: install frozen, format check, lint, typecheck, unit tests, build e Gitleaks. Job
-`e2e`: depende de quality, instala Chromium e roda Playwright. Checkpoint Prompt 06: run
-`31390204057`, SHA `891257f8b903a1a8afde3d8f439a4d6bfe6f2352`, `SUCCESS` em quality + E2E.
+`e2e`: depende de quality, instala Chromium e roda Playwright. Checkpoint Prompt 07: run
+`31407263950`, SHA `a1640ad8c12115602eb299c47cae82c13822d7f3`, `SUCCESS` em quality + E2E.
 
 Comandos de inspeção:
 
 ```bash
 gh run list --workflow CI
-gh run view 31390204057
+gh run view 31407263950
 ```
 
 Há aviso de depreciação do runtime Node.js 20 em actions de terceiros, mas o workflow executa e
@@ -302,14 +330,16 @@ Esse checkpoint foi executado com sucesso no deploy acima. O build registra warn
 | Catálogo retorna `PED10` | sessão/claims e restauração do Auth |
 | Catálogo retorna `PED11` | unidade selecionada, role e `membership_units` |
 | Produto retorna `PED29` | categoria pertence à mesma unidade e tenant |
-| Anon vê zero linhas | comportamento esperado até publicação imutável |
+| Publicar retorna `PED31` | catálogo sem produto ativo; ajustar antes de republicar |
+| Anon vê zero linhas | comportamento esperado; cardápio via `get_public_menu` |
 | Write direto falha `42501` | comportamento esperado; usar RPC |
 | Migration ausente | `supabase migration list`, depois `db push --linked` se revisada |
-| DB test falha por contagem | confirmar que as quatro suítes não rodaram em paralelo |
+| DB test falha por contagem | confirmar que as cinco suítes não rodaram em paralelo |
 | Teste deixa dados após crash | localizar somente fixtures `pedon-test.invalid`; limpar com cuidado |
 | Build avisa chunk grande | warning conhecido de 677.59 kB |
 
 ## 14. Próximo passo oficial
 
-Prompt 07: versionamento e publicação imutável do cardápio. Até essa etapa, não expor as tabelas
-mutáveis de catálogo como cardápio anônimo/público.
+Prompt 08: carrinho local, checkout guest, pedido idempotente e Central de Pedidos. Até essa
+etapa, o cardápio público continua lido exclusivamente via `get_public_menu`; pedidos não existem
+no schema.

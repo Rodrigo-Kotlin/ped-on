@@ -450,6 +450,181 @@
 - **Justificativa:** imagens exigem decisões adicionais de armazenamento, transformação, segurança e
   ciclo de vida que não são necessárias para validar o catálogo simples.
 
+## Decisões Aprovadas (Prompt 07 — Versionamento e publicação imutável)
+
+### DEC-065 — Publicação é snapshot comercial imutável
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `publish_unit_menu` cria `menu_versions` (categoria e produtos) como snapshot comercial
+  imutável a partir do catálogo administrativo mutável; nenhuma coluna da versão é editada depois.
+- **Justificativa:** pedidos futuros precisam reproduzir exatamente o que o cliente viu no checkout.
+
+### DEC-066 — Disponibilidade é overlay dinâmico via `source_product_id`
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o snapshot mantém `source_product_id`; `get_public_menu` sobrepõe apenas
+  `catalog_products.is_available` ao preço/nome/descrição imutáveis da versão. Sem `source_product_id`
+  disponível, o item é tratado como indisponível.
+- **Justificativa:** preço e composição congelados; disponibilidade permanece uma decisão operacional
+  viva sem reescrever a versão.
+
+### DEC-067 — `menu_publications` mantém current version e slug público estável/opaco
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** no máximo uma publicação por unidade; `current_menu_version_id` aponta a versão atual e
+  o `public_slug` é persistido na primeira publicação e reutilizado nas republicações (opaco, 24 hex).
+- **Justificativa:** o link público do cliente não muda ao republicar; o slug não revela estrutura.
+
+### DEC-068 — Publicação inclui somente estrutura ativa e exclui categorias vazias
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** apenas categorias e produtos com `is_active=true` entram no snapshot; categorias sem ao
+  menos um produto ativo são omitidas.
+- **Justificativa:** o cardápio público reflete o estado comercialmente disponível.
+
+### DEC-069 — Menu vazio não pode ser publicado (`PED31`)
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** publicação com zero produtos ativos falha com `PED31` (`MENU_EMPTY`) sem criar versão.
+- **Justificativa:** não existe cardápio público válido sem ao menos um item.
+
+### DEC-070 — API pública usa IDs dos snapshots e não IDs do catálogo
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `get_public_menu` retorna `id` de `menu_version_products`/`menu_version_categories`;
+  `source_*_id` e IDs do catálogo mutável nunca são expostos publicamente.
+- **Justificativa:** o cliente referencia o item concreto da versão, preservando o snapshot.
+
+### DEC-071 — Publicação é transacional e serializada por unidade
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `publish_unit_menu` é uma transação única que adquire advisory locks
+  (`pedon:menu:publish:<unit_id>` e locks de categoria/produto) para capturar um snapshot coerente e
+  impedir corridas com edições do catálogo.
+- **Justificativa:** evita versões intermediárias inconsistentes e duplicação de `version_number`.
+
+### DEC-072 — Anon acessa cardápio exclusivamente via `get_public_menu`, sem SELECT direto
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `anon` não possui grants diretos nas tabelas de menu/publicação; a única superfície
+  pública é a RPC `get_public_menu` (`security definer`), com `found=false` para slug inválido.
+- **Justificativa:** nenhuma leitura anônima efetiva das tabelas mutáveis ou dos snapshots.
+
+### DEC-073 — Prompt 07 não possui draft, rollback ou agendamento
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** não há rascunho, rollback para versão anterior, agendamento de publicação nem
+  comparação visual de versões nesta etapa.
+- **Justificativa:** escopo mínimo do MVP; republicar substitui a versão atual mantendo histórico.
+
+## Decisões Aprovadas (Prompt 08 — Carrinho, checkout, pedido idempotente e Central)
+
+### DEC-074 — Carrinho é público, local e vinculado à versão do menu
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o carrinho vive em `localStorage` (`pedon:cart:<publicSlug>`), contém somente dados
+  públicos do cardápio (slug, `menu_version_id`, itens com id/quantidade e nome/preço apenas para
+  apresentação) e pertence à versão do cardápio aberta pelo usuário. Nenhuma PII de checkout é
+  persistida localmente.
+- **Justificativa:** carrinho offline tolerável; PII do checkout fica somente em memória (DEC-028).
+
+### DEC-075 — Criação de pedido é idempotente
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o cliente gera `idempotency_key` (UUID) por tentativa lógica de checkout; o servidor
+  calcula `request_hash` (SHA-256 do payload canônico) e garante `(unit_id, idempotency_key)` único.
+  Mesma chave + mesmo payload retorna o pedido original; mesma chave + payload diferente retorna
+  `PED42`; duas tentativas concorrentes produzem um único pedido.
+- **Justificativa:** retry de rede seguro, sem duplicar pedidos (DEC-011).
+
+### DEC-076 — Preços, taxas e totais são server-authoritative e `order_items` são snapshots
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `create_public_order` não aceita preço/nome/total do navegador; copia o snapshot da
+  versão publicada e calcula `line_total`, `subtotal`, `delivery_fee` e `total` no PostgreSQL com
+  `numeric(12,2)`. Itens de pedido nunca dependem do catálogo mutável após a criação.
+- **Justificativa:** dinheiro exato e ausência de price injection (DEC-009, DEC-010).
+
+### DEC-077 — Versão diferente gera `MENU_CHANGED` sem repricing silencioso
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** se `menu_version_id` do payload difere da versão atual publicada, o checkout falha com
+  `PED35`; o frontend não remapeia, não renomeia e não recalcula o carrinho antigo — mantém o carrinho
+  como stale e pede revisão explícita.
+- **Justificativa:** nunca cobrar preço diferente do exibido no checkout.
+
+### DEC-078 — Configuração operacional possui revision e alteração durante checkout gera `CHECKOUT_CHANGED`
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o cardápio público expõe `operation.revision` (derivada de
+  `unit_operational_settings.updated_at`); o checkout envia `operation_revision` e o servidor rejeita
+  com `PED36` se a configuração mudou entre leitura e envio.
+- **Justificativa:** taxa, mínimo, modalidade ou horário alterados no meio do checkout não podem
+  gerar pedido com condições diferentes das apresentadas.
+
+### DEC-079 — Guest checkout usa PII mínima e não exige CPF
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** checkout público exige somente nome (2..120) e telefone (10/11 dígitos, armazenado só
+  dígitos); não coleta CPF, e-mail, senha ou criação de conta; o pedido guarda snapshot mínimo do
+  comprador sem tabela de clientes.
+- **Justificativa:** atrito mínimo no MVP; modelagem de clientes fica para o Prompt 09 (DEC-023).
+
+### DEC-080 — Pedido usa máquina de estados progressiva e estados terminais
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `orders.status` segue `new → confirmed → preparing → ready → (out_for_delivery →)
+  completed`, com cancelamento permitido enquanto não `completed`; `completed` e `cancelled` são
+  terminais e não podem ser reabertos. Transições inválidas retornam `PED47`.
+- **Justificativa:** rastreabilidade operacional determinística sem reabertura no MVP.
+
+### DEC-081 — `payment_status` é separado de `order.status`
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `orders.payment_status` (`pending → paid → refunded`) é independente do status do
+  pedido; cancelar não altera pagamento; `refunded` é terminal e é apenas registro operacional de
+  reembolso feito externamente (sem estorno financeiro).
+- **Justificativa:** os dois domínios evoluem por trilhas distintas (DEC-013, DEC-033-sem-gateway).
+
+### DEC-082 — Acompanhamento público usa tracking token de alta entropia
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** cada pedido recebe `tracking_token` (32 hex derivado de `gen_random_uuid()`), único e
+  gerado no servidor com retry em colisão rara; a rota pública `/pedido/:trackingToken` não usa
+  `order_id`, `order_number` ou `unit_id` e não expõe PII.
+- **Justificativa:** impedir enumeração de pedidos (DEC-012).
+
+### DEC-083 — Mudanças críticas geram `order_events` append-only
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `created`, `status_changed` e `payment_changed` são registrados em `order_events`
+  (append-only) apenas pelas RPCs; nenhum cliente insere/edita/apaga eventos diretamente.
+- **Justificativa:** auditoria imutável do ciclo de vida (invariante de auditoria do baseline).
+
+### DEC-084 — Owner/manager/operator operam pedidos da unidade; refund manual exige owner/manager
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** leitura da Central e mudança de status do pedido exigem `can_access_unit`;
+  `pending→paid` exige `can_access_unit`; `paid→refunded` exige `can_manage_unit` (owner/manager).
+  Operator vinculado não registra reembolso.
+- **Justificativa:** impedir escalada de privilégio financeiro por operador.
+
+### DEC-085 — Realtime apenas invalida/refaz queries; PostgreSQL continua fonte da verdade
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `public.orders` entra na publicação `supabase_realtime` somente como gatilho de
+  invalidação/refetch no painel administrativo; o frontend nunca aplica estado crítico apenas do
+  websocket.
+- **Justificativa:** invariante "Realtime é mecanismo de atualização, não fonte da verdade".
+
+### DEC-086 — Entrega continua simples/fixa; sem roteirização, gateway ou pagamento online
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** a modalidade delivery usa taxa fixa da unidade e endereço textual simples; não há
+  distância, raio, CEP com preço, geocodificação, entregador, rota, gateway, PIX automático ou cartão
+  online. Pagamento é externo ao estabelecimento.
+- **Justificativa:** MVP sem intermediação financeira (baseline seção 5) e sem logística.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.
