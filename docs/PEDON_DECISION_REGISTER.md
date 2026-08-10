@@ -323,6 +323,64 @@
   Nenhum teste unitário toca a rede; o E2E Playwright cobre rotas reais (redirects sem sessão e
   validação de formulário) e não depende de credenciais.
 
+## Decisões Aprovadas (Prompt 04 — RBAC administrativo, gestão de unidades e contexto)
+
+### DEC-050 — RBAC administrativo mínimo: `owner` / `manager` / `operator`
+- **Status:** APROVADA
+- **Decisão:** evoluir o papel de membro de `owner`/`member` para `owner`/`manager`/`operator`
+  (sem dados reais com `member`, a migração altera o CHECK sem reclassificação). `owner` possui
+  acesso total ao tenant e à gestão de unidades; `manager`/`operator` têm acesso restrito às
+  unidades com vínculo explícito. A autorização por unidade independe da hierarquia
+  manager↔operator (ambos seguem o mesmo escopo nesta etapa).
+
+### DEC-051 — Autorização por unidade via `membership_units` com integridade cross-org
+- **Status:** APROVADA
+- **Decisão:** criar `membership_units (organization_id, user_id, unit_id)` como o vínculo
+  explícito de acesso por unidade. A PK `(organization_id, user_id, unit_id)` garante unicidade;
+  a FK composta `(organization_id, unit_id) → units(organization_id, id)` (suportada pelo unique
+  `units_organization_id_id_key`) impede vínculo com unidade de outra organização. É a
+  materialização da DEC-005.
+
+### DEC-052 — Escrita de unidades exclusivamente via RPCs server-authoritative
+- **Status:** APROVADA
+- **Decisão:** criação/renomeação/ativação de unidades ocorrem apenas pelas RPCs
+  `create_unit(text)`, `update_unit(uuid, text)` e `set_unit_active(uuid, boolean)`
+  (`security definer`, exigem role `owner`, validam a organização da unidade). Não existem
+  policies `INSERT`/`UPDATE`/`DELETE` em `units` — a escrita direta continua bloqueada (DEC-010
+  permanece válido). Contrato de erro estável via SQLSTATE próprio: `PED00` não autenticado,
+  `PED01` proibido (não-owner), `PED02` unidade não encontrada na org, `PED03` nome vazio,
+  `PED04` última unidade ativa, `PED05` nome > 200 caracteres.
+
+### DEC-053 — Proteção da última unidade ativa com lock transacional
+- **Status:** APROVADA
+- **Decisão:** `set_unit_active` impede a desativação da última unidade ativa da organização
+  (`PED04`). A verificação é serializada por `pg_advisory_xact_lock(hashtext('pedon:org:' || org_id))`
+  para evitar corrida entre desativações concorrentes (validado em teste com duas conexões
+  paralelas: exatamente uma desativação tem sucesso).
+
+### DEC-054 — `get_my_admin_context()` como fonte única do contexto administrativo
+- **Status:** APROVADA
+- **Decisão:** o frontend administrativo lê uma única RPC `get_my_admin_context()` que retorna
+  `jsonb` com perfil, organização, papel e unidades acessíveis (owner: todas; demais: vinculadas).
+  Evita múltiplas queries e centraliza a semântica de escopo em um ponto testável. As políticas
+  seletoras continuam garantindo o isolamento em leituras individuais.
+
+### DEC-055 — Helpers `is_org_owner` / `can_access_unit` (`security definer`) para políticas RLS
+- **Status:** APROVADA
+- **Decisão:** implementar `is_org_owner(uuid)` e `can_access_unit(uuid)` como funções
+  `stable security definer set search_path = ''`, usadas pela policy `units_select_authorized`
+  (substitui `units_select_member`). O `security definer` evita recursão de RLS ao consultar
+  `organization_members`/`membership_units` dentro da própria política; o `search_path=''`
+  elimina risco de hijacking de schema. `can_access_unit` encapsula owner-da-org-ou-vínculo,
+  padrão obrigatório para futuras tabelas escopadas por unidade.
+
+### DEC-056 — Gestão de `membership_units` permanece server-side nesta etapa
+- **Status:** APROVADA
+- **Decisão:** a gestão de vínculos (inserir/remover manager/operator por unidade) fica restrita
+  ao acesso administrativo/`security definer` — sem policy de escrita para `authenticated`
+  nesta etapa. A leitura dos próprios vínculos (e do owner) é liberada por RLS para fundação de
+  uma futura UI de gestão. A UI de gestão é pendência registrada.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.
