@@ -349,7 +349,7 @@ async function run() {
     lanches = await createCategory(ownerAS, unitA1, 'Lanches');
     const bebidas = await createCategory(ownerAS, unitA1, 'Bebidas');
     const inativaCat = await createCategory(ownerAS, unitA1, 'Inativa');
-    const vazia = await createCategory(ownerAS, unitA1, 'Vazia');
+    await createCategory(ownerAS, unitA1, 'Vazia');
     const ofertas = await createCategory(ownerAS, unitA1, 'Ofertas');
     await setCategoryActive(ownerAS, inativaCat.id, false);
 
@@ -389,14 +389,7 @@ async function run() {
     );
     const suco = await createProduct(ownerAS, unitA1, bebidas.id, 'Suco', null, '8.00');
     await setProductActive(ownerAS, suco.id, false);
-    const escondido = await createProduct(
-      ownerAS,
-      unitA1,
-      inativaCat.id,
-      'Escondido',
-      null,
-      '5.00',
-    );
+    await createProduct(ownerAS, unitA1, inativaCat.id, 'Escondido', null, '5.00');
 
     scenario(83, 'Autenticação e autorização da publicação');
     const anonPublishError = await publish(anon, unitA1)
@@ -965,7 +958,9 @@ async function run() {
     for (const c of openClients) {
       try {
         await c.end();
-      } catch {}
+      } catch {
+        // conexão já encerrada
+      }
     }
   }
 
