@@ -4,6 +4,7 @@ import { AdminProvider } from '../lib/admin/AdminProvider';
 import { RequireManageUnit } from '../lib/admin/guards';
 import { AppGate, GuestOnly, OnboardingGate } from '../lib/auth/guards';
 import { AppPage } from '../pages/AppPage';
+import { CatalogoPage } from '../pages/CatalogoPage';
 import { ConfiguracoesPage } from '../pages/ConfiguracoesPage';
 import { FoundationPage } from '../pages/FoundationPage';
 import { LoginPage } from '../pages/LoginPage';
@@ -53,6 +54,7 @@ export const appRoutes: RouteObject[] = [
         ),
         children: [
           { index: true, element: <AppPage /> },
+          { path: 'catalogo', element: <CatalogoPage /> },
           {
             path: 'configuracoes',
             element: (
