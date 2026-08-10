@@ -584,7 +584,7 @@
 - **Decisão:** `orders.payment_status` (`pending → paid → refunded`) é independente do status do
   pedido; cancelar não altera pagamento; `refunded` é terminal e é apenas registro operacional de
   reembolso feito externamente (sem estorno financeiro).
-- **Justificativa:** os dois domínios evoluem por trilhas distintas (DEC-013, DEC-033-sem-gateway).
+- **Justificativa:** os dois domínios evoluem por trilhas distintas (DEC-013, DEC-086).
 
 ### DEC-082 — Acompanhamento público usa tracking token de alta entropia
 - **Status:** APROVADA

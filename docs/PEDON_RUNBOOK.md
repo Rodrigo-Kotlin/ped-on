@@ -1,6 +1,6 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On após o Prompt 07. Ambiente oficial: modelo Main-First monitorado,
+> Guia operacional do Ped-On após o Prompt 08. Ambiente oficial: modelo Main-First monitorado,
 > Supabase vinculado e Cloudflare Pages em produção.
 
 ## 1. Pré-requisitos e versões
@@ -52,8 +52,8 @@ pnpm test:e2e
 gitleaks detect --source . --redact --log-level warn
 ```
 
-Checkpoint do Prompt 07: formato, lint, typecheck, build e Gitleaks v8.30.1 PASS; frontend
-unit/component 55/55; E2E 92/92 em 360/768/1024/1440, incluindo cardápio/publicação 36/36.
+Checkpoint do Prompt 08: formato, lint, typecheck, build e Gitleaks v8.30.1 PASS; frontend
+unit/component 87/87; E2E 104/104 em 360/768/1024/1440.
 
 ## 4. Variáveis e secrets
 
@@ -92,9 +92,11 @@ Na ordem:
 6. `20260810122401_catalog_base.sql`
 7. `20260810135051_menu_versioning_publication.sql`
 8. `20260810141000_menu_publication_slug_fix.sql`
+9. `20260810144145_orders_checkout.sql`
+10. `20260810162508_orders_checkout_lint_hardening.sql`
 
-Checkpoint Prompt 07: Local == Remote para as oito versões; migrations do catálogo, do cardápio
-publicado e do slug aplicadas oficialmente; db lint sem erros.
+Checkpoint Prompt 08: Local == Remote para as dez versões; migrations de pedidos e hardening
+aplicadas oficialmente; db lint sem erros.
 
 ### 5.2 Fluxo linked não destrutivo
 
@@ -133,7 +135,7 @@ Os testes conectam diretamente em `db.zmuxkztnilnzjyyojbbr.supabase.co:5432` com
 simulam sessões com `SET ROLE`/claims. Não usar pooler de sessão: reutilização de backend pode vazar
 role/claims entre clients.
 
-Execute os cinco scripts **sequencialmente, nunca em paralelo**:
+Execute os seis scripts **sequencialmente, nunca em paralelo**:
 
 ```powershell
 $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
@@ -142,6 +144,7 @@ node supabase/tests/rbac_units_integrity.test.mjs
 node supabase/tests/unit_operational_config_integrity.test.mjs
 node supabase/tests/catalog_integrity.test.mjs
 node supabase/tests/menu_publication_integrity.test.mjs
+node supabase/tests/orders_integrity.test.mjs
 ```
 
 | Script | Checkpoint |
@@ -151,6 +154,7 @@ node supabase/tests/menu_publication_integrity.test.mjs
 | `unit_operational_config_integrity.test.mjs` | 80/80 PASS |
 | `catalog_integrity.test.mjs` | 123/123 PASS |
 | `menu_publication_integrity.test.mjs` | 121/121 PASS |
+| `orders_integrity.test.mjs` | 318/318 PASS |
 
 A execução sequencial é obrigatória porque o teste RBAC herdado possui uma verificação de contagem
 global de `membership_units`; outra suíte inserindo vínculos simultaneamente pode produzir falso
@@ -170,12 +174,18 @@ Nos testes DB, sempre validar:
 - FK composta rejeita vínculo ou categoria de outra organização/unidade;
 - `INSERT`/`UPDATE`/`DELETE` diretos no catálogo permanecem bloqueados;
 - operator consegue somente `set_catalog_product_available` no catálogo da unidade autorizada;
+- anon não lê diretamente pedidos e recebe somente respostas públicas minimizadas das RPCs;
+- owner/manager/operator não acessam pedidos de unidade não autorizada, e refund exige gestão;
+- escritas diretas em `orders`, `order_items` e `order_events` permanecem bloqueadas;
+- publicação Realtime de `orders` não inclui PII, endereço ou idempotência;
 - cleanup remove organizações e usuários sintéticos.
 
 Nunca validar RLS com `service_role`. Setup/cleanup usam a conexão administrativa direta; cenários de
 aplicação usam roles e claims equivalentes ao cliente.
 
-## 8. Operações do catálogo
+## 8. Operações de catálogo, cardápio e pedidos
+
+### 8.1 Catálogo administrativo
 
 Rota administrativa: `/app/catalogo`, protegida por sessão e contexto de unidade.
 
@@ -220,7 +230,7 @@ diretamente.
 | `PED31` | menu vazio (sem produtos ativos); ajustar catálogo e republicar |
 | `PED32` | conflito raro de slug; republicar |
 
-### 8.1 Erros do catálogo
+### 8.3 Erros do catálogo
 
 | Código | Tratamento |
 |---|---|
@@ -236,6 +246,34 @@ diretamente.
 | `PED28` | preço inválido, não positivo, mais de duas casas ou overflow |
 | `PED29` | categoria fora da unidade/tenant do produto |
 | `PED30` | flag booleana inválida |
+
+### 8.4 Pedidos (Prompt 08)
+
+Rotas públicas: `/menu/:slug`, `/menu/:slug/carrinho`, `/menu/:slug/checkout` e
+`/pedido/:trackingToken`. Rota administrativa: `/app/pedidos` para os três papéis com acesso à
+unidade.
+
+| Operação | RPC obrigatória | Roles |
+|---|---|---|
+| Criar pedido | `create_public_order` | anon/authenticated |
+| Acompanhar pedido | `get_public_order` | anon/authenticated |
+| Listar pedidos | `get_unit_orders_admin` | owner/manager/operator autorizados |
+| Ler detalhe | `get_order_admin` | owner/manager/operator autorizados |
+| Alterar status | `set_order_status` | owner/manager/operator autorizados |
+| Marcar pago | `set_order_payment_status` | owner/manager/operator autorizados |
+| Registrar refund externo | `set_order_payment_status` | owner/manager |
+
+Regras operacionais:
+
+- checkout é network-only; não simular sucesso offline nem persistir PII no carrinho;
+- retry da mesma tentativa deve reutilizar o `idempotency_key`; edição após erro cria nova tentativa;
+- `PED35`/`PED36` exigem revisão explícita do menu/checkout, sem repricing silencioso;
+- status segue a máquina progressiva; payment status é independente; terminais não reabrem;
+- Realtime apenas invalida/refaz as queries TanStack da unidade ativa;
+- pagamento/refund é registro operacional externo, sem gateway ou estorno automático.
+
+Erros públicos: `PED33..PED45` e `PED50`; erros administrativos: `PED46..PED48`. `PED49` representa
+colisão rara após esgotar retries do token. O mapa completo está em `PEDON_DATABASE_SCHEMA.md`.
 
 ## 9. Configuração operacional
 
@@ -260,11 +298,15 @@ Rota: `/app/configuracoes`, restrita a owner e manager autorizado por `RequireMa
 | `/app/catalogo` | catálogo por unidade; todos os roles leem, RBAC por ação |
 | `/app/configuracoes` | configuração operacional; owner/manager |
 | `/app/cardapio` | publicação e histórico do cardápio; owner/manager |
+| `/app/pedidos` | Central de Pedidos; todos os roles autorizados, refund por owner/manager |
 | `/menu/:slug` | cardápio público do cliente, sem sessão |
+| `/menu/:slug/carrinho` | carrinho público local, sem PII |
+| `/menu/:slug/checkout` | checkout guest idempotente, network-only |
+| `/pedido/:trackingToken` | acompanhamento público sem PII |
 | `*` | página não encontrada |
 
 Fluxo Auth permanece: cadastro, confirmação de e-mail, login, onboarding e área administrativa. O
-Prompt 07 não alterou Auth e enviou zero e-mails. A homologação real do Prompt 03/05 permanece
+Prompt 08 não alterou Auth e enviou zero e-mails. A homologação real do Prompt 03/05 permanece
 válida: confirmação pelo Supabase built-in mailer, redirect para `https://ped-on.pages.dev`, login,
 onboarding, restauração de sessão, logout/relogin e cleanup; incidente antigo de `SITE_URL` em
 localhost está resolvido.
@@ -279,14 +321,14 @@ localhost está resolvido.
 | Workflow | `.github/workflows/ci.yml`, nome `CI` |
 
 Job `quality`: install frozen, format check, lint, typecheck, unit tests, build e Gitleaks. Job
-`e2e`: depende de quality, instala Chromium e roda Playwright. Checkpoint Prompt 07: run
-`31407263950`, SHA `a1640ad8c12115602eb299c47cae82c13822d7f3`, `SUCCESS` em quality + E2E.
+`e2e`: depende de quality, instala Chromium e roda Playwright. Checkpoint Prompt 08: run
+`31429728244`, SHA `7fe07dfadd3993ff8d6869dd6d4f53f82cb53c8b`, `SUCCESS` em quality + E2E.
 
 Comandos de inspeção:
 
 ```bash
 gh run list --workflow CI
-gh run view 31407263950
+gh run view 31429728244
 ```
 
 Há aviso de depreciação do runtime Node.js 20 em actions de terceiros, mas o workflow executa e
@@ -302,25 +344,27 @@ passa com Node.js 24.
 | Output | `apps/web/dist` |
 | Node | `22` via `.nvmrc` |
 | URL estável | `https://ped-on.pages.dev` |
-| Deploy Prompt 07 | `90d70dc2-f739-4a2c-a04d-af55cc250406` |
-| URL do deploy | `https://90d70dc2.ped-on.pages.dev` |
-| Source | `a1640ad` |
+| Deploy Prompt 08 | `f1afe182-8999-4c30-b635-e39e51a1dbac` |
+| URL do deploy | `https://f1afe182.ped-on.pages.dev` |
+| Source | `7fe07df` |
 
 Deploy é automático após push em `main`; GitHub Actions faz gates, não um segundo deploy.
 
-### 12.1 Checkpoint pós-deploy Prompt 07
+### 12.1 Checkpoint pós-deploy Prompt 08
 
-- confirmar deployment `SUCCESS` e source `a1640ad`;
+- confirmar deployment de produção e source `7fe07df`;
 - validar HTTP 200 em `/`, `/login`, `/app`, `/app/cardapio`, `/app/catalogo`, `/app/configuracoes`,
+  `/app/pedidos`, `/menu/:slug`, carrinho, checkout, `/pedido/:trackingToken`,
   `manifest.webmanifest`, `sw.js` e assets JS/CSS;
 - confirmar SPA fallback nas rotas diretas;
-- confirmar no bundle `publish_unit_menu`, `get_public_menu` e `get_unit_menu_publication_admin`
-  (além de `get_unit_catalog_admin` e `get_unit_operational_config`);
+- confirmar no bundle `create_public_order`, `get_public_order`, `get_unit_orders_admin`,
+  `get_order_admin`, `set_order_status` e `set_order_payment_status`;
 - confirmar que o bundle aponta para o Supabase real e não contém secret key;
 - confirmar que service worker não adicionou cache de API/dados privados.
 
-Esse checkpoint foi executado com sucesso no deploy acima. O build registra warning de chunk JS de
-~677 kB; é pendência de otimização, não falha do deploy.
+Esse checkpoint foi executado com sucesso no deploy acima e no domínio estável; ambos servem
+`/assets/index-CTtpL05m.js`. O build registra warning de chunk JS de ~734 kB; é pendência de
+otimização, não falha do deploy.
 
 ## 13. Diagnóstico rápido
 
@@ -331,15 +375,19 @@ Esse checkpoint foi executado com sucesso no deploy acima. O build registra warn
 | Catálogo retorna `PED11` | unidade selecionada, role e `membership_units` |
 | Produto retorna `PED29` | categoria pertence à mesma unidade e tenant |
 | Publicar retorna `PED31` | catálogo sem produto ativo; ajustar antes de republicar |
+| Checkout retorna `PED35`/`PED36` | menu/configuração mudou; recarregar e revisar sem repricing silencioso |
+| Checkout retorna `PED42` | chave idempotente foi reutilizada com payload diferente; iniciar nova tentativa |
+| Tracking retorna `found=false` | token inválido/desconhecido; não usar IDs internos na rota |
+| Central retorna `PED11` | sessão sem acesso à unidade ou operator tentando refund |
+| Transição retorna `PED47`/`PED48` | estado terminal, salto ou transição repetida/inválida |
 | Anon vê zero linhas | comportamento esperado; cardápio via `get_public_menu` |
 | Write direto falha `42501` | comportamento esperado; usar RPC |
 | Migration ausente | `supabase migration list`, depois `db push --linked` se revisada |
-| DB test falha por contagem | confirmar que as cinco suítes não rodaram em paralelo |
+| DB test falha por contagem | confirmar que as seis suítes não rodaram em paralelo |
 | Teste deixa dados após crash | localizar somente fixtures `pedon-test.invalid`; limpar com cuidado |
-| Build avisa chunk grande | warning conhecido de 677.59 kB |
+| Build avisa chunk grande | warning conhecido de 733.53 kB |
 
 ## 14. Próximo passo oficial
 
-Prompt 08: carrinho local, checkout guest, pedido idempotente e Central de Pedidos. Até essa
-etapa, o cardápio público continua lido exclusivamente via `get_public_menu`; pedidos não existem
-no schema.
+Prompt 09: modelagem de clientes e fidelidade. Ainda não iniciado; não adicionar CPF, pontos,
+recompensas ou vouchers como continuação implícita do Prompt 08.

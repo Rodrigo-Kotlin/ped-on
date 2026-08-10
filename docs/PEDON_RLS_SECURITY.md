@@ -1,12 +1,12 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL após o Prompt 07. O frontend usa apenas a publishable
+> Modelo de segurança Supabase/PostgreSQL após o Prompt 08. O frontend usa apenas a publishable
 > key; `service_role` nunca é exposta. RLS nega por padrão e toda autorização de catálogo e
 > cardápio é vinculada à unidade.
 
 ## 1. Princípios
 
-- RLS está habilitado nas quatorze tabelas `public` atuais.
+- RLS está habilitado nas dezessete tabelas `public` atuais.
 - `organization_id` delimita o tenant; `unit_id` delimita o acesso operacional.
 - Owner acessa todas as unidades da própria organização. Manager/operator dependem de vínculo em
   `membership_units`.
@@ -19,6 +19,8 @@
 - Catálogo administrativo mutável não é cardápio publicado. Leitura pública do cardápio ocorre
   exclusivamente via `get_public_menu` (snapshot imutável + overlay de disponibilidade); `anon` não
   lê nenhuma tabela diretamente.
+- Checkout e tracking públicos passam exclusivamente por `create_public_order` e `get_public_order`;
+  respostas anônimas não expõem PII, endereço, IDs internos ou idempotência.
 
 ## 2. RLS por tabela
 
@@ -39,6 +41,9 @@
 | `menu_version_categories` | ON | `menu_version_categories_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
 | `menu_version_products` | ON | `menu_version_products_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
 | `menu_publications` | ON | `menu_publications_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
+| `orders` | ON | `orders_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
+| `order_items` | ON | `order_items_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
+| `order_events` | ON | `order_events_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
 
 Não há policies `INSERT` ou `DELETE` para clientes. Fora do `UPDATE(full_name)` de `profiles`, não há
 policy/grant de update direto para `authenticated`.
@@ -55,7 +60,7 @@ policy/grant de update direto para `authenticated`.
 Todos são `stable security definer set search_path=''`. O uso de `security definer` permite
 consultar tabelas protegidas sem recursão de policy; o resultado continua derivado de `auth.uid()`.
 
-## 4. Matriz RBAC do catálogo e publicação
+## 4. Matriz RBAC de catálogo, publicação e pedidos
 
 Toda célula positiva abaixo ainda exige acesso à unidade correta. Não existe autorização global por
 role sem escopo.
@@ -70,6 +75,10 @@ role sem escopo.
 | Alterar `product.is_available` | Sim | Sim | Sim |
 | Publicar cardápio (`publish_unit_menu`) | Sim | Sim | Não |
 | Ler publicação/histórico (`get_unit_menu_publication_admin`) | Sim | Sim | Sim |
+| Ler Central e detalhe de pedidos | Sim | Sim | Sim |
+| Alterar status do pedido | Sim | Sim | Sim |
+| Registrar `pending → paid` | Sim | Sim | Sim |
+| Registrar `paid → refunded` | Sim | Sim | Não |
 
 `is_active` é estrutural; `is_available` é operacional. Desativar categoria não altera produtos e
 desativar produto não altera disponibilidade. Operator não acessa nenhuma RPC estrutural nem a
@@ -90,6 +99,8 @@ publicação.
   de nenhuma policy. O resultado é sempre zero linhas, não publicação pública. As tabelas de menu
   não concedem `SELECT` ao `anon` de forma alguma.
 - `get_public_menu(text)` é a única leitura anônima efetiva do cardápio.
+- As três tabelas de pedidos concedem `SELECT` somente a `authenticated`, filtrado por
+  `can_access_unit`; `anon` não possui acesso direto e nenhum papel cliente recebe I/U/D.
 
 ### 5.2 Funções
 
@@ -100,6 +111,10 @@ RPCs de catálogo, publicação e leitura administrativa têm `EXECUTE` apenas p
 - `get_unit_menu_publication_admin(uuid)`.
 
 `get_public_menu(text)` tem `EXECUTE` para `anon` e `authenticated`.
+
+`create_public_order(text,uuid,jsonb)` e `get_public_order(text)` também têm `EXECUTE` para `anon` e
+`authenticated`. As quatro RPCs administrativas de pedidos têm `EXECUTE` apenas para
+`authenticated`; helpers internos de pedidos são revogados de todos os papéis cliente.
 
 `PUBLIC` e `anon` foram explicitamente revogados das funções administrativas. O helper
 `_validate_catalog_price(text)` não possui `EXECUTE` para `PUBLIC`, `anon` ou `authenticated`.
@@ -144,6 +159,20 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 - O slug público é opaco (24 hex) e estável; nunca expõe `unit_id`, `menu_version_id` ou IDs do
   catálogo.
 
+### 6.5 Pedidos
+
+- `create_public_order` deriva tenant/unidade/versão pelo slug, rejeita campos autoritativos do
+  cliente e recalcula itens, taxas e totais no PostgreSQL.
+- Idempotência é única por `(unit_id,idempotency_key)` e serializada; replay com hash diferente é
+  rejeitado, e o token público de tracking tem 32 hex gerados no servidor.
+- `get_public_order` devolve somente o contrato público minimizado. PII completa fica disponível
+  apenas no detalhe administrativo protegido por `can_access_unit`.
+- Lista, detalhe e transições administrativas validam sessão e acesso à unidade. Refund exige
+  `can_manage_unit`; operator não possui esse privilégio.
+- `order_events` é append-only por ACL: nenhum papel cliente recebe insert/update/delete.
+- Realtime publica somente `id`, `unit_id`, `updated_at`, `status` e `payment_status`; o cliente
+  invalida/refaz a fonte autoritativa em vez de confiar no payload websocket.
+
 ## 7. Isolamento e integridade anti-IDOR
 
 | Vetor | Defesa |
@@ -163,6 +192,13 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 | Corrida calcula mesma ordem | advisory lock por unidade/categoria e ordem server-side |
 | Publicações concorrentes | locks `pedon:menu:publish:<unit>` serializam e preservam o slug |
 | Escrita direta no snapshot | sem policy/grant: bloqueado; imutabilidade é estrutural |
+| Anon consulta tabelas de pedidos | sem grant de SELECT: `42501` |
+| Checkout envia preço/total/nome | payload estrito + snapshot e cálculo server-authoritative: `PED37` |
+| Checkout reutiliza chave com payload diferente | hash canônico + unique/lock por unidade: `PED42` |
+| Tracking tenta enumerar pedido | token opaco de 32 hex; desconhecido retorna `found=false` |
+| Staff tenta pedido de outra unidade | `can_access_unit` nas RPCs e RLS filtra leitura direta |
+| Operator tenta refund | `can_manage_unit` obrigatório: `PED11` |
+| Websocket contém PII | publicação Realtime limitada às cinco colunas de invalidação |
 
 As FKs compostas são defesa de integridade adicional, não substituto da autorização. As RPCs
 verificam autorização antes da mutação e restringem updates por tenant/unidade já resolvidos.
@@ -182,6 +218,16 @@ Catálogo reutiliza:
 | `PED30` | flag booleana inválida |
 | `PED31` | menu vazio não pode ser publicado |
 | `PED32` | conflito raro de slug público |
+| `PED33` | menu público não encontrado |
+| `PED34` | unidade indisponível para pedidos |
+| `PED35`/`PED36` | menu ou configuração mudou durante o checkout |
+| `PED37`/`PED38` | carrinho inválido ou item indisponível |
+| `PED39`/`PED40` | modalidade ou pagamento indisponível |
+| `PED41`/`PED42` | mínimo não atingido ou conflito de idempotência |
+| `PED43`/`PED44`/`PED45` | cliente, endereço ou troco inválido |
+| `PED46` | pedido não encontrado |
+| `PED47`/`PED48` | transição inválida de pedido ou pagamento |
+| `PED49`/`PED50` | colisão de tracking ou overflow monetário/numérico |
 
 Configuração operacional usa `PED10..PED18`; RPCs históricas de unidade usam `PED00..PED05`.
 `get_public_menu` nunca lança erro (retorna `found=false`). Detalhes completos estão em
@@ -189,7 +235,7 @@ Configuração operacional usa `PED10..PED18`; RPCs históricas de unidade usam 
 
 ## 9. Testes executados
 
-Os cinco scripts em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
+Os seis scripts em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
 organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup automático:
 
 | Script | Resultado oficial | Cobertura principal |
@@ -199,13 +245,15 @@ organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup au
 | `unit_operational_config_integrity.test.mjs` | 80/80 | grants, RBAC, validações, aceite e atomicidade |
 | `catalog_integrity.test.mjs` | 123/123 | RLS/ACL, matriz RBAC, IDOR, FKs, flags, preço e locks |
 | `menu_publication_integrity.test.mjs` | 121/121 | publicação, imutabilidade, slug, overlay, API pública e isolamento |
+| `orders_integrity.test.mjs` | 318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das quatro tabelas, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
 slug estável/opaco e único, republicação preservando histórico, API pública sem sessão,
 disponibilidade em overlay (inclusive fonte deletada), unidade inativa, isolamento entre
-organizações, publicações concorrentes e ausência de vazamento entre unidades. `supabase db lint
---linked` passou sem erros.
+organizações, publicações concorrentes e ausência de vazamento entre unidades. Pedidos validam
+payload estrito, dinheiro exato, replay durável, tracking minimizado, máquinas de estado,
+autorização de refund e publicação Realtime sem PII. `supabase db lint --linked` passou sem erros.
 
 Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
 `membership_units` durante um cenário e é frágil se outra suíte inserir vínculos em paralelo.
@@ -217,7 +265,7 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial dos cinco testes DB e
+- Alterações de autorização exigem execução sequencial dos seis testes DB e
   `supabase db lint --linked`.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.

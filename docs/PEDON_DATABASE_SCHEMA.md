@@ -1,7 +1,7 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On após o Prompt 07.
-> Fonte autoritativa: as oito migrations versionadas em `supabase/migrations/`, aplicadas no
+> Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On após o Prompt 08.
+> Fonte autoritativa: as dez migrations versionadas em `supabase/migrations/`, aplicadas no
 > projeto `ped-on` (ref `zmuxkztnilnzjyyojbbr`).
 
 ## 1. Estado das migrations
@@ -16,16 +16,18 @@
 | 6 | `20260810122401_catalog_base.sql` | categorias, produtos e gestão administrativa do catálogo |
 | 7 | `20260810135051_menu_versioning_publication.sql` | versionamento imutável, publicação e cardápio público |
 | 8 | `20260810141000_menu_publication_slug_fix.sql` | correção do slug público (`gen_random_uuid` no lugar de `gen_random_bytes`) |
+| 9 | `20260810144145_orders_checkout.sql` | checkout público idempotente, snapshots, tracking, lifecycle e Realtime |
+| 10 | `20260810162508_orders_checkout_lint_hardening.sql` | hardening sem mudança de contrato da RPC `create_public_order` |
 
 Checkpoint oficial de 2026-08-10: `supabase migration list` apresenta Local == Remote para as
-oito versões; `supabase db lint --linked` retorna `No schema errors found`.
+dez versões; `supabase db lint --linked` retorna `No schema errors found`.
 
 ## 2. Convenções
 
 - PostgreSQL 17 no Supabase; objetos de negócio no schema `public`.
 - Identificadores em `snake_case`; UUIDs gerados por `gen_random_uuid()`.
 - `organization_id` é o tenant e `unit_id` é o escopo operacional.
-- Todas as quatorze tabelas `public` possuem RLS habilitado.
+- Todas as dezessete tabelas `public` possuem RLS habilitado.
 - Dinheiro usa `numeric(12,2)`, nunca `float`/`double`; RPCs devolvem valores monetários como
   string decimal.
 - Mutações administrativas e de domínio são server-authoritative via RPC; grants diretos são
@@ -51,6 +53,9 @@ oito versões; `supabase db lint --linked` retorna `No schema errors found`.
 | `menu_version_categories` | categorias congeladas de uma versão |
 | `menu_version_products` | produtos congelados de uma versão |
 | `menu_publications` | ponte atual: slug público estável → versão CURRENT |
+| `orders` | pedido, snapshots operacionais/comerciais, PII mínima e estados independentes |
+| `order_items` | snapshot imutável dos itens e preços no checkout |
+| `order_events` | auditoria append-only de criação, status e pagamento |
 
 ## 4. Identidade, tenant e RBAC
 
@@ -393,7 +398,106 @@ IDs e preços vêm exclusivamente do snapshot; `is_available` é overlay dinâmi
 `PED31`/`PED32` são exclusivos da publicação; `get_public_menu` não lança erros (retorna
 `found=false`).
 
-## 8. Funções e triggers atuais
+## 8. Pedidos e checkout (Prompt 08)
+
+### 8.1 `public.orders`
+
+| Grupo | Colunas e regras principais |
+|---|---|
+| Escopo | `id`; `organization_id`; `unit_id`; FKs compostas para unidade e versão, todas com `ON DELETE RESTRICT` |
+| Snapshot do menu | `menu_version_id`, `menu_version_number > 0` |
+| Identidade | `order_number bigint > 0` único por unidade; `idempotency_key uuid` único por unidade; `request_hash` SHA-256; `tracking_token` globalmente único, 32 hex |
+| Estados | `status`: `new`, `confirmed`, `preparing`, `ready`, `out_for_delivery`, `completed`, `cancelled`; `payment_status`: `pending`, `paid`, `refunded` |
+| Checkout | `service_mode` (`pickup`,`delivery`); `payment_method` (`cash`,`pix`,`credit_card`,`debit_card`) |
+| Cliente | `customer_name` trimado de 2..120; `customer_phone` com 10/11 dígitos; sem CPF/e-mail/conta |
+| Entrega | endereço estruturado em colunas de rua, número, complemento, bairro, cidade, UF, CEP e referência; todos nulos em pickup |
+| Dinheiro | `delivery_fee`, `subtotal`, `total`, `cash_change_for` em `numeric(12,2)`; `total = subtotal + delivery_fee` |
+| Operação | `estimated_minutes`; `operation_revision` preserva a revisão aceita no checkout |
+| Auditoria temporal | `created_at`, `updated_at`, timestamps de status/pagamento e terminais coerentes por constraints |
+
+Índices cobrem leitura por unidade/data e unidade/status/data. O trigger
+`set_orders_updated_at` usa `clock_timestamp()`. `out_for_delivery` só é válido para delivery;
+`completed_at`/`cancelled_at` e `paid_at`/`refunded_at` são consistentes com seus estados.
+
+### 8.2 `public.order_items`
+
+Cada linha carrega `organization_id`, `unit_id`, `order_id`, `menu_version_id`, `menu_item_id`,
+`product_name`, `unit_price numeric(12,2)`, `quantity 1..99`, `line_total numeric(12,2)`, nota
+opcional segura e `created_at`. FKs compostas garantem que pedido, versão e item pertençam ao mesmo
+tenant/unidade; `(order_id,menu_item_id)` é único e `line_total = unit_price * quantity`.
+
+Nome e preço são copiados de `menu_version_products`, não do payload nem do catálogo mutável.
+
+### 8.3 `public.order_events`
+
+Eventos carregam escopo, pedido, `event_type`, `from_value`, `to_value`, nota, `actor_type`,
+`actor_user_id` e `created_at`. Tipos permitidos: `created`, `status_changed`, `payment_changed`;
+atores: `customer`, `staff`, `system`. O evento inicial é `NULL → new` pelo cliente; mudanças de
+estado são geradas pelas RPCs com ator staff. Nenhum cliente recebe escrita direta.
+
+### 8.4 Checkout público e idempotência
+
+`create_public_order(text,uuid,jsonb)` é executável por `anon`/`authenticated` e:
+
+- aceita somente versão/revisão, modalidade, pagamento, cliente, endereço, itens, notas e troco;
+- rejeita preço, nome ou total autoritativo enviado pelo navegador;
+- valida unidade ativa, aceite, horário, modalidade, pagamento, versão publicada, revisão
+  operacional, disponibilidade, mínimo, endereço e troco;
+- calcula linhas, subtotal, taxa e total em `numeric(12,2)` e grava pedido, itens e evento inicial
+  atomicamente;
+- serializa `(unit_id,idempotency_key)` por advisory lock e guarda SHA-256 do payload canônico;
+  replay igual retorna a criação original, payload diferente gera `PED42`;
+- serializa o número sequencial por unidade; token de tracking tem retry limitado em colisão.
+
+`get_public_order(text)` retorna `found=false` para token inválido/desconhecido. Quando encontrado,
+expõe nomes da organização/unidade, número, estados, modalidade, método, totais, ETA, timestamps e
+itens; não expõe PII, endereço, token, IDs internos, versão, hash ou chave de idempotência.
+
+### 8.5 Central de Pedidos e máquinas de estado
+
+| RPC | Autorização | Contrato |
+|---|---|---|
+| `get_unit_orders_admin(uuid,text,integer)` | `can_access_unit` | lista filtrada, contagem e limite 1..200 |
+| `get_order_admin(uuid)` | `can_access_unit` | detalhe com PII, itens e eventos; sem hash/chave idempotente |
+| `set_order_status(uuid,text,text)` | `can_access_unit` | lock da linha, transição, timestamps e evento |
+| `set_order_payment_status(uuid,text)` | `can_access_unit`; refund requer `can_manage_unit` | lock da linha, transição e evento |
+
+Status: `new → confirmed → preparing → ready`; pickup segue para `completed`; delivery segue para
+`out_for_delivery → completed`. Cancelamento é permitido antes de completed. `completed` e
+`cancelled` são terminais. Pagamento evolui separadamente `pending → paid → refunded`; cancelar não
+altera pagamento e refund é somente registro operacional externo.
+
+### 8.6 Realtime e erros
+
+`orders` integra `supabase_realtime` somente com `id`, `unit_id`, `updated_at`, `status` e
+`payment_status`; itens, eventos, PII e idempotência não são publicados. O frontend usa o evento
+apenas para invalidar/refazer queries.
+
+| SQLSTATE | Mensagem |
+|---|---|
+| `PED33` | `MENU_NOT_FOUND` |
+| `PED34` | `ORDERS_UNAVAILABLE` |
+| `PED35` | `MENU_CHANGED` |
+| `PED36` | `CHECKOUT_CHANGED` |
+| `PED37` | `INVALID_CART` |
+| `PED38` | `ITEM_UNAVAILABLE` |
+| `PED39` | `INVALID_SERVICE_MODE` |
+| `PED40` | `PAYMENT_METHOD_UNAVAILABLE` |
+| `PED41` | `MINIMUM_ORDER_NOT_MET` |
+| `PED42` | `IDEMPOTENCY_CONFLICT` |
+| `PED43` | `INVALID_CUSTOMER` |
+| `PED44` | `INVALID_DELIVERY_ADDRESS` |
+| `PED45` | `INVALID_CASH_CHANGE` |
+| `PED46` | `ORDER_NOT_FOUND` |
+| `PED47` | `INVALID_ORDER_TRANSITION` |
+| `PED48` | `INVALID_PAYMENT_TRANSITION` |
+| `PED49` | `TRACKING_TOKEN_CONFLICT` |
+| `PED50` | `ORDER_AMOUNT_OVERFLOW` |
+
+A migration de hardening substitui `create_public_order` para remover uma declaração redundante
+apontada pelo lint e reaplica os grants, sem alterar assinatura ou comportamento.
+
+## 9. Funções e triggers atuais
 
 | Objeto | Contrato |
 |---|---|
@@ -414,6 +518,9 @@ IDs e preços vêm exclusivamente do snapshot; `is_available` é overlay dinâmi
 | `publish_unit_menu(uuid)` | publicação imutável do cardápio (owner/manager) |
 | `get_unit_menu_publication_admin(uuid)` | leitura administrativa da publicação e histórico |
 | `get_public_menu(text)` | cardápio público anônimo via slug (anon) |
+| helpers `_is_safe_plain_text`, `_is_unit_open_at` e serializadores `_order_*_json` | validação e respostas minimizadas de pedidos |
+| `create_public_order(text,uuid,jsonb)` / `get_public_order(text)` | checkout idempotente e tracking público |
+| quatro RPCs administrativas da Seção 8.5 | lista, detalhe e transições server-authoritative |
 
 Todas as funções desta tabela, exceto `set_updated_at()`, são `security definer` com
 `search_path=''`; `get_my_admin_context`, helpers de acesso e getters são `stable` quando aplicável,
@@ -432,7 +539,7 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `PED04` | `LAST_ACTIVE_UNIT` |
 | `PED05` | `UNIT_NAME_TOO_LONG` |
 
-## 9. RLS e ACLs
+## 10. RLS e ACLs
 
 | Tabela | SELECT autenticado | Escrita direta |
 |---|---|---|
@@ -448,6 +555,9 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `menu_version_categories` | policy `can_access_unit(unit_id)` | sem grant/policy |
 | `menu_version_products` | policy `can_access_unit(unit_id)` | sem grant/policy |
 | `menu_publications` | policy `can_access_unit(unit_id)` | sem grant/policy |
+| `orders` | policy `can_access_unit(unit_id)` | I/U/D revogados; escrita por RPC |
+| `order_items` | policy `can_access_unit(unit_id)` | I/U/D revogados; escrita por RPC |
+| `order_events` | policy `can_access_unit(unit_id)` | I/U/D revogados; append-only por RPC |
 
 Nas tabelas do catálogo e do cardápio publicado, `SELECT` foi concedido a `authenticated` (e a
 `anon` somente nas duas tabelas do catálogo mutável), mas só existe policy `TO authenticated`.
@@ -455,24 +565,26 @@ Portanto `anon` pode emitir a consulta e recebe zero linhas; não existe acesso 
 direto. As RPCs do catálogo, a publicação e a leitura administrativa tiveram `EXECUTE`
 explicitamente revogado de `PUBLIC` e `anon` e concedido somente a `authenticated`; o helper
 `_validate_catalog_price` também é revogado de `authenticated`. `get_public_menu` é a única
-superfície pública de leitura do cardápio.
+superfície pública de leitura do cardápio. As tabelas de pedidos não possuem grants para `anon`;
+checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
-## 10. Produção e validação
+## 11. Produção e validação
 
-Checkpoint do Prompt 07:
+Checkpoint do Prompt 08:
 
-- migrations `20260810135051_menu_versioning_publication.sql` e
-  `20260810141000_menu_publication_slug_fix.sql` aplicadas oficialmente; oito migrations Local ==
-  Remote;
+- migrations `20260810144145_orders_checkout.sql` e
+  `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente; dez migrations Local
+  == Remote;
 - `supabase db lint --linked`: sem erros;
-- banco: publicação 121/121, catálogo 123/123, operacional 80/80, RBAC 31/31 e RLS 22/22 PASS;
+- banco: pedidos 318/318, publicação 121/121, catálogo 123/123, operacional 80/80, RBAC 31/31 e RLS
+  22/22 PASS;
 - testes cobrem grants, RLS, direct writes, cross-unit/cross-tenant, FKs compostas, preço decimal,
   flags independentes, atomicidade e concorrência de `sort_order`, menu vazio, snapshot imutável,
-  slug estável/opaco, overlay de disponibilidade, isolamento e publicações concorrentes;
+  slug estável/opaco, overlay de disponibilidade, checkout estrito, snapshots de pedidos,
+  idempotência/replay, máquinas de estado, PII minimizada, Realtime e concorrência;
 - cleanup automático remove organizações e usuários sintéticos, sem dados residuais esperados.
 
-## 11. Ainda não implementado
+## 12. Ainda não implementado
 
-O catálogo atual é administrativo e mutável; o cardápio publicado é um snapshot imutável com
-leitura anônima via RPC. Imagens, carrinho, pedidos e snapshots comerciais dos pedidos ainda não
-fazem parte deste schema.
+Imagens, clientes persistentes, CPF, fidelidade, pontos, recompensas, vouchers, gateway, pagamento
+online e logística avançada ainda não fazem parte deste schema.

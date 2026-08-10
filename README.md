@@ -6,7 +6,7 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 2C — Cardápio: versionamento e publicação imutável. O Prompt 07 está concluído com:
+Fase 3A — Pedidos: checkout público e Central de Pedidos. O Prompt 08 está concluído com:
 
 - Supabase Auth, identidade, onboarding e tenant;
 - RBAC `owner`/`manager`/`operator` com acesso por unidade;
@@ -17,11 +17,15 @@ Fase 2C — Cardápio: versionamento e publicação imutável. O Prompt 07 está
 - cardápio público anônimo via slug opaco a partir de snapshot comercial imutável, com overlay
   dinâmico de disponibilidade;
 - publicação `owner`/`manager` com histórico de versões;
+- carrinho público local vinculado à versão publicada, sem persistência de PII;
+- checkout guest idempotente com preços, taxas e totais calculados no PostgreSQL;
+- tracking público por token opaco, sem PII ou IDs internos;
+- Central de Pedidos por unidade com lifecycle, pagamento operacional separado e auditoria;
+- Realtime usado somente para invalidar e refazer queries administrativas;
 - PWA em Cloudflare Pages e CI no GitHub Actions.
 
-O catálogo atual é mutável e autenticado; o cardápio público é um snapshot imutável lido
-exclusivamente via `get_public_menu`. Imagens, carrinho, checkout e pedidos ainda não estão
-implementados (Prompt 08).
+O catálogo administrativo continua mutável; publicação e pedido preservam snapshots comerciais
+imutáveis. Não há gateway, pagamento online, roteirização, CPF ou fidelidade nesta etapa.
 
 ## Objetivo do MVP
 
@@ -49,11 +53,11 @@ Essa sequência é o roadmap do MVP, não uma declaração de que todos os módu
 ped-on/
 ├── apps/
 │   └── web/                       # PWA React/Vite
-│       ├── e2e/                   # E2E Auth, configuração e catálogo
+│       ├── e2e/                   # E2E Auth, catálogo, cardápio e pedidos
 │       └── src/
 │           ├── app/               # Router e providers
 │           ├── components/        # Shell administrativo
-│           ├── lib/               # Auth, admin, configuração e catálogo
+│           ├── lib/               # Auth, admin, catálogo, carrinho e pedidos
 │           └── pages/             # Páginas e testes de componente
 ├── packages/
 │   ├── config/                    # Configuração compartilhada
@@ -62,8 +66,8 @@ ped-on/
 │   ├── test-utils/                # Utilitários de teste
 │   └── ui/                        # Componentes compartilhados
 ├── supabase/
-│   ├── migrations/                # Oito migrations versionadas até Prompt 07
-│   ├── tests/                     # Cinco suítes de integração DB
+│   ├── migrations/                # Dez migrations versionadas até Prompt 08
+│   ├── tests/                     # Seis suítes de integração DB
 │   ├── functions/                 # Espaço para Edge Functions
 │   └── seed.example.sql           # Seed de exemplo, sem dados reais
 ├── docs/                          # Continuidade, schema, RLS e operação
@@ -75,22 +79,27 @@ ped-on/
 
 ## Rotas atuais
 
-| Rota                 | Função                                      |
-| -------------------- | ------------------------------------------- |
-| `/`                  | landing técnica                             |
-| `/login`             | autenticação                                |
-| `/cadastro`          | criação de conta                            |
-| `/onboarding`        | criação transacional da organização/unidade |
-| `/app`               | área administrativa e seleção de unidade    |
-| `/app/catalogo`      | categorias e produtos por unidade           |
-| `/app/configuracoes` | configuração operacional da unidade         |
-| `/app/cardapio`      | publicação e cardápio público               |
-| `/menu/:slug`        | cardápio público do cliente (sem sessão)    |
+| Rota                     | Função                                      |
+| ------------------------ | ------------------------------------------- |
+| `/`                      | landing técnica                             |
+| `/login`                 | autenticação                                |
+| `/cadastro`              | criação de conta                            |
+| `/onboarding`            | criação transacional da organização/unidade |
+| `/app`                   | área administrativa e seleção de unidade    |
+| `/app/catalogo`          | categorias e produtos por unidade           |
+| `/app/configuracoes`     | configuração operacional da unidade         |
+| `/app/cardapio`          | publicação e cardápio público               |
+| `/app/pedidos`           | Central de Pedidos por unidade              |
+| `/menu/:slug`            | cardápio público do cliente (sem sessão)    |
+| `/menu/:slug/carrinho`   | carrinho público local                      |
+| `/menu/:slug/checkout`   | checkout guest network-only                 |
+| `/pedido/:trackingToken` | acompanhamento público do pedido            |
 
 `/app/catalogo` permite leitura a owner, manager e operator autorizados. Owner/manager gerenciam a
 estrutura; operator altera somente a disponibilidade de produtos. `/app/configuracoes` é restrita a
 owner/manager autorizados. `/app/cardapio` exige owner/manager para publicar; `/menu/:slug` é
-público e lê apenas `get_public_menu`.
+público e lê apenas `get_public_menu`. `/app/pedidos` permite leitura e transição de status aos três
+papéis autorizados; reembolso operacional exige owner/manager.
 
 ## Requisitos locais
 
@@ -123,7 +132,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O projeto oficial possui oito migrations Local == Remote:
+O projeto oficial possui dez migrations Local == Remote:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -133,6 +142,8 @@ O projeto oficial possui oito migrations Local == Remote:
 6. `20260810122401_catalog_base.sql`
 7. `20260810135051_menu_versioning_publication.sql`
 8. `20260810141000_menu_publication_slug_fix.sql`
+9. `20260810144145_orders_checkout.sql`
+10. `20260810162508_orders_checkout_lint_hardening.sql`
 
 Fluxo linked:
 
@@ -157,18 +168,19 @@ node supabase/tests/rbac_units_integrity.test.mjs
 node supabase/tests/unit_operational_config_integrity.test.mjs
 node supabase/tests/catalog_integrity.test.mjs
 node supabase/tests/menu_publication_integrity.test.mjs
+node supabase/tests/orders_integrity.test.mjs
 ```
 
 Não rode em paralelo: a suíte RBAC herdada possui uma contagem global frágil durante um cenário.
-Resultados oficiais: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123 e publicação
-121/121. As suítes criam fixtures descartáveis e fazem cleanup automático.
+Resultados oficiais: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, publicação
+121/121 e pedidos 318/318. As suítes criam fixtures descartáveis e fazem cleanup automático.
 
 ## Qualidade validada
 
-- frontend unit/component: 55/55;
-- E2E: 92/92 em 360/768/1024/1440, incluindo cardápio/publicação 36/36;
+- frontend unit/component: 87/87;
+- E2E: 104/104 em 360/768/1024/1440;
 - format, lint, typecheck, build, Gitleaks v8.30.1 e db lint: PASS;
-- GitHub CI run `31407263950`: quality + E2E `SUCCESS`;
+- GitHub CI run `31429728244`, SHA `7fe07df`: quality + E2E `SUCCESS`;
 - produção: `https://ped-on.pages.dev`.
 
 ## Segurança e secrets
@@ -180,6 +192,8 @@ Resultados oficiais: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123
 - `anon` recebe zero linhas das tabelas mutáveis do catálogo e não executa suas RPCs; o cardápio
   público é lido somente via `get_public_menu`.
 - O PWA não adiciona cache de API, dados privados ou tokens.
+- Tabelas de pedidos têm RLS por unidade e nenhuma escrita direta; checkout/tracking públicos usam
+  RPCs com respostas minimizadas e token de alta entropia.
 
 ## Documentação
 
@@ -190,5 +204,4 @@ Resultados oficiais: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123
 - `docs/PEDON_RLS_SECURITY.md` — RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md` — operação local, Supabase, CI e deploy
 
-Próximo passo oficial: Prompt 08 — Carrinho, checkout guest, pedido idempotente e Central de
-Pedidos.
+Próximo passo oficial: Prompt 09 — modelagem de clientes e fidelidade. Ainda não iniciado.
