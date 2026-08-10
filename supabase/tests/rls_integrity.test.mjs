@@ -1,14 +1,24 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 const { Client } = pg;
 
-if (!process.env.SUPABASE_DB_PASSWORD) {
-  console.error('SUPABASE_DB_PASSWORD é obrigatório (variável de ambiente).');
+let dbPassword = process.env.SUPABASE_DB_PASSWORD;
+if (!dbPassword) {
+  const envText = await readFile(fileURLToPath(new URL('../../.env', import.meta.url)), 'utf8');
+  dbPassword = envText
+    .split(/\r?\n/)
+    .find((line) => line.startsWith('SUPABASE_DB_PASSWORD='))
+    ?.slice('SUPABASE_DB_PASSWORD='.length);
+}
+if (!dbPassword) {
+  console.error('SUPABASE_DB_PASSWORD não encontrada em ambiente nem em .env.');
   process.exit(2);
 }
 
-const password = encodeURIComponent(process.env.SUPABASE_DB_PASSWORD);
+const password = encodeURIComponent(dbPassword);
 const DIRECT_URL = `postgresql://postgres:${password}@db.zmuxkztnilnzjyyojbbr.supabase.co:5432/postgres`;
 
 let passed = 0;
