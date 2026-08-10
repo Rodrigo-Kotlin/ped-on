@@ -271,6 +271,21 @@ dashboard e dispare um novo deploy (push ou redeploy). Valores também definidos
   `apps/web/e2e/auth.spec.ts` cobre redirects sem sessão e validação de formulário (não depende
   de credenciais).
 
+### 17.6 Homologação do fluxo real de e-mail (2026-08-10)
+
+- **PRODUCTION AUTH EMAIL HOMOLOGATION: PASS** — fluxo real validado em produção:
+  signup único (1 chamada de e-mail; 0 resends) → e-mail do **Supabase built-in mailer** →
+  clique no link de confirmação → redirect para `https://ped-on.pages.dev` (sem `localhost`) →
+  usuário confirmado no Auth (`email_confirmed_at`) → profile criado por trigger →
+  login → onboarding (org `PEDON HOMOLOGACAO EMAIL`, `role=owner`, `Unidade principal`,
+  `onboarding_status=completed`) → session restore → logout → rota protegida `/app` → `/login` →
+  relogin sem repetir onboarding → validação de banco (UUIDs exatos, sem duplicados,
+  sem cross-tenant) → cleanup (org via cascata + profile + usuário do Auth).
+- **AUTH SITE_URL INCIDENT: RESOLVED** — anteriormente o link de confirmação redirecionava para
+  `localhost`; configuração corrigida para `https://ped-on.pages.dev` e validada na homologação.
+- **Rate limit de e-mail**: limitação observada do mailer padrão do Supabase durante
+  desenvolvimento — não é bug do Ped-On.
+
 ## 18. Política de migrations (refinada)
 
 Toda alteração de banco deverá:
