@@ -381,6 +381,75 @@
   nesta etapa. A leitura dos próprios vínculos (e do owner) é liberada por RLS para fundação de
   uma futura UI de gestão. A UI de gestão é pendência registrada.
 
+## Decisões Aprovadas (Prompt 06 — Catálogo base administrativo)
+
+### DEC-057 — O catálogo mutável pertence à unidade
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** categorias e produtos do catálogo administrativo são escopados por
+  `organization_id` e `unit_id`; uma categoria ou produto nunca pode atravessar unidade ou tenant.
+- **Justificativa:** preço, disponibilidade e composição comercial podem variar entre unidades e
+  devem respeitar o mesmo isolamento multiempresa do restante do domínio.
+
+### DEC-058 — O produto inicial é simples
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o catálogo base representa produto simples com categoria, nome, descrição opcional,
+  preço, ordenação e flags de estado, sem adicionais, variações ou combinações.
+- **Justificativa:** entrega o menor modelo consistente para gestão administrativa antes da evolução
+  do domínio de cardápio.
+
+### DEC-059 — Estado estrutural e disponibilidade operacional são distintos
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `is_active` representa o estado estrutural de categorias e produtos;
+  `is_available` representa somente a disponibilidade operacional do produto. Desativar uma
+  categoria não altera em cascata nenhuma flag dos produtos, e alterar `is_active` do produto não
+  altera `is_available`.
+- **Justificativa:** suspensão operacional temporária não deve modificar a estrutura do catálogo, e
+  a desativação de uma categoria deve ser reversível sem perda ou mutação implícita dos produtos.
+
+### DEC-060 — Desativação lógica sem `DELETE` físico exposto
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** categorias e produtos são retirados de uso por flags; não existe RPC de exclusão
+  física e o cliente autenticado não recebe `DELETE` direto nas tabelas do catálogo.
+- **Justificativa:** preservar dados e evitar remoção acidental enquanto ainda não existe histórico
+  imutável de publicação.
+
+### DEC-061 — Preço do catálogo usa decimal exato e contrato textual no frontend
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `catalog_products.price` usa `numeric(12,2)` no PostgreSQL e atravessa RPC/frontend
+  como string decimal, sem `float` ou notação exponencial.
+- **Justificativa:** preservar centavos e zeros significativos no round-trip sem introduzir erro de
+  ponto flutuante.
+
+### DEC-062 — Estrutura por owner/manager; disponibilidade também por operator
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** owner e manager autorizados na unidade podem criar e editar categorias/produtos e
+  alterar `is_active`; operator autorizado pode ler o catálogo e alterar apenas
+  `is_available` dos produtos. Owner e manager também podem alterar disponibilidade.
+- **Justificativa:** separar governança estrutural do catálogo da ação operacional cotidiana de
+  marcar item disponível ou indisponível.
+
+### DEC-063 — Catálogo administrativo mutável não é publicação pública
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o catálogo do Prompt 06 permanece mutável e administrativo; não há leitura anônima
+  efetiva, cardápio público ou versão publicada nesta etapa.
+- **Justificativa:** a publicação exige snapshots imutáveis e contrato público próprios, previstos
+  para a etapa seguinte, sem expor diretamente as tabelas mutáveis.
+
+### DEC-064 — Imagens ficam fora do Prompt 06
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** categorias e produtos do catálogo base não possuem upload, storage ou referência de
+  imagem nesta etapa.
+- **Justificativa:** imagens exigem decisões adicionais de armazenamento, transformação, segurança e
+  ciclo de vida que não são necessárias para validar o catálogo simples.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

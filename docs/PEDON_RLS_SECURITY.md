@@ -1,166 +1,195 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança em Row Level Security (RLS) do Ped-On (Supabase/PostgreSQL).
-> Alinhado aos invariantes do `PEDON_PROJECT_BASELINE.md` (RLS nega por padrão;
-> nenhum tenant acessa dados de outro; frontend nunca usa `service_role`).
+> Modelo de segurança Supabase/PostgreSQL após o Prompt 06. O frontend usa apenas a publishable
+> key; `service_role` nunca é exposta. RLS nega por padrão e toda autorização de catálogo é
+> vinculada à unidade.
 
-## 1. Princípios aplicados
+## 1. Princípios
 
-- RLS habilitado em todas as tabelas de negócio (`public.*`).
-- **Negar por padrão**: nenhuma policy de escrita ampla existe; escrita ocorre exclusivamente
-  via funções `security definer`.
-- Sessão autenticada usa o role `authenticated` (claims JWT em `request.jwt.claims`).
-- Acesso a dados de tenant depende de associação em `organization_members`.
-- Acesso a **unidades** é por autorização efetiva: owner acessa todas as unidades do tenant;
-  manager/operator acessam somente unidades com vínculo explícito em `membership_units`.
-- O cliente frontend usa somente a **publishable key** (`anon`/`authenticated`); `service_role`
-  jamais é exposta ao navegador.
-- Funções críticas são `security definer` com `set search_path = ''` (evita busca de schema).
+- RLS está habilitado nas dez tabelas `public` atuais.
+- `organization_id` delimita o tenant; `unit_id` delimita o acesso operacional.
+- Owner acessa todas as unidades da própria organização. Manager/operator dependem de vínculo em
+  `membership_units`.
+- Policies controlam leitura; mutações de tenant, unidade, configuração e catálogo ocorrem por RPCs
+  `security definer`, não por escrita direta.
+- Funções de autorização e RPCs `security definer` usam `set search_path = ''` para impedir
+  hijacking de schema.
+- IDs recebidos do cliente nunca são suficientes: RPCs resolvem organização/unidade no servidor e
+  verificam `can_access_unit` ou `can_manage_unit`.
+- Catálogo administrativo mutável não é cardápio publicado. Não existe leitura pública efetiva no
+  Prompt 06.
 
-## 2. Estado do RLS por tabela
+## 2. RLS por tabela
 
-| Tabela | RLS | Policies |
-|---|---|---|
-| `profiles` | ON | `profiles_select_own`, `profiles_update_own` |
-| `organizations` | ON | `organizations_select_member` |
-| `organization_members` | ON | `organization_members_select_same_org` |
-| `units` | ON | `units_select_authorized` |
-| `membership_units` | ON | `membership_units_select_own_access` |
+| Tabela | RLS | Policy atual | Semântica |
+|---|---|---|---|
+| `profiles` | ON | `profiles_select_own` | `auth.uid() = id` |
+| `profiles` | ON | `profiles_update_own` | próprio perfil; grant somente em `full_name` |
+| `organizations` | ON | `organizations_select_member` | `is_org_member(id)` |
+| `organization_members` | ON | `organization_members_select_same_org` | `is_org_member(organization_id)` |
+| `units` | ON | `units_select_authorized` | owner da org ou `can_access_unit(id)` |
+| `membership_units` | ON | `membership_units_select_own_access` | vínculo próprio ou owner da org |
+| `unit_operational_settings` | ON | nenhuma | acesso exclusivamente via RPC operacional |
+| `unit_business_hours` | ON | nenhuma | acesso exclusivamente via RPC operacional |
+| `unit_payment_methods` | ON | nenhuma | acesso exclusivamente via RPC operacional |
+| `catalog_categories` | ON | `catalog_categories_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
+| `catalog_products` | ON | `catalog_products_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
 
-## 3. Policies — descrição
+Não há policies `INSERT` ou `DELETE` para clientes. Fora do `UPDATE(full_name)` de `profiles`, não há
+policy/grant de update direto para `authenticated`.
 
-### 3.1 `profiles`
+## 3. Helpers de autorização
 
-- `profiles_select_own` — `FOR SELECT TO authenticated USING (auth.uid() = id)`
-  → usuário lê somente o próprio perfil.
-- `profiles_update_own` — `FOR UPDATE TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id)`
-  → usuário atualiza somente o próprio perfil.
-
-Escrita de `email`/`onboarding_status` não é exposta por policy; apenas `full_name` recebe
-`GRANT UPDATE`. O `onboarding_status` é transicionado exclusivamente por `complete_onboarding`.
-
-### 3.2 `organizations` / `organization_members`
-
-- Ambas usam `public.is_org_member(...)`:
-  `SELECT FOR authenticated USING (public.is_org_member(id | organization_id))`.
-- **Cross-tenant negado**: usuário sem vínculo na organização não enxerga a linha.
-
-### 3.3 `units` — autorização efetiva
-
-- `units_select_authorized` — `SELECT FOR authenticated USING (is_org_owner(organization_id) OR can_access_unit(id))`.
-  → **owner**: enxerga todas as unidades da própria organização.
-  → **manager/operator**: enxerga somente unidades com vínculo em `membership_units`.
-- Substitui a policy antiga `units_select_member` (qualquer membro via `is_org_member`).
-
-### 3.4 `membership_units` — vínculo explícito por unidade
-
-- `membership_units_select_own_access` — `SELECT FOR authenticated USING (user_id = auth.uid() OR is_org_owner(organization_id))`.
-  → o usuário lê os próprios vínculos; o owner lê os vínculos da organização (base para gestão futura).
-- Integridade cross-org garantida pela FK composta `(organization_id, unit_id) →
-  units(organization_id, id)` (vínculo com unidade de outra organização é rejeitado).
-- Escrita (INSERT/UPDATE/DELETE) não possui policy: gestão via admin/`security definer`
-  (fundação criada; UI de gestão ainda não exposta).
-
-### 3.5 Sem policies de escrita
-
-Não existem policies `INSERT`/`UPDATE`/`DELETE` em `organizations`,
-`organization_members`, `units` e `membership_units` para `authenticated`. Toda criação de dados
-de tenant ocorre dentro de funções `security definer` (`complete_onboarding` e RPCs de unidade).
-
-## 4. Funções e grants
-
-| Função | Grants |
+| Helper | Resultado |
 |---|---|
-| `is_org_member(uuid)` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
-| `complete_onboarding(text)` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
-| `is_org_owner(uuid)` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
-| `can_access_unit(uuid)` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
-| `get_my_admin_context()` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
-| `create_unit(text)` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
-| `update_unit(uuid, text)` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
-| `set_unit_active(uuid, boolean)` | `EXECUTE` apenas para `authenticated` (revogado de `public`) |
+| `is_org_member(organization_id)` | usuário atual pertence à organização |
+| `is_org_owner(organization_id)` | usuário atual é owner da organização |
+| `can_access_unit(unit_id)` | owner da organização da unidade ou vínculo próprio em `membership_units` |
+| `can_manage_unit(unit_id)` | owner da organização ou manager vinculado à unidade |
 
-Tabelas: `SELECT` concedido a `authenticated`; `UPDATE (full_name)` em `profiles`.
+Todos são `stable security definer set search_path=''`. O uso de `security definer` permite
+consultar tabelas protegidas sem recursão de policy; o resultado continua derivado de `auth.uid()`.
 
-### 4.1 Contrato de erro das RPCs de unidade (SQLSTATE próprio)
+## 4. Matriz RBAC do catálogo
 
-| SQLSTATE | Mensagem | Quando |
-|---|---|---|
-| `PED00` | `NOT_AUTHENTICATED` | `auth.uid()` nulo |
-| `PED01` | `FORBIDDEN` | chamador não é owner da organização |
-| `PED02` | `UNIT_NOT_FOUND` | unidade inexistente na organização do chamador |
-| `PED03` | `UNIT_NAME_REQUIRED` | nome em branco |
-| `PED04` | `LAST_ACTIVE_UNIT` | tentativa de desativar a última unidade ativa |
-| `PED05` | `UNIT_NAME_TOO_LONG` | nome acima de 200 caracteres |
+Toda célula positiva abaixo ainda exige acesso à unidade correta. Não existe autorização global por
+role sem escopo.
 
-## 5. Ataques/desvios cobertos (mapeamento p/ testes)
+| Ação | Owner | Manager vinculado | Operator vinculado |
+|---|---:|---:|---:|
+| SELECT do catálogo | Sim | Sim | Sim |
+| Criar/editar categoria | Sim | Sim | Não |
+| Alterar `category.is_active` | Sim | Sim | Não |
+| Criar/editar/mover produto | Sim | Sim | Não |
+| Alterar `product.is_active` | Sim | Sim | Não |
+| Alterar `product.is_available` | Sim | Sim | Sim |
 
-| Cenário | Proteção | Teste |
-|---|---|---|
-| Anon lê perfis | RLS nega (`anon` sem policy) | rls_integrity cenário 2 |
-| Anon executa onboarding | `EXECUTE` só p/ `authenticated` | rls_integrity cenário 3 |
-| Usuário lê perfil alheio | `profiles_select_own` | rls_integrity cenário 5 |
-| Usuário lê org/unidade de outro tenant | `is_org_member` | rls_integrity cenário 8 |
-| Dupla execução de onboarding | `advisory lock` + guard em `complete_onboarding` | rls_integrity cenário 10 |
-| Corrida (concorrência) cria 2 orgs | `pg_advisory_xact_lock` transacional | rls_integrity cenário 11 |
-| Insert direto em `organizations` | ausência de policy de escrita | rls_integrity cenário 12 |
-| Manager acessa unidade sem vínculo | `units_select_authorized` + `can_access_unit` | rbac_units cenário 4 |
-| Operator restrito ao vínculo | `membership_units` no escopo | rbac_units cenário 6 |
-| Vínculo cross-org de unidade | FK composta `units(organization_id, id)` | rbac_units cenário 7 |
-| Anon lê `membership_units` | RLS/grants negam | rbac_units cenário 8 |
-| INSERT/UPDATE direto em `units` | ausência de policy de escrita | rbac_units cenários 9/10 |
-| `create_unit` por manager | RPC exige role owner (`PED01`) | rbac_units cenário 12 |
-| `update_unit` em unidade de outra org | RPC valida org do chamador (`PED02`) | rbac_units cenários 15/18 |
-| Desativar última unidade ativa | `pg_advisory_xact_lock` + contagem (`PED04`) | rbac_units cenário 17 |
-| Corrida desativando unidades | lock transacional por organização | rbac_units cenário 22 |
+`is_active` é estrutural; `is_available` é operacional. Desativar categoria não altera produtos e
+desativar produto não altera disponibilidade. Operator não acessa nenhuma RPC estrutural.
 
-## 6. Identidade e onboarding
+## 5. Grants e superfície SQL
 
-- Criação de usuário: trigger `handle_new_user` (AFTER INSERT em `auth.users`,
-  `security definer`) cria o `profile` automaticamente com `onboarding_status = 'pending'`.
-- Onboarding: `complete_onboarding` cria org + membro `owner` + unidade principal e marca
-  `completed`; é transacional, idempotente e serializado por usuário.
-- E-mail de confirmação ativado no Supabase: o fluxo de criação de usuário exige e-mail
-  confirmado (afeta testes de signup via API; testes de banco usam conexão direta).
+### 5.1 Tabelas
 
-## 7. RBAC administrativo e contexto
+- `authenticated` possui `SELECT` nas tabelas de identidade/tenant/unidade e catálogo conforme as
+  policies; `profiles` concede também `UPDATE(full_name)`.
+- As três tabelas operacionais não têm policy de leitura nem grants diretos para o cliente; getters
+  e saves passam pelas RPCs.
+- O catálogo executa `REVOKE ALL` de `PUBLIC`, `anon` e `authenticated`, depois concede somente
+  `SELECT` a `authenticated` e `anon`. Assim, I/U/D permanecem revogados.
+- `anon` tem privilégio SQL de `SELECT` em `catalog_categories` e `catalog_products`, mas não é alvo
+  de nenhuma policy. O resultado é sempre zero linhas, não publicação pública.
 
-- Papéis: `owner` (acesso total ao tenant e à gestão de unidades), `manager`/`operator`
-  (acesso restrito às unidades com vínculo explícito em `membership_units`).
-- Escrita de unidades (criar/renomear/ativar-desativar) é exclusiva do `owner` via RPCs
-  server-authoritative; nunca por `INSERT`/`UPDATE` direto.
-- `get_my_admin_context()` retorna em uma única chamada: perfil, organização, papel e unidades
-  acessíveis — a fonte única do frontend administrativo.
+### 5.2 Funções
 
-## 8. Validação executada (checkpoint 2026-08-10)
+As oito RPCs do catálogo têm `EXECUTE` apenas para `authenticated`:
 
-Testes de integração em `supabase/tests/` (Node + `pg`, conexão direta como `postgres` para
-setup/cleanup; sessões simuladas com `SET ROLE authenticated` + `SET request.jwt.claims`):
+- `get_unit_catalog_admin(uuid)`;
+- `create_catalog_category(uuid,text)`;
+- `update_catalog_category(uuid,text)`;
+- `set_catalog_category_active(uuid,boolean)`;
+- `create_catalog_product(uuid,uuid,text,text,text)`;
+- `update_catalog_product(uuid,uuid,text,text,text)`;
+- `set_catalog_product_active(uuid,boolean)`;
+- `set_catalog_product_available(uuid,boolean)`.
 
-- `rls_integrity.test.mjs` — **22 checks / 12 cenários PASS** (regressão pós-Prompt 04).
-- `rbac_units_integrity.test.mjs` — **31 checks / 22 cenários PASS** (RBAC, escopo por unidade,
-  cross-tenant, RPCs, última unidade ativa, concorrência).
+`PUBLIC` e `anon` foram explicitamente revogados dessas funções. O helper
+`_validate_catalog_price(text)` não possui `EXECUTE` para `PUBLIC`, `anon` ou `authenticated`.
 
-Cleanup verificado (banco sem dados sintéticos residuais). `supabase db lint --linked`:
-`No schema errors found`.
+As RPCs históricas de onboarding, unidade e configuração mantêm seus grants versionados. Helpers
+internos `_validate_money`, `_validate_minutes` e `_validate_catalog_price` não são uma API de
+cliente.
 
-### 8.1 Como rodar
+## 6. Escrita server-authoritative
 
-```bash
-# requer conexão com o banco do projeto Supabase
-# (a senha também pode ser lida diretamente do .env pelo teste)
-node supabase/tests/rls_integrity.test.mjs
-node supabase/tests/rbac_units_integrity.test.mjs
-```
+### 6.1 Identidade, tenant e unidade
 
-## 9. Regras de manutenção
+- `handle_new_user()` cria profile após `auth.users`.
+- `complete_onboarding(text)` cria organização, owner e unidade em uma transação serializada.
+- `create_unit`, `update_unit` e `set_unit_active` são exclusivas de owner; a última unidade ativa é
+  protegida por advisory lock por organização.
+- Gestão de `membership_units` continua sem UI/policy de escrita e permanece administrativa.
 
-- Nenhuma policy de escrita ampla para `authenticated` deve ser adicionada sem decisão
-  registrada em `PEDON_DECISION_REGISTER.md`.
-- Novas tabelas de domínio devem habilitar RLS e seguir o padrão de policy seletora via
-  `is_org_member` (ou helper equivalente).
-- Toda tabela escopada por unidade deve usar `can_access_unit` (ou derivar dele) — nunca
-  expor dados de uma unidade sem autorização explícita.
-- Alterações de segurança devem passar por nova execução dos testes de integração RLS/RBAC.
-- Em caso de regressão: verificar migração correspondente e revalidar com
-  `supabase db lint --linked` + testes de integração.
+### 6.2 Configuração operacional
+
+`get_unit_operational_config` e `save_unit_operational_config` exigem `can_manage_unit`: owner ou
+manager vinculado. Operator não lê nem salva a configuração operacional. O save serializa por
+unidade, valida o payload completo e aplica regras server-authoritative para
+`accepting_orders=true`.
+
+### 6.3 Catálogo
+
+- Organização e `sort_order` não são argumentos de criação; são derivados/calculados no servidor.
+- Categorias são criadas/alteradas somente via RPC por `can_manage_unit`.
+- Produtos são criados/alterados somente via RPC por `can_manage_unit`; categoria alvo deve ter o
+  mesmo `(organization_id,unit_id)`.
+- Disponibilidade usa `can_access_unit`, permitindo operator vinculado sem liberar outras colunas.
+- Não existe RPC de hard delete. `DELETE` direto não é concedido.
+
+## 7. Isolamento e integridade anti-IDOR
+
+| Vetor | Defesa |
+|---|---|
+| Owner tenta unidade de outro tenant | `can_access_unit`/`can_manage_unit` falham com `PED11` |
+| Manager/operator tenta unidade sem vínculo | `membership_units` ausente; `PED11` ou zero linhas |
+| Cliente troca `organization_id` | RPCs de criação não recebem organização; servidor deriva da unidade |
+| Cliente usa categoria de outra unidade/org | lookup composto + `PED29`; FK composta também rejeita |
+| Produto persistido aponta para categoria cross-tenant | FK `(organization_id,unit_id,category_id)` |
+| Vínculo de usuário aponta para unidade cross-org | FK `(organization_id,unit_id)` em `membership_units` |
+| Query direta authenticated busca outro escopo | policy `can_access_unit(unit_id)` filtra a linha |
+| Anon consulta tabelas do catálogo | SELECT permitido, mas sem policy: zero linhas |
+| Anon chama RPC de catálogo | `EXECUTE` revogado: `42501` |
+| Authenticated tenta I/U/D direto | grants revogados/ausência de policy: bloqueado |
+| Corrida calcula mesma ordem | advisory lock por unidade/categoria e ordem server-side |
+
+As FKs compostas são defesa de integridade adicional, não substituto da autorização. As RPCs
+verificam autorização antes da mutação e restringem updates por tenant/unidade já resolvidos.
+
+## 8. Contratos de erro relevantes
+
+Catálogo reutiliza:
+
+| Código | Significado |
+|---|---|
+| `PED10` | não autenticado |
+| `PED11` | sem acesso/gestão da unidade |
+| `PED12` | unidade inexistente |
+| `PED20..PED23` | categoria ausente/nome inválido/conflito |
+| `PED24..PED28` | produto ausente/campos ou preço inválidos |
+| `PED29` | categoria não pertence à unidade/organização |
+| `PED30` | flag booleana inválida |
+
+Configuração operacional usa `PED10..PED18`; RPCs históricas de unidade usam `PED00..PED05`.
+Detalhes completos estão em `PEDON_DATABASE_SCHEMA.md`.
+
+## 9. Testes executados
+
+Os quatro scripts em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
+organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup automático:
+
+| Script | Resultado oficial | Cobertura principal |
+|---|---:|---|
+| `rls_integrity.test.mjs` | 22/22 | identidade, onboarding, isolamento e escrita direta |
+| `rbac_units_integrity.test.mjs` | 31/31 | owner/manager/operator, vínculos, FKs e concorrência |
+| `unit_operational_config_integrity.test.mjs` | 80/80 | grants, RBAC, validações, aceite e atomicidade |
+| `catalog_integrity.test.mjs` | 123/123 | RLS/ACL, matriz RBAC, IDOR, FKs, flags, preço e locks |
+
+O catálogo valida expressamente: anon zero linhas e sem RPC; authenticated sem identidade;
+cross-unit/cross-tenant; I/U/D diretos; FKs compostas; roles; estados independentes; ausência de
+hard delete; grants; preço textual exato; ordenação e oito criações concorrentes. `supabase db lint
+--linked` passou sem erros.
+
+Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
+`membership_units` durante um cenário e é frágil se outra suíte inserir vínculos em paralelo.
+
+## 10. Regras de manutenção
+
+- Não adicionar policy/grant de escrita direta sem decisão registrada e testes de regressão.
+- Toda nova tabela por unidade deve carregar e validar o escopo; preferir FK composta quando houver
+  referência entre entidades escopadas.
+- Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
+  cardápio deve usar o modelo imutável próprio do Prompt 07.
+- Alterações de autorização exigem execução sequencial dos quatro testes DB e
+  `supabase db lint --linked`.
+- Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
+  DEC-044.

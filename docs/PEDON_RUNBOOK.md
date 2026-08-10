@@ -1,332 +1,315 @@
 # PED-ON — Runbook
 
-> Guia operacional do projeto Ped-On.
+> Guia operacional do Ped-On após o Prompt 06. Ambiente oficial: modelo Main-First monitorado,
+> Supabase vinculado e Cloudflare Pages em produção.
 
-## 1. Pré-requisitos locais
+## 1. Pré-requisitos e versões
 
-- Node.js (LTS recomendado) — ver versão esperada abaixo.
-- pnpm — ver versão esperada abaixo.
-- Git.
-- Acesso ao repositório GitHub `ped-on`.
-
-## 2. Versões esperadas
-
-| Ferramenta | Versão esperada |
+| Ferramenta | Contrato |
 |---|---|
-| Node.js | `>=22` (instalado na fundação: `v24.15.0`) |
-| pnpm | `>=9` (instalado na fundação: `9.15.9`) |
+| Node.js | `>=22`; fundação validada com Node `v24.15.0` |
+| pnpm | `>=9`; fixado como `pnpm@9.15.9` em `package.json` |
 | Git | `>=2.x` |
+| Supabase CLI | disponível; checkpoint com `2.109.1` |
+| Playwright | Chromium instalado para E2E |
 
-A versão de pnpm é fixada em `package.json` via `packageManager`.
-
-## 3. Comandos básicos do projeto
-
-| Ação | Comando | Estado |
-|---|---|---|
-| Instalar dependências | `pnpm install` | Disponível |
-| Rodar lint | `pnpm lint` | Disponível |
-| Rodar typecheck | `pnpm typecheck` | Disponível |
-| Rodar testes unitários | `pnpm test:run` | Disponível |
-| Rodar testes com watch | `pnpm test` | Disponível |
-| Rodar testes E2E | `pnpm test:e2e` | Disponível |
-| Rodar testes de banco/RLS | `$env:SUPABASE_DB_PASSWORD = '<senha>'; node supabase/tests/rls_integrity.test.mjs` | Disponível (conexão direta com o Supabase oficial) |
-| Rodar formatação | `pnpm format` | Disponível |
-| Verificar formatação | `pnpm format:check` | Disponível |
-| Rodar build | `pnpm build` | Disponível |
-| Executar web em dev | `pnpm dev` | Disponível |
-| Preview do build (local) | `pnpm preview` | Disponível |
-| Rodar Supabase local | `supabase start` | PENDENTE — será configurado em etapa posterior |
-| Verificar CLI Supabase | `supabase --version` | Disponível (2.109.1) |
-| Vincular ao projeto Supabase | `supabase link --project-ref <PROJECT_REF>` | Disponível (link real executado) |
-
-O script raiz roda em todos os workspaces (`pnpm -r`), exceto quando indicado.
-
-## 4. Como instalar dependências
+Instalação:
 
 ```bash
 pnpm install
-```
-
-Instala as dependências de todos os workspaces definidos em `pnpm-workspace.yaml`.
-
-## 5. Como rodar lint
-
-```bash
-pnpm lint
-```
-
-Executa `eslint` nos arquivos de código de todos os pacotes (raiz e apps).
-
-## 6. Como rodar typecheck
-
-```bash
-pnpm typecheck
-```
-
-Executa `tsc --noEmit` em todos os pacotes e na aplicação web.
-
-## 7. Como rodar testes
-
-```bash
-# unit/componente (Vitest, uma execução)
-pnpm test:run
-
-# unit/componente com watch
-pnpm test
-
-# E2E (Playwright — requer build e browsers instalados)
-pnpm build
 pnpm --filter @pedon/web exec playwright install chromium
-pnpm test:e2e
 ```
 
-## 8. Como executar build
+## 2. Comandos do projeto
+
+| Ação | Comando |
+|---|---|
+| Desenvolvimento web | `pnpm dev` |
+| Build PWA | `pnpm build` |
+| Preview local | `pnpm --filter @pedon/web preview` |
+| Formatar | `pnpm format` |
+| Verificar formato | `pnpm format:check` |
+| Lint | `pnpm lint` |
+| Typecheck | `pnpm typecheck` |
+| Unit/componente | `pnpm test:run` |
+| Unit em watch | `pnpm test` |
+| E2E | `pnpm test:e2e` |
+
+O build de produção fica em `apps/web/dist`, incluindo `manifest.webmanifest` e `sw.js`. O PWA
+cacheia assets estáticos; não há `runtimeCaching` de API, dados privados ou tokens.
+
+## 3. Gates locais
+
+Antes de integrar uma mudança funcional:
 
 ```bash
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test:run
 pnpm build
+pnpm test:e2e
+gitleaks detect --source . --redact --log-level warn
 ```
 
-Produz a saída PWA de produção em `apps/web/dist` (inclui `manifest.webmanifest` e service
-worker gerados pelo `vite-plugin-pwa`). O service worker cacheia somente assets estáticos;
-nenhuma rota de API/dados é cacheada.
+Checkpoint do Prompt 06: formato, lint, typecheck, build e Gitleaks v8.30.1 PASS; frontend
+unit/component 30/30; E2E 56/56 em 360/768/1024/1440, incluindo catálogo 16/16.
 
-## 8.1 Como rodar testes de banco/RLS
+## 4. Variáveis e secrets
 
-Teste de integração que valida migrations, isolamento multiempresa (RLS), idempotência e
-concorrência do onboarding. Requer acesso ao banco do projeto Supabase oficial (conexão direta,
-sem Docker local).
+- `.env.example` contém somente nomes; `.env` real é gitignored e nunca deve ser commitado.
+- Frontend: `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` são públicos e sujeitos a RLS.
+- Nunca expor secret key ou `service_role` em variável `VITE_*`.
+- Testes DB usam `SUPABASE_DB_PASSWORD`; não imprimir nem persistir a senha.
+- Repositório GitHub é público. Tokens GitHub/Cloudflare/Supabase ficam fora do repositório.
 
-```bash
-# PowerShell (Windows)
+PowerShell:
+
+```powershell
 $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
-node supabase/tests/rls_integrity.test.mjs
 ```
 
-Regras:
-
-- A senha vem da variável `SUPABASE_DB_PASSWORD` (nunca embutida no código/commit).
-- Conecta diretamente em `db.<project-ref>.supabase.co:5432` como `postgres`
-  (DEC-044) — não usar pooler de sessão para testes.
-- Cria usuários sintéticos descartáveis (`rls-*@pedon-test.invalid`) e limpa tudo ao final
-  (usuários + organizações criadas).
-- O teste falha com exit code != 0 se qualquer cenário reprovar.
-
-## 9. Convenção de variáveis de ambiente
-
-- Arquivo modelo: `.env.example` (somente nomes de variáveis, sem valores reais).
-- Variáveis públicas do frontend usam prefixo `VITE_*` (ou equivalente do framework escolhido).
-- Nenhuma `service_role` pode ser declarada como variável pública `VITE_*`.
-- Variáveis sensíveis (servidor/CI) não usam prefixo público.
-- Nunca criar/commitar arquivos `.env` reais.
-
-## 10. Política de secrets
-
-- Nenhum secret, token, senha, chave Supabase, `service_role` ou credencial Cloudflare pode ser commitado.
-- `.env` e `.env.*` são ignorados por `.gitignore` (com exceção de `.env.example`).
-- Secrets devem ser gerenciados fora do repositório (gerenciadores de secrets/CI).
-- O CI roda `gitleaks` automaticamente (job `quality`); antes de push local, executar:
-  `gitleaks detect --source .` (ver referência: `https://github.com/gitleaks/gitleaks`).
-
-## 11. Política de migrations
-
-- Migrations seguem o padrão `timestamp + descrição objetiva`.
-- Migrations de domínio não são criadas na Fase 0.
-- Migrations devem ser versionadas em `supabase/migrations`.
-- Nenhuma migration de negócio pode existir antes de sua etapa ser oficialmente planejada.
-- Política completa (fluxo de 8 passos, proibições e estratégia Main-First): Seção 18 e 19.
-
-## 12. Política de commits
-
-- Commits pequenos, atômicos e descritivos.
-- Um commit deve conter somente um escopo lógico.
-- Convenção de mensagens: `conventional commits` (ex.: `chore:`, `feat:`, `fix:`, `docs:`).
-- Nunca commitar secrets.
-- Commits de fundação referem-se exclusivamente à etapa corrente (não misturar funcionalidades futuras).
-
-## 13. Política Main-First
-
-- Todo trabalho é feito diretamente na branch `main` (modelo Main-First monitorado).
-- `main` é a branch de trabalho e de referência.
-- Alterações são monitoradas e revisadas antes de integração em massa.
-- Pull requests/branches de feature só devem surgir quando o modelo assim o exigir.
-
-## 14. Procedimento de verificação antes de push
-
-1. Conferir `git status` (somente arquivos esperados).
-2. Revisar `git diff --staged` (nenhum arquivo inesperado).
-3. Garantir que nenhum `.env` real esteja staged.
-4. Varrer o repositório por secrets: `gitleaks detect --source . --redact --log-level warn`.
-5. Confirmar ausência de código herdado de outros projetos.
-6. Confirmar que nenhuma feature de negócio foi antecipada.
-7. Confirmar que nenhuma migration de domínio foi criada.
-8. Atualizar `PEDON_IMPLEMENTATION_STATUS.md` (ver Seção 15).
-9. Rodar a sequência de qualidade localmente: `pnpm format:check`, `pnpm lint`,
-   `pnpm typecheck`, `pnpm test:run`, `pnpm build`.
-10. Commitar de forma atômica e fazer push para `main`.
-
-## 15. Procedimento de atualização do PEDON_IMPLEMENTATION_STATUS.md
-
-1. Atualizar `PROMPT ATUAL`, `FASE ATUAL` e `STATUS`.
-2. Registrar `ÚLTIMO COMMIT` (hash + mensagem) após o commit.
-3. Atualizar os estados de CLOUDFLARE / SUPABASE / GITHUB conforme o andamento.
-4. Registrar migrations aplicadas (ou "nenhuma").
-5. Registrar testes/preflight executados.
-6. Registrar somente pendências reais.
-7. Registrar `NEXT_STEP` oficial (justificar qualquer desvio).
-8. Adicionar linha no Histórico de Execução com data e status.
-
-## 16. CI/CD
-
-- Workflow: `.github/workflows/ci.yml`.
-- Job `quality`: checkout → pnpm → Node 24 → `pnpm install --frozen-lockfile` →
-  `pnpm format:check` → `pnpm lint` → `pnpm typecheck` → `pnpm test:run` → `pnpm build` →
-  varredura `gitleaks`.
-- Job `e2e`: depende do `quality`; instala Chromium do Playwright e roda `pnpm test:e2e`,
-  subindo o preview do build.
-- Disparo: push/PR para `main` e `workflow_dispatch`.
-
-## 17. Infraestrutura real
-
-### 17.1 GitHub
-
-| Item | Valor |
-|---|---|
-| Repositório | `Rodrigo-Kotlin/ped-on` (`https://github.com/Rodrigo-Kotlin/ped-on`) |
-| Visibilidade | PUBLIC (código-fonte acessível publicamente — nenhum secret pode existir no repositório) |
-| Branch oficial | `main` |
-| Modelo | Main-First monitorado (DEC-037) |
-| CI | GitHub Actions — workflow `CI`; gates de qualidade + E2E |
-
-### 17.2 Cloudflare Pages
-
-| Item | Valor |
-|---|---|
-| Projeto | `ped-on` |
-| Production branch | `main` |
-| Build command | `pnpm build` |
-| Output directory | `apps/web/dist` |
-| Root directory | raiz do repositório (monorepo) |
-| Node | `22` (fixado via `.nvmrc` na raiz) |
-| SPA routing | fallback `/* → /index.html 200` via `apps/web/public/_redirects` |
-| Deployment URL | `https://ped-on.pages.dev` |
-
-Procedimento de verificação de deployment:
-1. Cloudflare Dashboard → **Workers & Pages** → projeto `ped-on` → **Deployments**.
-2. Conferir último deployment com status `SUCCESS` e o commit SHA esperado.
-3. Validar `HTTP 200` em `https://ped-on.pages.dev/` e o título/identidade Ped-On.
-4. Validar rotas diretas (SPA): abrir uma URL direta de rota e confirmar que retorna
-   `index.html` (fallback), sem `404` do Cloudflare.
-
-Deploy automático: push em `main` → Cloudflare detecta → build → deploy. GitHub Actions
-permanece responsável apenas pelos quality gates (não há workflow de deploy concorrente).
-
-### 17.3 Supabase
+## 5. Supabase oficial
 
 | Item | Valor |
 |---|---|
 | Projeto | `ped-on` |
 | Project ref | `zmuxkztnilnzjyyojbbr` |
 | Região | South America (São Paulo) |
-| API URL | `https://zmuxkztnilnzjyyojbbr.supabase.co` |
-| CLI | `supabase` 2.109.1 (sessão autenticada via CLI; token em secret manager, fora do Git) |
-| Link local | `supabase link --project-ref zmuxkztnilnzjyyojbbr` (executado — ref em `supabase/.temp/project-ref`) |
-| Config | `supabase/config.toml` (versionado; sem secrets) |
-| Migrations aplicadas | `20260809221710_identity_tenant_foundation` (única migration; Local = Remote) |
-| Projeto de sistema anterior (`firecheck`) | NÃO usado |
+| API | `https://zmuxkztnilnzjyyojbbr.supabase.co` |
+| Link | `supabase link --project-ref zmuxkztnilnzjyyojbbr` |
+| Config versionada | `supabase/config.toml` |
 
-Documentos de referência: `docs/PEDON_DATABASE_SCHEMA.md` (esquema) e
-`docs/PEDON_RLS_SECURITY.md` (modelo de segurança RLS).
+### 5.1 Migrations aplicadas
 
-Procedimento de verificação de estado:
-- Projetos e vínculo: `supabase projects list` e `supabase link` (sem força).
-- Conectividade não destrutiva: `GET https://<ref>.supabase.co/rest/v1/` (401 = gateway vivo).
-- Migrations aplicadas: `supabase migration list` (quando houver migrations versionadas).
+Na ordem:
 
-Procedimento futuro de migrations: ver Seção 18.
+1. `20260809221710_identity_tenant_foundation.sql`
+2. `20260810015224_rbac_units_context.sql`
+3. `20260810032804_unit_operational_config.sql`
+4. `20260810033118_unit_operational_config_hardening.sql`
+5. `20260810120000_unit_operational_config_acceptance_hardening.sql`
+6. `20260810122401_catalog_base.sql`
 
-### 17.4 Variáveis de ambiente do frontend (Cloudflare Pages)
+Checkpoint Prompt 06: Local == Remote para as seis versões; migration do catálogo aplicada
+oficialmente; db lint sem erros.
 
-Valores destinados ao browser (públicos, com RLS):
-- `VITE_SUPABASE_URL` = URL da API do projeto.
-- `VITE_SUPABASE_PUBLISHABLE_KEY` = publishable key do projeto.
+### 5.2 Fluxo linked não destrutivo
 
-O cliente Supabase já está implementado no frontend (Prompt 03, PASSO B) e lê essas duas
-variáveis em build time via `import.meta.env`. **Configuradas no Cloudflare Pages
-(Settings → Environment variables) e validadas em produção** (o bundle publicado injeta a URL
-real do Supabase; nenhum placeholder no build). Se precisar alterar, atualize as variáveis no
-dashboard e dispare um novo deploy (push ou redeploy). Valores também definidos localmente em
-`.env` (gitignored) para desenvolvimento. **Nunca** configurar secret key / `service_role` como
-`VITE_*`.
+```bash
+# conferir vínculo e histórico antes de aplicar
+supabase projects list
+supabase migration list
 
-### 17.5 Autenticação e rotas do frontend
+# aplicar somente migrations locais pendentes ao projeto vinculado
+supabase db push --linked
 
-- Cliente: `apps/web/src/lib/supabase.ts` (`createClient` com as `VITE_*` acima).
-- Sessão: `AuthProvider` (`src/lib/auth/`) centraliza `getSession`/`onAuthStateChange` e expõe
-  `signIn`, `signUp`, `signOut`, `completeOnboarding` e o `profiles` do usuário.
-- Guards: `GuestOnly` (login/cadastro), `OnboardingGate` (`/onboarding`), `AppGate` (`/app`).
-- Rotas: `/` (landing), `/login`, `/cadastro`, `/onboarding`, `/app`.
-- Fluxo: cadastro → confirmação de e-mail (HABILITADO no projeto — ver DEC-039) → login →
-  onboarding (RPC `complete_onboarding`) → `/app` (lista organizações via RLS).
-- Testes: unitários mockam `src/lib/supabase` (`src/test/supabaseMock.ts`); E2E Playwright em
-  `apps/web/e2e/auth.spec.ts` cobre redirects sem sessão e validação de formulário (não depende
-  de credenciais).
+# confirmar igualdade e validar o schema remoto
+supabase migration list
+supabase db lint --linked
+```
 
-### 17.6 Homologação do fluxo real de e-mail (2026-08-10)
+Regras:
 
-- **PRODUCTION AUTH EMAIL HOMOLOGATION: PASS** — fluxo real validado em produção:
-  signup único (1 chamada de e-mail; 0 resends) → e-mail do **Supabase built-in mailer** →
-  clique no link de confirmação → redirect para `https://ped-on.pages.dev` (sem `localhost`) →
-  usuário confirmado no Auth (`email_confirmed_at`) → profile criado por trigger →
-  login → onboarding (org `PEDON HOMOLOGACAO EMAIL`, `role=owner`, `Unidade principal`,
-  `onboarding_status=completed`) → session restore → logout → rota protegida `/app` → `/login` →
-  relogin sem repetir onboarding → validação de banco (UUIDs exatos, sem duplicados,
-  sem cross-tenant) → cleanup (org via cascata + profile + usuário do Auth).
-- **AUTH SITE_URL INCIDENT: RESOLVED** — anteriormente o link de confirmação redirecionava para
-  `localhost`; configuração corrigida para `https://ped-on.pages.dev` e validada na homologação.
-- **Rate limit de e-mail**: limitação observada do mailer padrão do Supabase durante
-  desenvolvimento — não é bug do Ped-On.
+- criar arquivo versionado antes de alterar o banco;
+- revisar e testar a migration;
+- usar `supabase db push --linked` para o projeto oficial;
+- confirmar Local == Remote e lint;
+- nunca editar/apagar migration já aplicada nem aplicar SQL silencioso pelo Dashboard.
 
-## 18. Política de migrations (refinada)
+`supabase db push --linked` aplica migrations pendentes no banco remoto vinculado e preserva os
+dados existentes. `supabase db reset` é um reset destrutivo da stack local: recria o banco local e
+reaplica migrations, apagando dados locais. Não usar `db reset` contra o projeto oficial e não
+confundi-lo com o fluxo linked de produção.
 
-Toda alteração de banco deverá:
+Para alterações backward-compatible, manter banco primeiro e aplicação depois: aplicar/validar a
+migration, então publicar o frontend que depende dela.
 
-1. existir primeiro como arquivo em `supabase/migrations/`;
-2. possuir nome `timestamp + descrição objetiva`;
-3. ser revisada;
-4. passar pelos testes correspondentes;
-5. ser aplicada ao projeto Supabase por CLI ou mecanismo oficial
-   (`supabase db push` / `supabase db reset`);
-6. ser validada no banco;
-7. ser commitada/versionada;
-8. ser registrada em `PEDON_IMPLEMENTATION_STATUS.md`.
+## 6. Testes de banco
 
-**PROIBIDO:**
+Os testes conectam diretamente em `db.zmuxkztnilnzjyyojbbr.supabase.co:5432` como `postgres` e
+simulam sessões com `SET ROLE`/claims. Não usar pooler de sessão: reutilização de backend pode vazar
+role/claims entre clients.
 
-- alterar schema manualmente pelo Dashboard sem migration correspondente;
-- editar migration já aplicada;
-- apagar migration aplicada para "corrigir" histórico;
-- aplicar SQL de produção que não esteja versionado;
-- alterações manuais silenciosas no banco.
+Execute os quatro scripts **sequencialmente, nunca em paralelo**:
 
-## 19. Estratégia de alterações de banco na Main (Main-First + deploy automático)
+```powershell
+$env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
+node supabase/tests/rls_integrity.test.mjs
+node supabase/tests/rbac_units_integrity.test.mjs
+node supabase/tests/unit_operational_config_integrity.test.mjs
+node supabase/tests/catalog_integrity.test.mjs
+```
 
-Como o projeto usa Main-First e Cloudflare pode publicar a `main` automaticamente, para
-alterações futuras que dependam de migration preferir a sequência segura:
+| Script | Checkpoint |
+|---|---:|
+| `rls_integrity.test.mjs` | 22/22 PASS |
+| `rbac_units_integrity.test.mjs` | 31/31 PASS |
+| `unit_operational_config_integrity.test.mjs` | 80/80 PASS |
+| `catalog_integrity.test.mjs` | 123/123 PASS |
 
-- **PASSO A — banco primeiro:** migration backward-compatible → aplicar no Supabase → validar
-  banco → registrar.
-- **PASSO B — código depois:** código da aplicação que utiliza a nova estrutura → gates → push
-  `main` → Cloudflare deploy.
+A execução sequencial é obrigatória porque o teste RBAC herdado possui uma verificação de contagem
+global de `membership_units`; outra suíte inserindo vínculos simultaneamente pode produzir falso
+negativo. Cada script cria usuários/organizações sintéticos e executa cleanup automático no
+`finally`. Se houver interrupção abrupta, localizar dados `*@pedon-test.invalid` e organizações de
+teste antes de repetir; não remover dados reais.
 
-Evitar que código novo chegue ao Cloudflare antes de o banco necessário existir. Alterações
-destrutivas deverão exigir estratégia específica (backup/rollback + janela de migração).
+## 7. Validação de segurança e cross-tenant
 
-## 20. Observabilidade da infraestrutura
+Nos testes DB, sempre validar:
 
-| Alvo | Como verificar |
+- anon sem leitura efetiva do catálogo: query direta retorna zero linhas e RPCs de catálogo retornam
+  permission denied (`42501`);
+- authenticated sem identidade retorna `PED10` nas RPCs atuais;
+- owner não acessa unidade de outro tenant;
+- manager/operator não acessam unidade sem `membership_units`;
+- FK composta rejeita vínculo ou categoria de outra organização/unidade;
+- `INSERT`/`UPDATE`/`DELETE` diretos no catálogo permanecem bloqueados;
+- operator consegue somente `set_catalog_product_available` no catálogo da unidade autorizada;
+- cleanup remove organizações e usuários sintéticos.
+
+Nunca validar RLS com `service_role`. Setup/cleanup usam a conexão administrativa direta; cenários de
+aplicação usam roles e claims equivalentes ao cliente.
+
+## 8. Operações do catálogo
+
+Rota administrativa: `/app/catalogo`, protegida por sessão e contexto de unidade.
+
+| Operação | RPC obrigatória | Roles |
+|---|---|---|
+| Ler catálogo | `get_unit_catalog_admin` | owner/manager/operator autorizados |
+| Criar categoria | `create_catalog_category` | owner/manager |
+| Editar categoria | `update_catalog_category` | owner/manager |
+| Ativar/desativar categoria | `set_catalog_category_active` | owner/manager |
+| Criar produto | `create_catalog_product` | owner/manager |
+| Editar/mover produto | `update_catalog_product` | owner/manager |
+| Ativar/desativar produto | `set_catalog_product_active` | owner/manager |
+| Disponibilizar/indisponibilizar | `set_catalog_product_available` | owner/manager/operator |
+
+Criação de categoria, criação/edição de produto e alteração de disponibilidade devem ocorrer
+exclusivamente por essas RPCs. Não fazer writes diretos, não fornecer `organization_id` ou
+`sort_order` pelo cliente e não criar endpoint de DELETE. Preço entra como string decimal; o banco
+persiste `numeric(12,2)`.
+
+`is_active` e `is_available` são independentes. Desativar categoria não propaga flags aos produtos.
+O catálogo é mutável e administrativo; não usá-lo como API pública de cardápio.
+
+### 8.1 Erros do catálogo
+
+| Código | Tratamento |
 |---|---|
-| GitHub CI | `gh run list --workflow CI` / `gh run view <id>` (conclusão + SHA) |
-| Cloudflare | Dashboard → Workers & Pages → `ped-on` → Deployments (status + URL) |
-| Supabase | `supabase projects list`; `supabase migration list`; health não destrutivo da API |
+| `PED10` | sessão ausente/expirada; solicitar novo login |
+| `PED11` | usuário sem acesso ou gestão da unidade |
+| `PED12` | unidade não encontrada |
+| `PED20` | categoria não encontrada; recarregar catálogo |
+| `PED21`/`PED22` | nome de categoria ausente/acima de 80 |
+| `PED23` | nome de categoria conflitante na unidade |
+| `PED24` | produto não encontrado; recarregar catálogo |
+| `PED25`/`PED26` | nome de produto ausente/acima de 120 |
+| `PED27` | descrição acima de 500 |
+| `PED28` | preço inválido, não positivo, mais de duas casas ou overflow |
+| `PED29` | categoria fora da unidade/tenant do produto |
+| `PED30` | flag booleana inválida |
 
-Nenhuma plataforma externa de observabilidade é utilizada nesta fase.
+## 9. Configuração operacional
+
+Rota: `/app/configuracoes`, restrita a owner e manager autorizado por `RequireManageUnit`.
+
+- leitura: `get_unit_operational_config`;
+- save completo: `save_unit_operational_config`;
+- unidade não configurada retorna `configured=false` e `accepting_orders=false`;
+- ligar aceite exige unidade ativa, modalidade, ao menos um dia aberto e um método habilitado;
+- dinheiro é string decimal no contrato; banco usa `numeric(12,2)`;
+- erros estáveis: `PED10..PED18`, detalhados em `PEDON_DATABASE_SCHEMA.md`.
+
+## 10. Rotas web atuais
+
+| Rota | Estado |
+|---|---|
+| `/` | landing/fundação |
+| `/login` | entrada |
+| `/cadastro` | cadastro com confirmação de e-mail |
+| `/onboarding` | onboarding transacional |
+| `/app` | área administrativa e contexto de unidade |
+| `/app/catalogo` | catálogo por unidade; todos os roles leem, RBAC por ação |
+| `/app/configuracoes` | configuração operacional; owner/manager |
+| `*` | página não encontrada |
+
+Fluxo Auth permanece: cadastro, confirmação de e-mail, login, onboarding e área administrativa. O
+Prompt 06 não alterou Auth e enviou zero e-mails. A homologação real do Prompt 03/05 permanece
+válida: confirmação pelo Supabase built-in mailer, redirect para `https://ped-on.pages.dev`, login,
+onboarding, restauração de sessão, logout/relogin e cleanup; incidente antigo de `SITE_URL` em
+localhost está resolvido.
+
+## 11. CI e GitHub
+
+| Item | Valor |
+|---|---|
+| Repositório | `https://github.com/Rodrigo-Kotlin/ped-on` (PUBLIC) |
+| Branch | `main` |
+| Modelo | Main-First monitorado |
+| Workflow | `.github/workflows/ci.yml`, nome `CI` |
+
+Job `quality`: install frozen, format check, lint, typecheck, unit tests, build e Gitleaks. Job
+`e2e`: depende de quality, instala Chromium e roda Playwright. Checkpoint Prompt 06: run
+`31390204057`, SHA `891257f8b903a1a8afde3d8f439a4d6bfe6f2352`, `SUCCESS` em quality + E2E.
+
+Comandos de inspeção:
+
+```bash
+gh run list --workflow CI
+gh run view 31390204057
+```
+
+Há aviso de depreciação do runtime Node.js 20 em actions de terceiros, mas o workflow executa e
+passa com Node.js 24.
+
+## 12. Cloudflare Pages
+
+| Item | Valor |
+|---|---|
+| Projeto | `ped-on` |
+| Production branch | `main` |
+| Build | `pnpm build` |
+| Output | `apps/web/dist` |
+| Node | `22` via `.nvmrc` |
+| URL estável | `https://ped-on.pages.dev` |
+| Deploy Prompt 06 | `8cab4efd-6b5b-43aa-88da-f4a009df4254` |
+| URL do deploy | `https://8cab4efd.ped-on.pages.dev` |
+| Source | `891257f` |
+
+Deploy é automático após push em `main`; GitHub Actions faz gates, não um segundo deploy.
+
+### 12.1 Checkpoint pós-deploy Prompt 06
+
+- confirmar deployment `SUCCESS` e source `891257f`;
+- validar HTTP 200 em `/`, `/login`, `/app`, `/app/catalogo`, `/app/configuracoes`,
+  `manifest.webmanifest`, `sw.js` e assets JS/CSS;
+- confirmar SPA fallback nas rotas diretas;
+- confirmar no bundle `get_unit_catalog_admin`, `create_catalog_product` e
+  `set_catalog_product_available`;
+- confirmar que o bundle aponta para o Supabase real e não contém secret key;
+- confirmar que service worker não adicionou cache de API/dados privados.
+
+Esse checkpoint foi executado com sucesso no deploy acima. O build registra warning de chunk JS de
+677.59 kB; é pendência de otimização, não falha do deploy.
+
+## 13. Diagnóstico rápido
+
+| Sintoma | Verificação |
+|---|---|
+| Rota direta retorna 404 | `_redirects` e SPA fallback do Pages |
+| Catálogo retorna `PED10` | sessão/claims e restauração do Auth |
+| Catálogo retorna `PED11` | unidade selecionada, role e `membership_units` |
+| Produto retorna `PED29` | categoria pertence à mesma unidade e tenant |
+| Anon vê zero linhas | comportamento esperado até publicação imutável |
+| Write direto falha `42501` | comportamento esperado; usar RPC |
+| Migration ausente | `supabase migration list`, depois `db push --linked` se revisada |
+| DB test falha por contagem | confirmar que as quatro suítes não rodaram em paralelo |
+| Teste deixa dados após crash | localizar somente fixtures `pedon-test.invalid`; limpar com cuidado |
+| Build avisa chunk grande | warning conhecido de 677.59 kB |
+
+## 14. Próximo passo oficial
+
+Prompt 07: versionamento e publicação imutável do cardápio. Até essa etapa, não expor as tabelas
+mutáveis de catálogo como cardápio anônimo/público.
