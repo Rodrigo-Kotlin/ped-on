@@ -274,25 +274,25 @@ passa com Node.js 24.
 | Output | `apps/web/dist` |
 | Node | `22` via `.nvmrc` |
 | URL estável | `https://ped-on.pages.dev` |
-| Deploy Prompt 06 | `8cab4efd-6b5b-43aa-88da-f4a009df4254` |
-| URL do deploy | `https://8cab4efd.ped-on.pages.dev` |
-| Source | `891257f` |
+| Deploy Prompt 07 | `90d70dc2-f739-4a2c-a04d-af55cc250406` |
+| URL do deploy | `https://90d70dc2.ped-on.pages.dev` |
+| Source | `a1640ad` |
 
 Deploy é automático após push em `main`; GitHub Actions faz gates, não um segundo deploy.
 
-### 12.1 Checkpoint pós-deploy Prompt 06
+### 12.1 Checkpoint pós-deploy Prompt 07
 
-- confirmar deployment `SUCCESS` e source `891257f`;
-- validar HTTP 200 em `/`, `/login`, `/app`, `/app/catalogo`, `/app/configuracoes`,
+- confirmar deployment `SUCCESS` e source `a1640ad`;
+- validar HTTP 200 em `/`, `/login`, `/app`, `/app/cardapio`, `/app/catalogo`, `/app/configuracoes`,
   `manifest.webmanifest`, `sw.js` e assets JS/CSS;
 - confirmar SPA fallback nas rotas diretas;
-- confirmar no bundle `get_unit_catalog_admin`, `create_catalog_product` e
-  `set_catalog_product_available`;
+- confirmar no bundle `publish_unit_menu`, `get_public_menu` e `get_unit_menu_publication_admin`
+  (além de `get_unit_catalog_admin` e `get_unit_operational_config`);
 - confirmar que o bundle aponta para o Supabase real e não contém secret key;
 - confirmar que service worker não adicionou cache de API/dados privados.
 
 Esse checkpoint foi executado com sucesso no deploy acima. O build registra warning de chunk JS de
-677.59 kB; é pendência de otimização, não falha do deploy.
+~677 kB; é pendência de otimização, não falha do deploy.
 
 ## 13. Diagnóstico rápido
 
