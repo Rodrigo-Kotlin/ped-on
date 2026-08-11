@@ -15,7 +15,7 @@
 | STATUS | IN_PROGRESS |
 | CHECKPOINT | DB/ledger core + Edge identity completed |
 | HEAD INICIAL DO PROMPT | `f662fdc` — docs: close Prompt 08 status record |
-| ÚLTIMO COMMIT FUNCIONAL | `5f2b6ac` — feat(db): add loyalty customers and points ledger |
+| ÚLTIMO COMMIT FUNCIONAL | `3b1ed21` — feat(edge): add loyalty-cpf identity function |
 | CLOUDFLARE | CONNECTED — projeto `ped-on` (conta `f7c78675…` — auth via Wrangler OAuth); production branch `main`; build `pnpm build`; output `apps/web/dist`; deployment Prompt 08 `f1afe182-8999-4c30-b635-e39e51a1dbac` (source `7fe07df`) em `https://f1afe182.ped-on.pages.dev` e `https://ped-on.pages.dev`; HTTP 200 validado em `/`, Auth, rotas administrativas incluindo `/app/pedidos`, `/menu/:slug`, carrinho, checkout, `/pedido/:trackingToken`, `manifest.webmanifest`, `sw.js`, assets JS/CSS e fallback SPA; domínio estável serve o mesmo bundle `index-CTtpL05m.js`; bundle contém as RPCs públicas/administrativas do Prompt 08, aponta para o Supabase oficial e não contém `service_role`; service worker sem cache runtime de API |
 | SUPABASE | CONNECTED — projeto `ped-on`; project ref `zmuxkztnilnzjyyojbbr`; região South America (São Paulo); migrations Local == Remote até `20260811080000` (12 migrations); migrations do Clube e hardening aplicadas oficialmente; Edge Function `loyalty-cpf` deployada (verify_jwt ativo, CORS/`no-store`) e secret `LOYALTY_CPF_HMAC_KEY` setado (backend-only); `supabase db lint --linked` sem erros; Auth não alterado e zero e-mails enviados no Prompt 09; regras anteriores permanecem ativas |
 | GITHUB | Repositório: `https://github.com/Rodrigo-Kotlin/ped-on` (visibilidade PUBLIC) — push para `main` concluído até `7fe07df` |
