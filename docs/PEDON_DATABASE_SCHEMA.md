@@ -502,7 +502,8 @@ apontada pelo lint e reaplica os grants, sem alterar assinatura ou comportamento
 O escopo fiel do Prompt 09 no banco (checkpoint `DB/ledger core completed`): programa por
 organização, identidade de consumidor por fingerprint HMAC de CPF, membership, projeção de saldo e
 ledger append-only. **Nenhum CPF em claro** é persistido. A Edge Function `loyalty-cpf` (HMAC,
-validação de CPF, token efêmero) e as UIs pública/administrativa ainda não existem nesta etapa.
+validação de CPF, token efêmero) está deployada e validada (Seção 9.11); as UIs pública e
+administrativa ainda não existem nesta etapa.
 
 ### 9.1 `public.loyalty_programs`
 
@@ -637,6 +638,34 @@ pontos e nenhuma entrada de ledger. Earn acontece somente na 1ª transição `st
 | `PED51` | `LOYALTY_UNAVAILABLE` (programa ausente/desabilitado) |
 | `PED52` | `INVALID_LOYALTY_TOKEN` (token ausente/expirado/inválido/outro tenant/formato) |
 | `PED53` | `LOYALTY_INTEGRITY` (inconsistência interna; também `limit` fora de 1..200) |
+
+### 9.11 Edge Function `loyalty-cpf`
+
+Única porta de resolução/inscrição do Clube (`supabase/functions/loyalty-cpf/index.ts`). Roda no
+Edge Runtime do Supabase, usa `service_role` apenas internamente e lê o secret backend-only
+`LOYALTY_CPF_HMAC_KEY` (32 bytes hex; nunca no repo — ver `.env.example`). O CPF bruto existe só em
+memória de request: nunca é persistido, logado nem retornado.
+
+Contrato HTTP `POST <project-ref>.supabase.co/functions/v1/loyalty-cpf` (JWT da plataforma ativo —
+o navegador envia a anon key via `supabase.functions.invoke`):
+
+| Campo | Tipo | Regras |
+|---|---|---|
+| `public_slug` | string | slug 24 hex do cardápio; formato inválido ⇒ 404 `INVALID_SLUG` |
+| `mode` | string | `lookup` \| `enroll`; outro valor ⇒ 400 `INVALID_MODE` |
+| `cpf` | string | dígitos verificadores validados; inválido ⇒ 422 `INVALID_CPF` |
+| `name` | string | obrigatório em `enroll`; `btrim` 2..120 sem `< >`/controle; senão 422 `INVALID_NAME` |
+
+- `200 { found: true, membership_id, customer: { name, cpf_last2 }, account: { points_balance,
+  recovery_points }, token: { access_token, expires_at } }` — `access_token` é 64 hex opaco de 2h
+  (DEC-093), devolvido uma única vez; só `SHA-256(token)` é persistido.
+- `200 { found: false }` em `lookup` sem cadastro (mismatch genérico, sem vazar existência).
+- `403 LOYALTY_UNAVAILABLE` (PED51), `500 LOYALTY_INTEGRITY` (PED53)/`SERVER_CONFIG`/`UPSTREAM_ERROR`.
+- Fluxo: `get_loyalty_public_context_internal(slug)` → `HMAC(secret,'pedon:cpf:v1:'||org_id||':'||cpf)`
+  → `resolve_loyalty_identity_internal(...)`. `enroll` e `lookup` emitem um novo token a cada chamada.
+- Respostas com `Cache-Control: no-store`; CORS habilitado (`*`); payload limitado a 4 KB.
+- Bugfix de deploy: resposta `OPTIONS` 204 deve ter corpo nulo (corpo não-nulo em 204 derruba o
+  runtime Deno com `EDGE_FUNCTION_ERROR`).
 
 ## 10. Funções e triggers atuais
 

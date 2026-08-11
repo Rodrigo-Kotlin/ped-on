@@ -207,6 +207,30 @@ Procedimentos de verificação manual do ledger e da identidade do Clube (conex�
 - **PED51/PED52:** `PED51` = programa ausente/desabilitado; `PED52` = token ausente/expirado/
   inválido/de outro tenant. O retry idempotente precede a validação (DEC-100).
 
+### 6.2 Edge Function `loyalty-cpf` (Prompt 09) — deploy e smoke
+
+- **Deploy:** `supabase functions deploy loyalty-cpf --project-ref zmuxkztnilnzjyyojbbr`
+  (`verify_jwt` permanece ativo; o navegador envia a anon key via `supabase.functions.invoke`).
+- **Secret:** `supabase secrets set "LOYALTY_CPF_HMAC_KEY=<64 hex>"` — 32 bytes hex, backend-only.
+  Nunca rotacionar após uso (fingerprints de clientes perderiam lookup). Para `functions serve`
+  local, copiar a chave para `supabase/functions/.env` (gitignored).
+- **Smoke:** `node supabase/tests/loyalty_edge_smoke.mjs` — exige função deployada + secret setado;
+  cria tenant/cardápio sintéticos, exercita enroll/lookup/consulta pública/erros de contrato e faz
+  cleanup. Checkpoint **26/26 PASS**.
+- **Fallback de conexão:** incidentes recorrentes de DNS no host direto (`db.<ref>.supabase.co`
+  fica momentaneamente apenas AAAA) foram observados neste ambiente; o smoke tenta o host direto 3
+  vezes e cai automaticamente no session pooler `aws-0-sa-east-1.pooler.supabase.com:5432`
+  (usuário `postgres.<ref>`), que preserva `SET ROLE`/claims. Não usar o transaction pooler (6543):
+  reset de sessão por transação quebra o padrão dos testes.
+- **Checks rápidos via curl** (corpo em arquivo para evitar quoting do PowerShell):
+
+```powershell
+$anon = (Get-Content .env | Where-Object { $_ -match '^VITE_SUPABASE_PUBLISHABLE_KEY=' }) -replace '^VITE_SUPABASE_PUBLISHABLE_KEY=',''
+$edge = 'https://zmuxkztnilnzjyyojbbr.supabase.co/functions/v1/loyalty-cpf'
+Set-Content -LiteralPath "$env:TEMP\edge.json" -Value '{"public_slug":"<slug24hex>","mode":"lookup","cpf":"52998224725"}' -NoNewline
+curl.exe -s -o - -w "`nHTTP %{http_code}`n" -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $anon" --data-binary "@$env:TEMP\edge.json" "$edge"
+```
+
 ## 7. Validação de segurança e cross-tenant
 
 Nos testes DB, sempre validar:
