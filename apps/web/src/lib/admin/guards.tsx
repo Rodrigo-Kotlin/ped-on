@@ -20,3 +20,14 @@ export function RequireManageUnit({ children }: { children: ReactNode }) {
   }
   return <>{children}</>;
 }
+
+export function RequireOwner({ children }: { children: ReactNode }) {
+  const { adminStatus, role } = useAdmin();
+  if (adminStatus === 'loading') {
+    return <AdminLoadingScreen />;
+  }
+  if (role !== 'owner') {
+    return <Navigate to="/app" replace />;
+  }
+  return <>{children}</>;
+}

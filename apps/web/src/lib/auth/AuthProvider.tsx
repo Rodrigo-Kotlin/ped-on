@@ -1,11 +1,14 @@
 import type { Session, User } from '@supabase/supabase-js';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../supabase';
 import { AuthContext } from './auth-context';
 import type { AuthStatus, Profile } from './auth-context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const currentUserId = useRef<string | null | undefined>(undefined);
   const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -20,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', userId)
       .maybeSingle();
 
+    if (currentUserId.current !== userId) return;
     setProfileLoading(false);
     if (error) {
       console.error('Ped-On: falha ao carregar perfil.', error.message);
@@ -32,6 +36,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback(
     (nextSession: Session | null) => {
       const nextUser = nextSession?.user ?? null;
+      const nextUserId = nextUser?.id ?? null;
+      if (currentUserId.current === undefined) {
+        currentUserId.current = nextUserId;
+      } else if (currentUserId.current !== nextUserId) {
+        currentUserId.current = nextUserId;
+        queryClient.clear();
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem('pedon:selectedUnitId');
+        }
+        setProfile(null);
+        setProfileLoading(false);
+      }
       setSession(nextSession);
       setUser(nextUser);
       setAuthStatus(nextUser === null ? 'signed-out' : 'signed-in');
@@ -41,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         void loadProfile(nextUser.id);
       }
     },
-    [loadProfile],
+    [loadProfile, queryClient],
   );
 
   useEffect(() => {

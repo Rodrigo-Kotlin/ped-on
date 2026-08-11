@@ -8,6 +8,7 @@ const foundMenu = {
   found: true,
   organization: { name: 'Cantina da Praça' },
   unit: { name: 'Loja Centro', is_active: true },
+  loyalty: { enabled: false },
   menu: { version_id: 'version-1', version_number: 1, published_at: '2026-08-10T12:00:00.000Z' },
   operation: {
     configured: true,
@@ -74,9 +75,7 @@ const trackingOrder = {
     status_updated_at: '2026-08-10T12:00:00Z',
     completed_at: null,
     cancelled_at: null,
-    items: [
-      { name: 'X-Salada', unit_price: '29.90', quantity: 2, line_total: '59.80', note: null },
-    ],
+    items: [{ name: 'X-Salada', unit_price: '29.90', quantity: 2, line_total: '59.80' }],
   },
 };
 
@@ -116,7 +115,7 @@ test('fluxo pickup determinístico: menu, carrinho, checkout, sucesso e tracking
 }) => {
   let submittedPayload: Record<string, unknown> | undefined;
   await installPublicMenuHarness(page);
-  await page.route('**/rest/v1/rpc/create_public_order', async (route) => {
+  await page.route('**/rest/v1/rpc/create_public_order_v2', async (route) => {
     const body = route.request().postDataJSON() as { p_payload: Record<string, unknown> };
     submittedPayload = body.p_payload;
     await route.fulfill({
@@ -187,7 +186,7 @@ test('fluxo delivery calcula taxa, coleta endereço e envia cash com troco', asy
   };
   let submittedPayload: Record<string, unknown> | undefined;
   await installPublicMenuHarness(page, deliveryMenu);
-  await page.route('**/rest/v1/rpc/create_public_order', async (route) => {
+  await page.route('**/rest/v1/rpc/create_public_order_v2', async (route) => {
     const body = route.request().postDataJSON() as { p_payload: Record<string, unknown> };
     submittedPayload = body.p_payload;
     await route.fulfill({
@@ -228,7 +227,6 @@ test('fluxo delivery calcula taxa, coleta endereço e envia cash com troco', asy
               unit_price: '29.90',
               quantity: 1,
               line_total: '29.90',
-              note: null,
             },
           ],
         },
@@ -277,7 +275,7 @@ test('PED35 preserva carrinho e exige limpeza explícita sem navegar para sucess
   page,
 }) => {
   await installPublicMenuHarness(page);
-  await page.route('**/rest/v1/rpc/create_public_order', (route) =>
+  await page.route('**/rest/v1/rpc/create_public_order_v2', (route) =>
     route.fulfill({
       status: 400,
       contentType: 'application/json',

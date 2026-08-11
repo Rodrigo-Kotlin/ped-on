@@ -1,12 +1,12 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL após o Prompt 08. O frontend usa apenas a publishable
-> key; `service_role` nunca é exposta. RLS nega por padrão e toda autorização de catálogo e
-> cardápio é vinculada à unidade.
+> Modelo de segurança Supabase/PostgreSQL no checkpoint de release hardening do Prompt 09. O
+> frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS nega por padrão e o
+> Clube usa superfícies públicas minimizadas e RPCs internas restritas ao backend.
 
 ## 1. Princípios
 
-- RLS está habilitado nas dezessete tabelas `public` atuais.
+- RLS está habilitado nas 25 tabelas `public` atuais.
 - `organization_id` delimita o tenant; `unit_id` delimita o acesso operacional.
 - Owner acessa todas as unidades da própria organização. Manager/operator dependem de vínculo em
   `membership_units`.
@@ -21,41 +21,55 @@
   lê nenhuma tabela diretamente.
 - Checkout e tracking públicos passam exclusivamente por `create_public_order` e `get_public_order`;
   respostas anônimas não expõem PII, endereço, IDs internos ou idempotência.
+- Identidade do Clube v2 exige CPF + telefone; o PostgreSQL recebe somente fingerprints HMAC
+  tenant-bound, e desconhecido/telefone divergente são indistinguíveis no contrato HTTP.
+- As oito tabelas do Clube não possuem grants de navegador. Edge identity/rate limit usam RPCs
+  internas `service_role`; conta/extrato e checkout usam RPCs públicas minimizadas.
+- `LOYALTY_CPF_HMAC_KEY` é Supabase Edge Secret de ambiente, não Vault, e nunca entra em variável
+  `VITE_*`.
 
 ## 2. RLS por tabela
 
-| Tabela | RLS | Policy atual | Semântica |
-|---|---|---|---|
-| `profiles` | ON | `profiles_select_own` | `auth.uid() = id` |
-| `profiles` | ON | `profiles_update_own` | próprio perfil; grant somente em `full_name` |
-| `organizations` | ON | `organizations_select_member` | `is_org_member(id)` |
-| `organization_members` | ON | `organization_members_select_same_org` | `is_org_member(organization_id)` |
-| `units` | ON | `units_select_authorized` | owner da org ou `can_access_unit(id)` |
-| `membership_units` | ON | `membership_units_select_own_access` | vínculo próprio ou owner da org |
-| `unit_operational_settings` | ON | nenhuma | acesso exclusivamente via RPC operacional |
-| `unit_business_hours` | ON | nenhuma | acesso exclusivamente via RPC operacional |
-| `unit_payment_methods` | ON | nenhuma | acesso exclusivamente via RPC operacional |
-| `catalog_categories` | ON | `catalog_categories_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `catalog_products` | ON | `catalog_products_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `menu_versions` | ON | `menu_versions_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `menu_version_categories` | ON | `menu_version_categories_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `menu_version_products` | ON | `menu_version_products_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `menu_publications` | ON | `menu_publications_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `orders` | ON | `orders_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `order_items` | ON | `order_items_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
-| `order_events` | ON | `order_events_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
+| Tabela                      | RLS | Policy atual                                 | Semântica                                          |
+| --------------------------- | --- | -------------------------------------------- | -------------------------------------------------- |
+| `profiles`                  | ON  | `profiles_select_own`                        | `auth.uid() = id`                                  |
+| `profiles`                  | ON  | `profiles_update_own`                        | próprio perfil; grant somente em `full_name`       |
+| `organizations`             | ON  | `organizations_select_member`                | `is_org_member(id)`                                |
+| `organization_members`      | ON  | `organization_members_select_same_org`       | `is_org_member(organization_id)`                   |
+| `units`                     | ON  | `units_select_authorized`                    | owner da org ou `can_access_unit(id)`              |
+| `membership_units`          | ON  | `membership_units_select_own_access`         | vínculo próprio ou owner da org                    |
+| `unit_operational_settings` | ON  | nenhuma                                      | acesso exclusivamente via RPC operacional          |
+| `unit_business_hours`       | ON  | nenhuma                                      | acesso exclusivamente via RPC operacional          |
+| `unit_payment_methods`      | ON  | nenhuma                                      | acesso exclusivamente via RPC operacional          |
+| `catalog_categories`        | ON  | `catalog_categories_select_unit_access`      | authenticated com `can_access_unit(unit_id)`       |
+| `catalog_products`          | ON  | `catalog_products_select_unit_access`        | authenticated com `can_access_unit(unit_id)`       |
+| `menu_versions`             | ON  | `menu_versions_select_unit_access`           | authenticated com `can_access_unit(unit_id)`       |
+| `menu_version_categories`   | ON  | `menu_version_categories_select_unit_access` | authenticated com `can_access_unit(unit_id)`       |
+| `menu_version_products`     | ON  | `menu_version_products_select_unit_access`   | authenticated com `can_access_unit(unit_id)`       |
+| `menu_publications`         | ON  | `menu_publications_select_unit_access`       | authenticated com `can_access_unit(unit_id)`       |
+| `orders`                    | ON  | `orders_select_unit_access`                  | authenticated com `can_access_unit(unit_id)`       |
+| `order_items`               | ON  | `order_items_select_unit_access`             | authenticated com `can_access_unit(unit_id)`       |
+| `order_events`              | ON  | `order_events_select_unit_access`            | authenticated com `can_access_unit(unit_id)`       |
+| `loyalty_programs`          | ON  | nenhuma                                      | acesso somente por RPC                             |
+| `customers`                 | ON  | nenhuma                                      | acesso somente por RPC interna/admin minimizada    |
+| `loyalty_memberships`       | ON  | nenhuma                                      | acesso somente por RPC interna/admin minimizada    |
+| `loyalty_consent_events`    | ON  | nenhuma                                      | evidência append-only interna                      |
+| `loyalty_accounts`          | ON  | nenhuma                                      | acesso somente por RPC                             |
+| `loyalty_ledger`            | ON  | nenhuma                                      | append-only interno; leitura por serializadores    |
+| `loyalty_access_tokens`     | ON  | nenhuma                                      | hash acessado somente por RPC                      |
+| `loyalty_rate_limits`       | ON  | nenhuma                                      | contador opaco acessado somente por `service_role` |
 
 Não há policies `INSERT` ou `DELETE` para clientes. Fora do `UPDATE(full_name)` de `profiles`, não há
 policy/grant de update direto para `authenticated`.
 
 ## 3. Helpers de autorização
 
-| Helper | Resultado |
-|---|---|
-| `is_org_member(organization_id)` | usuário atual pertence à organização |
-| `is_org_owner(organization_id)` | usuário atual é owner da organização |
-| `can_access_unit(unit_id)` | owner da organização da unidade ou vínculo próprio em `membership_units` |
-| `can_manage_unit(unit_id)` | owner da organização ou manager vinculado à unidade |
+| Helper                           | Resultado                                                                |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `is_org_member(organization_id)` | usuário atual pertence à organização                                     |
+| `is_org_owner(organization_id)`  | usuário atual é owner da organização                                     |
+| `can_access_unit(unit_id)`       | owner da organização da unidade ou vínculo próprio em `membership_units` |
+| `can_manage_unit(unit_id)`       | owner da organização ou manager vinculado à unidade                      |
 
 Todos são `stable security definer set search_path=''`. O uso de `security definer` permite
 consultar tabelas protegidas sem recursão de policy; o resultado continua derivado de `auth.uid()`.
@@ -65,20 +79,22 @@ consultar tabelas protegidas sem recursão de policy; o resultado continua deriv
 Toda célula positiva abaixo ainda exige acesso à unidade correta. Não existe autorização global por
 role sem escopo.
 
-| Ação | Owner | Manager vinculado | Operator vinculado |
-|---|---:|---:|---:|
-| SELECT do catálogo | Sim | Sim | Sim |
-| Criar/editar categoria | Sim | Sim | Não |
-| Alterar `category.is_active` | Sim | Sim | Não |
-| Criar/editar/mover produto | Sim | Sim | Não |
-| Alterar `product.is_active` | Sim | Sim | Não |
-| Alterar `product.is_available` | Sim | Sim | Sim |
-| Publicar cardápio (`publish_unit_menu`) | Sim | Sim | Não |
-| Ler publicação/histórico (`get_unit_menu_publication_admin`) | Sim | Sim | Sim |
-| Ler Central e detalhe de pedidos | Sim | Sim | Sim |
-| Alterar status do pedido | Sim | Sim | Sim |
-| Registrar `pending → paid` | Sim | Sim | Sim |
-| Registrar `paid → refunded` | Sim | Sim | Não |
+| Ação                                                         | Owner | Manager vinculado | Operator vinculado |
+| ------------------------------------------------------------ | ----: | ----------------: | -----------------: |
+| SELECT do catálogo                                           |   Sim |               Sim |                Sim |
+| Criar/editar categoria                                       |   Sim |               Sim |                Não |
+| Alterar `category.is_active`                                 |   Sim |               Sim |                Não |
+| Criar/editar/mover produto                                   |   Sim |               Sim |                Não |
+| Alterar `product.is_active`                                  |   Sim |               Sim |                Não |
+| Alterar `product.is_available`                               |   Sim |               Sim |                Sim |
+| Publicar cardápio (`publish_unit_menu`)                      |   Sim |               Sim |                Não |
+| Ler publicação/histórico (`get_unit_menu_publication_admin`) |   Sim |               Sim |                Sim |
+| Ler Central e detalhe de pedidos                             |   Sim |               Sim |                Sim |
+| Alterar status do pedido                                     |   Sim |               Sim |                Sim |
+| Registrar `pending → paid`                                   |   Sim |               Sim |                Sim |
+| Registrar `paid → refunded`                                  |   Sim |               Sim |                Não |
+| Ler programa/métricas/membros do Clube                       |   Sim |               Não |                Não |
+| Ativar/desativar o Clube                                     |   Sim |               Não |                Não |
 
 `is_active` é estrutural; `is_available` é operacional. Desativar categoria não altera produtos e
 desativar produto não altera disponibilidade. Operator não acessa nenhuma RPC estrutural nem a
@@ -101,6 +117,9 @@ publicação.
 - `get_public_menu(text)` é a única leitura anônima efetiva do cardápio.
 - As três tabelas de pedidos concedem `SELECT` somente a `authenticated`, filtrado por
   `can_access_unit`; `anon` não possui acesso direto e nenhum papel cliente recebe I/U/D.
+- As oito tabelas do Clube executam `REVOKE ALL` de `PUBLIC`, `anon` e `authenticated`; não há
+  leitura nem escrita direta efetiva por navegador. Isso inclui `loyalty_rate_limits`, que contém
+  somente escopo HMAC opaco e metadados de janela.
 
 ### 5.2 Funções
 
@@ -115,6 +134,14 @@ RPCs de catálogo, publicação e leitura administrativa têm `EXECUTE` apenas p
 `create_public_order(text,uuid,jsonb)` e `get_public_order(text)` também têm `EXECUTE` para `anon` e
 `authenticated`. As quatro RPCs administrativas de pedidos têm `EXECUTE` apenas para
 `authenticated`; helpers internos de pedidos são revogados de todos os papéis cliente.
+
+`create_public_order_v2(text,uuid,jsonb,text)` e
+`get_public_order_by_attempt(text,uuid,text)` têm `EXECUTE` para `anon`/`authenticated` e retornos
+minimizados. `get_public_loyalty_account(text)` é a única leitura pública de conta/extrato.
+`get_loyalty_program_admin`, `set_loyalty_program_enabled` e `get_loyalty_members_admin` exigem
+`authenticated` e validam `is_org_owner` no servidor. `get_loyalty_public_context_internal`,
+`resolve_loyalty_identity_internal_v2` e `consume_loyalty_rate_limit_internal` têm execute somente
+para `service_role`; o resolver de identidade legado não possui mais esse grant.
 
 `PUBLIC` e `anon` foram explicitamente revogados das funções administrativas. O helper
 `_validate_catalog_price(text)` não possui `EXECUTE` para `PUBLIC`, `anon` ou `authenticated`.
@@ -167,38 +194,69 @@ unidade, valida o payload completo e aplica regras server-authoritative para
   rejeitado, e o token público de tracking tem 32 hex gerados no servidor.
 - `get_public_order` devolve somente o contrato público minimizado. PII completa fica disponível
   apenas no detalhe administrativo protegido por `can_access_unit`.
+- Tracking público não inclui a nota livre de item; ela permanece apenas no detalhe administrativo.
+- Recuperação por tentativa exige slug + UUID de idempotência + hash de 64 hex e devolve a mesma
+  resposta pública de criação ou `found=false`, sem PII/IDs internos.
 - Lista, detalhe e transições administrativas validam sessão e acesso à unidade. Refund exige
   `can_manage_unit`; operator não possui esse privilégio.
 - `order_events` é append-only por ACL: nenhum papel cliente recebe insert/update/delete.
 - Realtime publica somente `id`, `unit_id`, `updated_at`, `status` e `payment_status`; o cliente
   invalida/refaz a fonte autoritativa em vez de confiar no payload websocket.
 
+### 6.6 Clube Ped-On
+
+- A Edge calcula HMAC tenant-bound separado para CPF e telefone; os valores brutos não chegam ao
+  PostgreSQL, não são retornados e não devem entrar em logs.
+- Lookup de identidade inexistente e telefone incorreto recebem o mesmo HTTP 422
+  `IDENTITY_NOT_CONFIRMED`, impedindo enumeração.
+- `enroll` exige `consent === true` antes da RPC, mantém o estado atual na membership e registra cada
+  evidência em `loyalty_consent_events` append-only com versão `pedon-clube-v1`.
+- Rate limit fixed-window é persistente e atômico, chaveado por HMAC(IP confiável + slug canônico +
+  mode): lookup 10/60s, enroll 5/60s; 429 inclui `Retry-After`. A Edge ignora
+  `X-Forwarded-For`, usa `CF-Connecting-IP` e agrega slugs inexistentes. Nenhuma origem fica em claro.
+- Token público tem 2 horas, é repetível para conta/extrato até checkout e é apagado atomicamente
+  quando vinculado ao pedido. Depois retorna `found=false`.
+- Desativar o programa bloqueia nova identificação e novo checkout Clube, mas não revoga a leitura
+  de token já emitido. Earn novo permanece bloqueado enquanto desativado.
+- Extrato público limita 50 entradas em ordem decrescente e omite todos os IDs internos.
+- Programa, métricas, membros e toggle são owner-only no frontend e no banco. Após toggle, o
+  frontend invalida/refaz a query; troca de usuário chama `queryClient.clear()`.
+
 ## 7. Isolamento e integridade anti-IDOR
 
-| Vetor | Defesa |
-|---|---|
-| Owner tenta unidade de outro tenant | `can_access_unit`/`can_manage_unit` falham com `PED11` |
-| Manager/operator tenta unidade sem vínculo | `membership_units` ausente; `PED11` ou zero linhas |
-| Cliente troca `organization_id` | RPCs de criação não recebem organização; servidor deriva da unidade |
-| Cliente usa categoria de outra unidade/org | lookup composto + `PED29`; FK composta também rejeita |
-| Produto persistido aponta para categoria cross-tenant | FK `(organization_id,unit_id,category_id)` |
-| Vínculo de usuário aponta para unidade cross-org | FK `(organization_id,unit_id)` em `membership_units` |
-| Query direta authenticated busca outro escopo | policy `can_access_unit(unit_id)` filtra a linha |
-| Anon consulta tabelas do catálogo | SELECT permitido, mas sem policy: zero linhas |
-| Anon consulta tabelas de menu/publicação | sem grant de SELECT: `42501` |
-| Anon chama RPC de catálogo/publicação | `EXECUTE` revogado: `42501` |
-| Anon tenta ler cardápio sem slug | `get_public_menu` retorna `found=false` |
-| Authenticated tenta I/U/D direto | grants revogados/ausência de policy: bloqueado |
-| Corrida calcula mesma ordem | advisory lock por unidade/categoria e ordem server-side |
-| Publicações concorrentes | locks `pedon:menu:publish:<unit>` serializam e preservam o slug |
-| Escrita direta no snapshot | sem policy/grant: bloqueado; imutabilidade é estrutural |
-| Anon consulta tabelas de pedidos | sem grant de SELECT: `42501` |
-| Checkout envia preço/total/nome | payload estrito + snapshot e cálculo server-authoritative: `PED37` |
-| Checkout reutiliza chave com payload diferente | hash canônico + unique/lock por unidade: `PED42` |
-| Tracking tenta enumerar pedido | token opaco de 32 hex; desconhecido retorna `found=false` |
-| Staff tenta pedido de outra unidade | `can_access_unit` nas RPCs e RLS filtra leitura direta |
-| Operator tenta refund | `can_manage_unit` obrigatório: `PED11` |
-| Websocket contém PII | publicação Realtime limitada às cinco colunas de invalidação |
+| Vetor                                                 | Defesa                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| Owner tenta unidade de outro tenant                   | `can_access_unit`/`can_manage_unit` falham com `PED11`                 |
+| Manager/operator tenta unidade sem vínculo            | `membership_units` ausente; `PED11` ou zero linhas                     |
+| Cliente troca `organization_id`                       | RPCs de criação não recebem organização; servidor deriva da unidade    |
+| Cliente usa categoria de outra unidade/org            | lookup composto + `PED29`; FK composta também rejeita                  |
+| Produto persistido aponta para categoria cross-tenant | FK `(organization_id,unit_id,category_id)`                             |
+| Vínculo de usuário aponta para unidade cross-org      | FK `(organization_id,unit_id)` em `membership_units`                   |
+| Query direta authenticated busca outro escopo         | policy `can_access_unit(unit_id)` filtra a linha                       |
+| Anon consulta tabelas do catálogo                     | SELECT permitido, mas sem policy: zero linhas                          |
+| Anon consulta tabelas de menu/publicação              | sem grant de SELECT: `42501`                                           |
+| Anon chama RPC de catálogo/publicação                 | `EXECUTE` revogado: `42501`                                            |
+| Anon tenta ler cardápio sem slug                      | `get_public_menu` retorna `found=false`                                |
+| Authenticated tenta I/U/D direto                      | grants revogados/ausência de policy: bloqueado                         |
+| Corrida calcula mesma ordem                           | advisory lock por unidade/categoria e ordem server-side                |
+| Publicações concorrentes                              | locks `pedon:menu:publish:<unit>` serializam e preservam o slug        |
+| Escrita direta no snapshot                            | sem policy/grant: bloqueado; imutabilidade é estrutural                |
+| Anon consulta tabelas de pedidos                      | sem grant de SELECT: `42501`                                           |
+| Checkout envia preço/total/nome                       | payload estrito + snapshot e cálculo server-authoritative: `PED37`     |
+| Checkout reutiliza chave com payload diferente        | hash canônico + unique/lock por unidade: `PED42`                       |
+| Tracking tenta enumerar pedido                        | token opaco de 32 hex; desconhecido retorna `found=false`              |
+| Staff tenta pedido de outra unidade                   | `can_access_unit` nas RPCs e RLS filtra leitura direta                 |
+| Operator tenta refund                                 | `can_manage_unit` obrigatório: `PED11`                                 |
+| Websocket contém PII                                  | publicação Realtime limitada às cinco colunas de invalidação           |
+| CPF/telefone enviados ao banco                        | Edge normaliza e envia apenas HMAC tenant-bound; bruto fica na request |
+| Atacante enumera CPF por lookup                       | desconhecido e telefone divergente retornam o mesmo 422/corpo          |
+| Ataque distribuído entre instâncias Edge              | rate limit persiste no PostgreSQL por escopo HMAC/janela               |
+| Browser consulta tabelas do Clube                     | zero grants/policies; somente RPCs públicas minimizadas                |
+| Manager/operator tenta administrar Clube              | `is_org_owner` obrigatório nas três RPCs administrativas               |
+| Token é reutilizado após checkout                     | DELETE atômico no checkout; consulta posterior `found=false`           |
+| Programa é desligado após emissão                     | token existente só lê; nova identificação/checkout/earn bloqueados     |
+| Recovery tenta outro hash/chave/slug                  | `get_public_order_by_attempt` retorna `found=false`                    |
+| Tracking tenta obter nota livre                       | serializador público omite `order_items.note`                          |
 
 As FKs compostas são defesa de integridade adicional, não substituto da autorização. As RPCs
 verificam autorização antes da mutação e restringem updates por tenant/unidade já resolvidos.
@@ -207,45 +265,52 @@ verificam autorização antes da mutação e restringem updates por tenant/unida
 
 Catálogo reutiliza:
 
-| Código | Significado |
-|---|---|
-| `PED10` | não autenticado |
-| `PED11` | sem acesso/gestão da unidade |
-| `PED12` | unidade inexistente |
-| `PED20..PED23` | categoria ausente/nome inválido/conflito |
-| `PED24..PED28` | produto ausente/campos ou preço inválidos |
-| `PED29` | categoria não pertence à unidade/organização |
-| `PED30` | flag booleana inválida |
-| `PED31` | menu vazio não pode ser publicado |
-| `PED32` | conflito raro de slug público |
-| `PED33` | menu público não encontrado |
-| `PED34` | unidade indisponível para pedidos |
-| `PED35`/`PED36` | menu ou configuração mudou durante o checkout |
-| `PED37`/`PED38` | carrinho inválido ou item indisponível |
-| `PED39`/`PED40` | modalidade ou pagamento indisponível |
-| `PED41`/`PED42` | mínimo não atingido ou conflito de idempotência |
-| `PED43`/`PED44`/`PED45` | cliente, endereço ou troco inválido |
-| `PED46` | pedido não encontrado |
-| `PED47`/`PED48` | transição inválida de pedido ou pagamento |
-| `PED49`/`PED50` | colisão de tracking ou overflow monetário/numérico |
+| Código                  | Significado                                        |
+| ----------------------- | -------------------------------------------------- |
+| `PED10`                 | não autenticado                                    |
+| `PED11`                 | sem acesso/gestão da unidade                       |
+| `PED12`                 | unidade inexistente                                |
+| `PED20..PED23`          | categoria ausente/nome inválido/conflito           |
+| `PED24..PED28`          | produto ausente/campos ou preço inválidos          |
+| `PED29`                 | categoria não pertence à unidade/organização       |
+| `PED30`                 | flag booleana inválida                             |
+| `PED31`                 | menu vazio não pode ser publicado                  |
+| `PED32`                 | conflito raro de slug público                      |
+| `PED33`                 | menu público não encontrado                        |
+| `PED34`                 | unidade indisponível para pedidos                  |
+| `PED35`/`PED36`         | menu ou configuração mudou durante o checkout      |
+| `PED37`/`PED38`         | carrinho inválido ou item indisponível             |
+| `PED39`/`PED40`         | modalidade ou pagamento indisponível               |
+| `PED41`/`PED42`         | mínimo não atingido ou conflito de idempotência    |
+| `PED43`/`PED44`/`PED45` | cliente, endereço ou troco inválido                |
+| `PED46`                 | pedido não encontrado                              |
+| `PED47`/`PED48`         | transição inválida de pedido ou pagamento          |
+| `PED49`/`PED50`         | colisão de tracking ou overflow monetário/numérico |
 
 Configuração operacional usa `PED10..PED18`; RPCs históricas de unidade usam `PED00..PED05`.
 `get_public_menu` nunca lança erro (retorna `found=false`). Detalhes completos estão em
 `PEDON_DATABASE_SCHEMA.md`.
 
+SQL do Clube permanece limitado a `PED51 LOYALTY_UNAVAILABLE`,
+`PED52 INVALID_LOYALTY_TOKEN` e `PED53 LOYALTY_INTEGRITY`. A Edge expõe códigos HTTP próprios: 403
+`LOYALTY_UNAVAILABLE`; 422 `INVALID_CPF`, `INVALID_PHONE`, `INVALID_NAME`,
+`CONSENT_REQUIRED` ou `IDENTITY_NOT_CONFIRMED`; 429 `RATE_LIMITED` com `Retry-After`; e 500 para
+integridade/configuração/upstream. Slug inválido/desconhecido usa 404 `INVALID_SLUG`.
+
 ## 9. Testes executados
 
-Os seis scripts em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
+Os sete scripts DB em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
 organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup automático:
 
-| Script | Resultado oficial | Cobertura principal |
-|---|---:|---|
-| `rls_integrity.test.mjs` | 22/22 | identidade, onboarding, isolamento e escrita direta |
-| `rbac_units_integrity.test.mjs` | 31/31 | owner/manager/operator, vínculos, FKs e concorrência |
-| `unit_operational_config_integrity.test.mjs` | 80/80 | grants, RBAC, validações, aceite e atomicidade |
-| `catalog_integrity.test.mjs` | 123/123 | RLS/ACL, matriz RBAC, IDOR, FKs, flags, preço e locks |
-| `menu_publication_integrity.test.mjs` | 121/121 | publicação, imutabilidade, slug, overlay, API pública e isolamento |
-| `orders_integrity.test.mjs` | 318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência |
+| Script                                       | Resultado oficial | Cobertura principal                                                                       |
+| -------------------------------------------- | ----------------: | ----------------------------------------------------------------------------------------- |
+| `rls_integrity.test.mjs`                     |             22/22 | identidade, onboarding, isolamento e escrita direta                                       |
+| `rbac_units_integrity.test.mjs`              |             31/31 | owner/manager/operator, vínculos, FKs e concorrência                                      |
+| `unit_operational_config_integrity.test.mjs` |             80/80 | grants, RBAC, validações, aceite e atomicidade                                            |
+| `catalog_integrity.test.mjs`                 |           123/123 | RLS/ACL, matriz RBAC, IDOR, FKs, flags, preço e locks                                     |
+| `menu_publication_integrity.test.mjs`        |           121/121 | publicação, imutabilidade, slug, overlay, API pública e isolamento                        |
+| `orders_integrity.test.mjs`                  |           318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência       |
+| `loyalty_integrity.test.mjs`                 |           148/148 | identidade v2, consent auditável, ACL legado, TTL, rate limit, recovery e ledger           |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das quatro tabelas, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
@@ -253,7 +318,10 @@ slug estável/opaco e único, republicação preservando histórico, API públic
 disponibilidade em overlay (inclusive fonte deletada), unidade inativa, isolamento entre
 organizações, publicações concorrentes e ausência de vazamento entre unidades. Pedidos validam
 payload estrito, dinheiro exato, replay durável, tracking minimizado, máquinas de estado,
-autorização de refund e publicação Realtime sem PII. `supabase db lint --linked` passou sem erros.
+autorização de refund e publicação Realtime sem PII. Clube valida grants zero, HMACs, mismatch
+uniforme, consentimento, token repetível/consumido, disable explícito, rate limit sem PII, statement
+máximo 50 e recuperação sem PII. Edge unit 14/14 e remote smoke 36/36 também passaram;
+`supabase db lint --linked` passou sem erros.
 
 Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
 `membership_units` durante um cenário e é frágil se outra suíte inserir vínculos em paralelo.
@@ -265,7 +333,7 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial dos seis testes DB e
+- Alterações de autorização exigem execução sequencial dos sete testes DB e
   `supabase db lint --linked`.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.

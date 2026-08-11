@@ -53,7 +53,13 @@ describe('TrackingPage', () => {
           completed_at: null,
           cancelled_at: null,
           items: [
-            { name: 'X-Salada', unit_price: '29.90', quantity: 1, line_total: '29.90', note: null },
+            {
+              name: 'X-Salada',
+              unit_price: '29.90',
+              quantity: 1,
+              line_total: '29.90',
+              note: 'segredo que não pode aparecer',
+            },
           ],
         },
       },
@@ -68,6 +74,7 @@ describe('TrackingPage', () => {
     expect(document.body).not.toHaveTextContent(
       /customer|phone|organization_id|unit_id|tracking_token/,
     );
+    expect(document.body).not.toHaveTextContent('segredo que não pode aparecer');
     await user.click(screen.getByRole('button', { name: 'Atualizar' }));
     expect(supabaseMock.rpc).toHaveBeenCalledTimes(2);
   });

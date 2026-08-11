@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import { addCents, centsToDecimal, decimalToCents, formatBRL } from '../lib/mone
 import { publicMenuQueryKey, publicMenuQueryOptions } from '../lib/menu/public-menu-query';
 import {
   createPublicOrder,
+  getPublicOrderByAttempt,
   PAYMENT_METHOD_LABELS,
   PublicOrderError,
   SERVICE_MODE_LABELS,
@@ -22,6 +23,23 @@ import type {
 } from '../lib/orders/orders';
 import type { PublicMenuData } from '../lib/menu/menu';
 import { isPlainText } from '../lib/plain-text';
+import {
+  cpfSchema,
+  isLoyaltyToken,
+  loyaltyNameSchema,
+  LoyaltyError,
+  maskCpf,
+  resolveLoyaltyIdentity,
+} from '../lib/loyalty/loyalty';
+import type { LoyaltyResolveFound } from '../lib/loyalty/loyalty';
+import {
+  clearPendingOrderAttempt,
+  createAttemptRecoveryHash,
+  fingerprintOrderPayload,
+  loadPendingOrderAttempt,
+  savePendingOrderAttempt,
+} from '../lib/orders/pending-order';
+import type { PendingOrderAttempt } from '../lib/orders/pending-order';
 
 const plainText = (minimum: number, maximum: number, requiredMessage: string) =>
   z
@@ -92,6 +110,13 @@ const checkoutSchema = z
 type CheckoutFormValues = z.infer<typeof checkoutSchema>;
 type SubmitError = { code: PublicOrderErrorCode | null; message: string };
 
+const clubEnrollCheckoutSchema = z.object({
+  name: loyaltyNameSchema,
+  consent: z
+    .boolean()
+    .refine((value) => value, 'É necessário aceitar os termos para entrar no Clube.'),
+});
+
 const inputClass =
   'mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 bg-white px-3 py-2 text-base text-pedon-text';
 
@@ -114,15 +139,35 @@ export function CheckoutPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { cart, clearCart } = useCart();
+  const finishRecoveredAttempt = useEffectEvent((trackingToken: string) => {
+    clearCart();
+    clearPendingOrderAttempt(publicSlug);
+    navigate(`/pedido/${trackingToken}`, { replace: true });
+  });
   const menuQuery = useQuery(publicMenuQueryOptions(publicSlug));
   const [submitError, setSubmitError] = useState<SubmitError | null>(null);
-  const [attempt, setAttempt] = useState<{ fingerprint: string; key: string } | null>(null);
+  const [attempt, setAttempt] = useState<PendingOrderAttempt | null>(() =>
+    loadPendingOrderAttempt(publicSlug),
+  );
+  const [attemptPayloadFingerprint, setAttemptPayloadFingerprint] = useState<string | null>(null);
+  const [recoveringAttempt, setRecoveringAttempt] = useState(attempt !== null);
+  const [club, setClub] = useState<{ found: LoyaltyResolveFound; optIn: boolean } | null>(null);
+  const [clubOpen, setClubOpen] = useState(false);
+  const [clubCpf, setClubCpf] = useState('');
+  const [clubName, setClubName] = useState('');
+  const [clubConsent, setClubConsent] = useState(false);
+  const [clubStatus, setClubStatus] = useState<'idle' | 'enroll' | 'checking'>('idle');
+  const [clubCpfError, setClubCpfError] = useState<string | null>(null);
+  const [clubEnrollError, setClubEnrollError] = useState<string | null>(null);
+  const [clubError, setClubError] = useState<string | null>(null);
+  const clubChecking = clubStatus === 'checking';
 
   const {
     register,
     handleSubmit,
     control,
     getValues,
+    trigger,
     setError,
     setValue,
     formState: { errors, isSubmitting },
@@ -179,6 +224,36 @@ export function CheckoutPage() {
     }
   }, [getValues, menu, setValue]);
 
+  useEffect(() => {
+    const savedAttempt = loadPendingOrderAttempt(publicSlug);
+    if (savedAttempt === null) {
+      return;
+    }
+    let active = true;
+    void getPublicOrderByAttempt(
+      publicSlug,
+      savedAttempt.idempotency_key,
+      savedAttempt.request_fingerprint,
+    )
+      .then((result) => {
+        if (!active) return;
+        if (result.found) {
+          finishRecoveredAttempt(result.tracking_token);
+          return;
+        }
+        setAttempt(savedAttempt);
+      })
+      .catch(() => {
+        // The same persisted attempt remains available for a safe retry.
+      })
+      .finally(() => {
+        if (active) setRecoveringAttempt(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [publicSlug]);
+
   const stale = menu !== null && isCartStale(cart, menu.menu.version_id);
   const subtotal = cartSubtotalCents(cart);
   const deliveryFee =
@@ -187,9 +262,101 @@ export function CheckoutPage() {
 
   function confirmClearCart() {
     if (window.confirm('Limpar o carrinho antigo e começar novamente com este cardápio?')) {
+      clearPendingOrderAttempt(publicSlug);
+      setAttempt(null);
+      setAttemptPayloadFingerprint(null);
       clearCart();
       navigate(`/menu/${publicSlug}`);
     }
+  }
+
+  async function submitClubCpf() {
+    const phoneValid = await trigger('phone', { shouldFocus: true });
+    if (!phoneValid) {
+      setClubError('Informe um telefone válido com DDD para confirmar sua identidade.');
+      return;
+    }
+    const parsed = cpfSchema.safeParse(clubCpf);
+    if (!parsed.success) {
+      setClubCpfError(parsed.error.issues[0]?.message ?? 'CPF inválido.');
+      return;
+    }
+    setClubCpfError(null);
+    setClubError(null);
+    setClubStatus('checking');
+    try {
+      const result = await resolveLoyaltyIdentity({
+        publicSlug,
+        mode: 'lookup',
+        cpf: parsed.data,
+        phone: getValues('phone'),
+      });
+      if (result.found === true) {
+        setClub({ found: result, optIn: true });
+        setClubOpen(true);
+        setClubStatus('idle');
+      } else {
+        setClubStatus('enroll');
+      }
+    } catch (error) {
+      if (error instanceof LoyaltyError && error.code === 'IDENTITY_NOT_CONFIRMED') {
+        setClubStatus('enroll');
+      } else {
+        setClubStatus('idle');
+      }
+      setClubError(
+        error instanceof LoyaltyError ? error.message : 'Não foi possível processar a solicitação.',
+      );
+    }
+  }
+
+  async function submitClubEnroll() {
+    const phoneValid = await trigger('phone', { shouldFocus: true });
+    if (!phoneValid) {
+      setClubError('Informe um telefone válido com DDD para confirmar sua identidade.');
+      return;
+    }
+    const parsed = clubEnrollCheckoutSchema.safeParse({ name: clubName, consent: clubConsent });
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? 'Revise os dados do cadastro.';
+      setClubEnrollError(message);
+      return;
+    }
+    setClubEnrollError(null);
+    setClubError(null);
+    setClubStatus('checking');
+    try {
+      const result = await resolveLoyaltyIdentity({
+        publicSlug,
+        mode: 'enroll',
+        cpf: clubCpf,
+        phone: getValues('phone'),
+        name: parsed.data.name,
+        consent: true,
+      });
+      if (result.found === true) {
+        setClub({ found: result, optIn: true });
+        setClubOpen(true);
+        setClubStatus('idle');
+      }
+    } catch (error) {
+      setClubError(
+        error instanceof LoyaltyError ? error.message : 'Não foi possível processar a solicitação.',
+      );
+      setClubStatus('enroll');
+    }
+  }
+
+  function unlinkClub() {
+    setClub(null);
+    setClubOpen(false);
+    setClubStatus('idle');
+    setClubCpf('');
+    setClubName('');
+    setClubConsent(false);
+    setClubCpfError(null);
+    setClubEnrollError(null);
+    setClubError(null);
   }
 
   async function onSubmit(values: CheckoutFormValues) {
@@ -254,13 +421,39 @@ export function CheckoutPage() {
       payload.delivery_address = address;
     }
 
-    const fingerprint = JSON.stringify(payload);
-    const idempotencyKey = attempt?.fingerprint === fingerprint ? attempt.key : crypto.randomUUID();
-    if (attempt?.fingerprint !== fingerprint) setAttempt({ fingerprint, key: idempotencyKey });
+    if (
+      club !== null &&
+      club.optIn &&
+      isLoyaltyToken(club.found.token.access_token) &&
+      menu.loyalty.enabled
+    ) {
+      payload.loyalty_token = club.found.token.access_token;
+    }
+
+    const payloadFingerprint = await fingerprintOrderPayload(payload);
+    const pendingAttempt: PendingOrderAttempt =
+      attempt !== null &&
+      (attemptPayloadFingerprint === null || attemptPayloadFingerprint === payloadFingerprint)
+        ? attempt
+        : {
+            idempotency_key: crypto.randomUUID(),
+            request_fingerprint: createAttemptRecoveryHash(),
+            public_slug: publicSlug,
+            created_at: new Date().toISOString(),
+          };
+    if (attempt !== pendingAttempt) setAttempt(pendingAttempt);
+    setAttemptPayloadFingerprint(payloadFingerprint);
+    savePendingOrderAttempt(pendingAttempt);
     setSubmitError(null);
 
     try {
-      const result = await createPublicOrder(publicSlug, idempotencyKey, payload);
+      const result = await createPublicOrder(
+        publicSlug,
+        pendingAttempt.idempotency_key,
+        pendingAttempt.request_fingerprint,
+        payload,
+      );
+      clearPendingOrderAttempt(publicSlug);
       clearCart();
       navigate(`/pedido/${result.tracking_token}`);
     } catch (error) {
@@ -285,6 +478,9 @@ export function CheckoutPage() {
           refetchType: 'none',
         });
         await menuQuery.refetch();
+      }
+      if (orderError.code === 'PED52') {
+        unlinkClub();
       }
     }
   }
@@ -389,6 +585,178 @@ export function CheckoutPage() {
             />
             <FieldError id="phone-error" message={errors.phone?.message} />
           </section>
+
+          {menu.loyalty.enabled && (
+            <section
+              aria-labelledby="club-checkout-title"
+              className="rounded-lg bg-white p-4 shadow-sm"
+            >
+              <h2 id="club-checkout-title" className="font-bold text-pedon-navy">
+                Clube Ped-On
+              </h2>
+              {club === null ? (
+                <>
+                  <p className="mt-2 text-sm text-pedon-text/70">
+                    Vincule seu Clube a esta compra para acumular pontos nela.
+                  </p>
+                  {!clubOpen && (
+                    <button
+                      type="button"
+                      onClick={() => setClubOpen(true)}
+                      className="mt-3 min-h-11 rounded-md border border-pedon-orange px-4 font-semibold text-pedon-orange"
+                    >
+                      Quero ganhar pontos
+                    </button>
+                  )}
+                  {clubOpen && (
+                    <div className="mt-3 space-y-4">
+                      <div>
+                        <label htmlFor="club-checkout-cpf" className="block text-sm font-medium">
+                          CPF
+                        </label>
+                        <input
+                          id="club-checkout-cpf"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          placeholder="000.000.000-00"
+                          value={clubCpf}
+                          onChange={(event) => setClubCpf(event.target.value)}
+                          disabled={clubChecking}
+                          aria-invalid={clubCpfError !== null}
+                          aria-describedby={
+                            clubCpfError !== null ? 'club-checkout-cpf-error' : undefined
+                          }
+                          className={inputClass}
+                        />
+                        <FieldError
+                          id="club-checkout-cpf-error"
+                          message={clubCpfError ?? undefined}
+                        />
+                      </div>
+
+                      {clubStatus === 'enroll' && (
+                        <div className="space-y-4 rounded-md bg-pedon-surface p-3">
+                          <p role="status" className="text-sm text-pedon-text">
+                            Não foi possível confirmar um cadastro com os dados informados. Complete
+                            seu cadastro para entrar no Clube:
+                          </p>
+                          <div>
+                            <label
+                              htmlFor="club-checkout-name"
+                              className="block text-sm font-medium"
+                            >
+                              Nome
+                            </label>
+                            <input
+                              id="club-checkout-name"
+                              autoComplete="name"
+                              value={clubName}
+                              onChange={(event) => setClubName(event.target.value)}
+                              disabled={clubChecking}
+                              aria-invalid={clubEnrollError !== null}
+                              aria-describedby={
+                                clubEnrollError !== null ? 'club-checkout-enroll-error' : undefined
+                              }
+                              className={inputClass}
+                            />
+                          </div>
+                          <label className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={clubConsent}
+                              onChange={(event) => setClubConsent(event.target.checked)}
+                              disabled={clubChecking}
+                              className="mt-1 size-4"
+                            />
+                            <span className="text-sm text-pedon-text">
+                              Aceito participar do Clube Ped-On e concordo com o uso dos meus dados
+                              para o programa de fidelidade. O Ped-On não armazena o CPF: guarda
+                              apenas uma identificação segura para a pontuação.
+                            </span>
+                          </label>
+                          <FieldError
+                            id="club-checkout-enroll-error"
+                            message={clubEnrollError ?? undefined}
+                          />
+                        </div>
+                      )}
+
+                      {clubError !== null && (
+                        <p
+                          role="alert"
+                          aria-live="assertive"
+                          className="rounded-md bg-red-50 p-3 text-sm text-red-700"
+                        >
+                          {clubError}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-3">
+                        {clubStatus === 'enroll' ? (
+                          <button
+                            type="button"
+                            onClick={() => void submitClubEnroll()}
+                            disabled={clubChecking}
+                            className="min-h-11 rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-45"
+                          >
+                            {clubChecking ? 'Cadastrando…' : 'Cadastrar e vincular'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void submitClubCpf()}
+                            disabled={clubChecking}
+                            className="min-h-11 rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-45"
+                          >
+                            {clubChecking ? 'Consultando…' : 'Vincular CPF'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setClubOpen(false);
+                            setClubStatus('idle');
+                            setClubCpfError(null);
+                            setClubEnrollError(null);
+                            setClubError(null);
+                          }}
+                          className="min-h-11 rounded-md border border-pedon-navy/25 px-4 font-semibold text-pedon-navy"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 text-sm text-pedon-text/70">
+                    Vinculado:{' '}
+                    <span className="font-medium">
+                      {club.found.customer.name ?? 'cliente'} ·{' '}
+                      {maskCpf(club.found.customer.cpf_last2)}
+                    </span>
+                  </p>
+                  <label className="mt-3 flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={club.optIn}
+                      onChange={(event) => setClub({ ...club, optIn: event.target.checked })}
+                      className="mt-1 size-4"
+                    />
+                    <span className="text-sm text-pedon-text">Acumular pontos nesta compra</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={unlinkClub}
+                    className="mt-3 min-h-11 rounded-md border border-pedon-navy/25 px-4 font-semibold text-pedon-navy"
+                  >
+                    Desvincular
+                  </button>
+                </>
+              )}
+            </section>
+          )}
 
           <fieldset className="rounded-lg bg-white p-4 shadow-sm">
             <legend className="font-bold text-pedon-navy">Como deseja receber?</legend>
@@ -531,6 +899,7 @@ export function CheckoutPage() {
             type="submit"
             disabled={
               isSubmitting ||
+              recoveringAttempt ||
               !menu.operation.can_order_now ||
               menu.operation.revision === null ||
               enabledModes.length === 0 ||
@@ -538,7 +907,11 @@ export function CheckoutPage() {
             }
             className="min-h-12 w-full rounded-md bg-pedon-orange px-4 py-3 font-bold text-white disabled:opacity-45"
           >
-            {isSubmitting ? 'Enviando pedido…' : 'Enviar pedido'}
+            {recoveringAttempt
+              ? 'Verificando pedido anterior…'
+              : isSubmitting
+                ? 'Enviando pedido…'
+                : 'Enviar pedido'}
           </button>
         </form>
       </div>

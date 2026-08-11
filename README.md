@@ -6,26 +6,26 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 3A — Pedidos: checkout público e Central de Pedidos. O Prompt 08 está concluído com:
+Fase 3B, Prompt 09: Clientes e Clube Ped-On. O checkpoint de release hardening está
+`LOCAL_GATES_PASS`: backend deployado, frontend implementado e reauditoria local aprovada. O status
+geral permanece `IN_PROGRESS` até commit/push, CI e deploy Cloudflare rastreáveis da versão completa.
 
-- Supabase Auth, identidade, onboarding e tenant;
-- RBAC `owner`/`manager`/`operator` com acesso por unidade;
-- gestão de unidades e contexto administrativo;
-- configuração operacional por unidade;
-- catálogo administrativo por unidade com categorias e produtos simples;
-- preço decimal exato e disponibilidade operacional separada do estado estrutural;
-- cardápio público anônimo via slug opaco a partir de snapshot comercial imutável, com overlay
-  dinâmico de disponibilidade;
-- publicação `owner`/`manager` com histórico de versões;
-- carrinho público local vinculado à versão publicada, sem persistência de PII;
-- checkout guest idempotente com preços, taxas e totais calculados no PostgreSQL;
-- tracking público por token opaco, sem PII ou IDs internos;
-- Central de Pedidos por unidade com lifecycle, pagamento operacional separado e auditoria;
-- Realtime usado somente para invalidar e refazer queries administrativas;
-- PWA em Cloudflare Pages e CI no GitHub Actions.
+O produto atual inclui:
 
-O catálogo administrativo continua mutável; publicação e pedido preservam snapshots comerciais
-imutáveis. Não há gateway, pagamento online, roteirização, CPF ou fidelidade nesta etapa.
+- Supabase Auth, onboarding, tenant e RBAC `owner`/`manager`/`operator` por unidade;
+- configuração operacional, catálogo mutável e publicação de cardápio por snapshot imutável;
+- carrinho local sem PII, checkout guest idempotente e recuperação segura de tentativa pendente;
+- tracking público por token opaco, com resposta minimizada e sem notas livres dos itens;
+- Central de Pedidos, lifecycle, pagamento operacional separado, auditoria e Realtime para refetch;
+- Clube Ped-On por organização, com identificação pública por CPF + telefone protegidos por HMAC;
+- consentimento explícito e auditável, saldo, ledger append-only, extrato público e vínculo opcional
+  no checkout;
+- painel owner-only para ativar/desativar o programa e consultar métricas e membros mascarados;
+- PWA hospedada em Cloudflare Pages e CI no GitHub Actions.
+
+O CPF e o telefone completos não são persistidos. A Edge Function `loyalty-cpf` usa fingerprints
+HMAC tenant-bound, aplica rate limit persistente e emite token opaco de 2 horas. Recompensas,
+resgates e vouchers estão deferidos para o Prompt 10, que está `NOT STARTED`.
 
 ## Objetivo do MVP
 
@@ -42,9 +42,9 @@ Essa sequência é o roadmap do MVP, não uma declaração de que todos os módu
 - TypeScript estrito, React 19 e React Router 8
 - pnpm workspaces
 - Vite, Tailwind CSS 4 e PWA via `vite-plugin-pwa`
-- Supabase (PostgreSQL, Auth, RLS e RPCs)
+- Supabase (PostgreSQL, Auth, RLS, RPCs e Edge Functions/Deno)
 - Cloudflare Pages
-- Vitest, Testing Library e Playwright
+- Vitest, Testing Library, Playwright e testes de integração PostgreSQL
 - GitHub Actions e Gitleaks
 
 ## Estrutura do monorepo
@@ -53,24 +53,15 @@ Essa sequência é o roadmap do MVP, não uma declaração de que todos os módu
 ped-on/
 ├── apps/
 │   └── web/                       # PWA React/Vite
-│       ├── e2e/                   # E2E Auth, catálogo, cardápio e pedidos
-│       └── src/
-│           ├── app/               # Router e providers
-│           ├── components/        # Shell administrativo
-│           ├── lib/               # Auth, admin, catálogo, carrinho e pedidos
-│           └── pages/             # Páginas e testes de componente
-├── packages/
-│   ├── config/                    # Configuração compartilhada
-│   ├── domain/                    # Fundação de domínio
-│   ├── schemas/                   # Contratos compartilhados
-│   ├── test-utils/                # Utilitários de teste
-│   └── ui/                        # Componentes compartilhados
+│       ├── e2e/                   # E2E mocked em quatro viewports
+│       └── src/                   # app, componentes, domínio web e páginas
+├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # Dez migrations versionadas até Prompt 08
-│   ├── tests/                     # Seis suítes de integração DB
-│   ├── functions/                 # Espaço para Edge Functions
-│   └── seed.example.sql           # Seed de exemplo, sem dados reais
-├── docs/                          # Continuidade, schema, RLS e operação
+│   ├── migrations/                # 14 migrations versionadas até Prompt 09 hardening
+│   ├── tests/                     # sete suítes DB e smoke remoto da Edge
+│   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
+│   └── seed.example.sql           # seed de exemplo, sem dados reais
+├── docs/                          # continuidade, schema, RLS e operação
 ├── .github/workflows/             # CI
 ├── .env.example
 ├── package.json
@@ -79,32 +70,33 @@ ped-on/
 
 ## Rotas atuais
 
-| Rota                     | Função                                      |
-| ------------------------ | ------------------------------------------- |
-| `/`                      | landing técnica                             |
-| `/login`                 | autenticação                                |
-| `/cadastro`              | criação de conta                            |
-| `/onboarding`            | criação transacional da organização/unidade |
-| `/app`                   | área administrativa e seleção de unidade    |
-| `/app/catalogo`          | categorias e produtos por unidade           |
-| `/app/configuracoes`     | configuração operacional da unidade         |
-| `/app/cardapio`          | publicação e cardápio público               |
-| `/app/pedidos`           | Central de Pedidos por unidade              |
-| `/menu/:slug`            | cardápio público do cliente (sem sessão)    |
-| `/menu/:slug/carrinho`   | carrinho público local                      |
-| `/menu/:slug/checkout`   | checkout guest network-only                 |
-| `/pedido/:trackingToken` | acompanhamento público do pedido            |
+| Rota                     | Função                                               |
+| ------------------------ | ---------------------------------------------------- |
+| `/`                      | landing técnica                                      |
+| `/login`                 | autenticação                                         |
+| `/cadastro`              | criação de conta                                     |
+| `/onboarding`            | criação transacional da organização/unidade          |
+| `/app`                   | área administrativa e seleção de unidade             |
+| `/app/catalogo`          | categorias e produtos por unidade                    |
+| `/app/configuracoes`     | configuração operacional da unidade                  |
+| `/app/cardapio`          | publicação e cardápio público                        |
+| `/app/pedidos`           | Central de Pedidos por unidade                       |
+| `/app/clube`             | programa, métricas e membros do Clube; somente owner |
+| `/menu/:slug`            | cardápio público do cliente                          |
+| `/menu/:slug/carrinho`   | carrinho público local                               |
+| `/menu/:slug/checkout`   | checkout guest/Clube, idempotente e network-only     |
+| `/pedido/:trackingToken` | acompanhamento público minimizado                    |
+| `/clube/:publicSlug`     | identificação, cadastro, saldo e extrato públicos    |
 
-`/app/catalogo` permite leitura a owner, manager e operator autorizados. Owner/manager gerenciam a
-estrutura; operator altera somente a disponibilidade de produtos. `/app/configuracoes` é restrita a
-owner/manager autorizados. `/app/cardapio` exige owner/manager para publicar; `/menu/:slug` é
-público e lê apenas `get_public_menu`. `/app/pedidos` permite leitura e transição de status aos três
-papéis autorizados; reembolso operacional exige owner/manager.
+As autorizações administrativas permanecem vinculadas à organização e à unidade. A gestão do Clube
+é owner-only no frontend e no PostgreSQL; manager e operator não acessam programa, métricas ou
+membros.
 
 ## Requisitos locais
 
 - Node.js `>=22`
 - pnpm `>=9` (`pnpm@9.15.9` fixado no projeto)
+- Deno 2 para testes unitários da Edge Function
 - Git
 - Chromium do Playwright para E2E
 - Supabase CLI e acesso ao banco oficial somente para operações/testes DB
@@ -118,21 +110,22 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Comandos
 
-| Comando                            | Descrição                            |
-| ---------------------------------- | ------------------------------------ |
-| `pnpm dev`                         | app web em desenvolvimento           |
-| `pnpm build`                       | build PWA em `apps/web/dist`         |
-| `pnpm --filter @pedon/web preview` | preview do build                     |
-| `pnpm lint`                        | ESLint                               |
-| `pnpm typecheck`                   | TypeScript sem emissão               |
-| `pnpm test:run`                    | testes unitários/componente          |
-| `pnpm test:e2e`                    | E2E Playwright; requer build/browser |
-| `pnpm format`                      | formata o repositório com Prettier   |
-| `pnpm format:check`                | verifica formatação                  |
+| Comando                                                                                                    | Descrição                            |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `pnpm dev`                                                                                                 | app web em desenvolvimento           |
+| `pnpm build`                                                                                               | build PWA em `apps/web/dist`         |
+| `pnpm lint`                                                                                                | ESLint                               |
+| `pnpm typecheck`                                                                                           | TypeScript sem emissão               |
+| `pnpm test:run`                                                                                            | testes frontend unitários/componente |
+| `pnpm test:e2e`                                                                                            | E2E Playwright mocked                |
+| `deno test --config supabase/functions/loyalty-cpf/deno.json supabase/functions/loyalty-cpf/index_test.ts` | testes unitários da Edge             |
+| `node supabase/tests/loyalty_integrity.test.mjs`                                                           | integração DB do Clube               |
+| `node supabase/tests/loyalty_edge_smoke.mjs`                                                               | smoke remoto da Edge deployada       |
+| `pnpm format` / `pnpm format:check`                                                                        | aplicar/verificar Prettier           |
 
 ## Banco e migrations
 
-O projeto oficial possui dez migrations Local == Remote:
+O projeto oficial possui 14 migrations Local == Remote:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -144,8 +137,12 @@ O projeto oficial possui dez migrations Local == Remote:
 8. `20260810141000_menu_publication_slug_fix.sql`
 9. `20260810144145_orders_checkout.sql`
 10. `20260810162508_orders_checkout_lint_hardening.sql`
+11. `20260810170000_loyalty_customers_ledger.sql`
+12. `20260811080000_loyalty_earn_refunded_guard.sql`
+13. `20260811130000_prompt09_release_hardening.sql`
+14. `20260811170000_prompt09_reaudit_hardening.sql`
 
-Fluxo linked:
+Fluxo linked não destrutivo:
 
 ```bash
 supabase migration list
@@ -154,54 +151,49 @@ supabase migration list
 supabase db lint --linked
 ```
 
-`db push --linked` aplica migrations pendentes ao projeto vinculado. `supabase db reset` é
-destrutivo para o banco local e não substitui esse fluxo.
+`supabase db lint --linked` está verificado com sucesso no checkpoint atual. Não editar migration já
+aplicada e não usar `supabase db reset` como substituto desse fluxo.
 
-## Testes DB
+## Testes verificados
 
-Defina `SUPABASE_DB_PASSWORD` e execute sequencialmente:
+- frontend unit/component: 157/157;
+- E2E mocked: 148/148 em 360/768/1024/1440;
+- banco: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, menu 121/121,
+  pedidos 318/318 e loyalty 148/148;
+- Edge unit: 14/14;
+- Edge remote smoke: 36/36;
+- `supabase db lint --linked`: PASS;
+- migrations: 14 Local == Remote.
 
-```powershell
-$env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
-node supabase/tests/rls_integrity.test.mjs
-node supabase/tests/rbac_units_integrity.test.mjs
-node supabase/tests/unit_operational_config_integrity.test.mjs
-node supabase/tests/catalog_integrity.test.mjs
-node supabase/tests/menu_publication_integrity.test.mjs
-node supabase/tests/orders_integrity.test.mjs
-```
-
-Não rode em paralelo: a suíte RBAC herdada possui uma contagem global frágil durante um cenário.
-Resultados oficiais: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, publicação
-121/121 e pedidos 318/318. As suítes criam fixtures descartáveis e fazem cleanup automático.
-
-## Qualidade validada
-
-- frontend unit/component: 87/87;
-- E2E: 104/104 em 360/768/1024/1440;
-- format, lint, typecheck, build, Gitleaks v8.30.1 e db lint: PASS;
-- GitHub CI run `31429728244`, SHA `7fe07df`: quality + E2E `SUCCESS`;
-- produção: `https://ped-on.pages.dev`.
+Format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit, alinhamento de migrations e db lint
+passaram na reauditoria local de 2026-08-11. CI e deploy Cloudflare da versão completa ainda não estão
+registrados; o status permanece `IN_PROGRESS` até essas verificações externas.
 
 ## Segurança e secrets
 
 - Nunca commitar tokens, senhas, chaves Supabase, `service_role` ou credenciais.
-- `.env` real não entra no repositório; usar `.env.example` como referência.
 - O browser usa apenas `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`.
-- Catálogo e cardápio têm RLS por unidade e escrita exclusivamente por RPC.
-- `anon` recebe zero linhas das tabelas mutáveis do catálogo e não executa suas RPCs; o cardápio
-  público é lido somente via `get_public_menu`.
-- O PWA não adiciona cache de API, dados privados ou tokens.
-- Tabelas de pedidos têm RLS por unidade e nenhuma escrita direta; checkout/tracking públicos usam
-  RPCs com respostas minimizadas e token de alta entropia.
+- `LOYALTY_CPF_HMAC_KEY` é um Supabase Edge Secret lido por `Deno.env`; não fica no frontend, no
+  repositório nem no Supabase Vault.
+- A Edge `loyalty-cpf` está deployada com `verify_jwt` ativo e respostas `no-store`.
+- Lookup desconhecido e telefone divergente retornam exatamente HTTP 422
+  `IDENTITY_NOT_CONFIRMED`, sem permitir enumeração.
+- Rate limit fixed-window persiste apenas HMAC de IP + slug + modo, sem PII: lookup 10 e enroll 5
+  tentativas por 60 segundos; excesso retorna 429 com `Retry-After`.
+- O token do Clube é repetível para saldo/extrato durante 2 horas até ser consumido atomicamente no
+  checkout; depois retorna `found=false`.
+- Se o programa for desativado, token já emitido continua legível, mas novas identificações e novos
+  checkouts com Clube são bloqueados.
+- A troca de usuário limpa todo o cache de queries administrativo.
 
 ## Documentação
 
-- `docs/PEDON_PROJECT_BASELINE.md` — baseline e invariantes arquiteturais
-- `docs/PEDON_IMPLEMENTATION_STATUS.md` — checkpoint oficial da implementação
-- `docs/PEDON_DECISION_REGISTER.md` — decisões aprovadas e abertas
-- `docs/PEDON_DATABASE_SCHEMA.md` — schema cumulativo e contratos SQL
-- `docs/PEDON_RLS_SECURITY.md` — RLS, grants, RBAC e testes de isolamento
-- `docs/PEDON_RUNBOOK.md` — operação local, Supabase, CI e deploy
+- `docs/PEDON_IMPLEMENTATION_STATUS.md`: checkpoint oficial da implementação
+- `docs/PEDON_DECISION_REGISTER.md`: decisões aprovadas e abertas
+- `docs/PEDON_DATABASE_SCHEMA.md`: schema cumulativo e contratos SQL/HTTP
+- `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
+- `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 
-Próximo passo oficial: Prompt 09 — modelagem de clientes e fidelidade. Ainda não iniciado.
+Próximo passo oficial: criar o commit de release do Prompt 09, fazer push, validar o run de CI da SHA
+correta e o deployment Cloudflare correspondente. Prompt 10 permanece `NOT STARTED`; recompensas,
+resgates e vouchers continuam deferidos.

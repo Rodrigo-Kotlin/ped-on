@@ -69,6 +69,7 @@ export interface PublicMenuData {
   found: true;
   organization: { name: string };
   unit: { name: string; is_active: boolean };
+  loyalty: { enabled: boolean };
   menu: { version_id: string; version_number: number; published_at: string };
   operation: {
     configured: boolean;

@@ -1513,7 +1513,7 @@ async function run() {
     ok(tracked.unit?.name === 'Unidade principal', '11.3 unit name presente');
     ok(tracked.order.order_number === exactCreation.order_number, '11.4 numero do pedido presente');
     ok(tracked.order.items[0].name === 'Produto Exato', '11.5 item snapshot presente');
-    ok(tracked.order.items[0].note === 'Sem item', '11.6 item note presente');
+    ok(!('note' in tracked.order.items[0]), '11.6 item note omitida do tracking publico');
     const trackingJson = JSON.stringify(tracked);
     for (const forbidden of [
       'customer_name',

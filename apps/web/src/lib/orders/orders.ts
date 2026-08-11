@@ -26,7 +26,9 @@ export type PublicOrderErrorCode =
   | 'PED47'
   | 'PED48'
   | 'PED49'
-  | 'PED50';
+  | 'PED50'
+  | 'PED51'
+  | 'PED52';
 
 export const SERVICE_MODE_LABELS: Record<ServiceMode, string> = {
   pickup: 'Retirada',
@@ -75,6 +77,8 @@ export const PUBLIC_ORDER_ERROR_MESSAGES: Record<PublicOrderErrorCode, string> =
   PED48: 'Não foi possível atualizar o pagamento do pedido.',
   PED49: 'Não foi possível gerar o acompanhamento. Tente novamente.',
   PED50: 'O valor do pedido excede o limite permitido.',
+  PED51: 'O Clube Ped-On está indisponível. Seus dados foram preservados.',
+  PED52: 'A consulta do Clube expirou. Identifique-se novamente para acumular pontos.',
 };
 
 export const ORDER_NETWORK_ERROR_MESSAGE =
@@ -116,6 +120,7 @@ export interface CreatePublicOrderPayload {
   delivery_address?: PublicDeliveryAddressInput;
   notes?: string;
   cash_change_for?: string;
+  loyalty_token?: string;
 }
 
 export interface CreatePublicOrderResult {
@@ -136,7 +141,6 @@ export interface PublicOrderTrackingItem {
   unit_price: string;
   quantity: number;
   line_total: string;
-  note: string | null;
 }
 
 export interface PublicOrderTrackingFound {
@@ -267,7 +271,7 @@ export class AdminOrderError extends Error {
 
 export function extractPublicOrderError(error: RpcError): PublicOrderError {
   const content = `${error.code ?? ''} ${error.message ?? ''}`;
-  const matched = content.match(/\bPED(?:3[3-9]|4\d|50)\b/)?.[0] as
+  const matched = content.match(/\bPED(?:3[3-9]|4\d|5[0-2])\b/)?.[0] as
     PublicOrderErrorCode | undefined;
   if (matched !== undefined) {
     return new PublicOrderError(PUBLIC_ORDER_ERROR_MESSAGES[matched], matched);
@@ -368,16 +372,42 @@ export function setOrderPaymentStatus(
 export async function createPublicOrder(
   publicSlug: string,
   idempotencyKey: string,
+  attemptHash: string,
   payload: CreatePublicOrderPayload,
 ): Promise<CreatePublicOrderResult> {
   try {
-    const { data, error } = await supabase.rpc('create_public_order', {
+    const { data, error } = await supabase.rpc('create_public_order_v2', {
       p_public_slug: publicSlug,
       p_idempotency_key: idempotencyKey,
+      p_attempt_hash: attemptHash,
       p_payload: payload,
     });
     if (error) throw extractPublicOrderError(error);
     return data as CreatePublicOrderResult;
+  } catch (error) {
+    if (error instanceof PublicOrderError) throw error;
+    throw extractPublicOrderError({
+      message: error instanceof Error ? error.message : 'Network error',
+    });
+  }
+}
+
+export type PublicOrderAttemptResult =
+  ({ found: true } & CreatePublicOrderResult) | { found: false };
+
+export async function getPublicOrderByAttempt(
+  publicSlug: string,
+  idempotencyKey: string,
+  attemptHash: string,
+): Promise<PublicOrderAttemptResult> {
+  try {
+    const { data, error } = await supabase.rpc('get_public_order_by_attempt', {
+      p_public_slug: publicSlug,
+      p_idempotency_key: idempotencyKey,
+      p_attempt_hash: attemptHash,
+    });
+    if (error) throw extractPublicOrderError(error);
+    return (data as PublicOrderAttemptResult | null) ?? { found: false };
   } catch (error) {
     if (error instanceof PublicOrderError) throw error;
     throw extractPublicOrderError({

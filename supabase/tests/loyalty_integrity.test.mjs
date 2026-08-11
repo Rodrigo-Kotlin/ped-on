@@ -172,6 +172,27 @@ async function checkout(client, slug, key, payload) {
   ).rows[0].out;
 }
 
+async function checkoutV2(client, slug, key, payload, attemptHash) {
+  return (
+    await client.query('select public.create_public_order_v2($1, $2, $3::jsonb, $4) as out', [
+      slug,
+      key,
+      JSON.stringify(payload),
+      attemptHash,
+    ])
+  ).rows[0].out;
+}
+
+async function recoverCheckout(client, slug, key, attemptHash) {
+  return (
+    await client.query('select public.get_public_order_by_attempt($1, $2, $3) as out', [
+      slug,
+      key,
+      attemptHash,
+    ])
+  ).rows[0].out;
+}
+
 async function setStatus(client, orderId, status) {
   return (await client.query('select public.set_order_status($1, $2) as out', [orderId, status]))
     .rows[0].out;
@@ -198,21 +219,39 @@ async function getLoyaltyContext(client, slug) {
 }
 
 async function resolveLoyalty(client, args) {
+  const phoneFingerprint =
+    args.phoneFingerprint ?? sha256(`pedon:phone:v1:${args.organizationId}:${args.fingerprint}`);
+  const consentVersion =
+    args.consentVersion === undefined && args.mode === 'enroll'
+      ? 'test-consent-v1'
+      : args.consentVersion;
   return (
     await client.query(
-      `select public.resolve_loyalty_identity_internal(
-         $1, $2, $3, $4, $5, $6, $7
+      `select public.resolve_loyalty_identity_internal_v2(
+         $1, $2, $3, $4, $5, $6, $7, $8, $9
        ) as out`,
       [
         args.organizationId,
         args.fingerprint,
+        phoneFingerprint,
         args.last2,
         args.mode,
         args.name,
         args.tokenHash,
         args.expiresAt,
+        consentVersion,
       ],
     )
+  ).rows[0].out;
+}
+
+async function consumeRateLimit(client, scopeHash, windowSeconds, maxAttempts) {
+  return (
+    await client.query('select public.consume_loyalty_rate_limit_internal($1, $2, $3) as out', [
+      scopeHash,
+      windowSeconds,
+      maxAttempts,
+    ])
   ).rows[0].out;
 }
 
@@ -341,6 +380,7 @@ async function run() {
   const suffix = Date.now();
   const createdUsers = [];
   const createdOrgIds = [];
+  const rateScopeHashes = [];
   const openClients = [];
 
   let ownerA;
@@ -360,7 +400,9 @@ async function run() {
   let menuB1;
   let enrollmentA;
   let fpA;
+  let phoneFpA;
   let cpfA;
+  let legacyCustomerId;
 
   try {
     scenario(0, 'setup sintetico de tenants, RBAC, catalogo e publicacoes');
@@ -492,6 +534,7 @@ async function run() {
 
     cpfA = '11144477735';
     fpA = sha256(`pedon:cpf:v1:${orgA}:${cpfA}`);
+    phoneFpA = sha256(`pedon:phone:v1:${orgA}:${fpA}`);
     const tokenA = randomToken();
     enrollmentA = await resolveLoyalty(admin, {
       organizationId: orgA,
@@ -536,9 +579,10 @@ async function run() {
       fingerprint: fpA,
       last2: cpfA.slice(-2),
       mode: 'enroll',
-      name: 'Maria Clube',
+      name: 'Nome Nao Sobrescrito',
       tokenHash: sha256(tokenA2),
       expiresAt: inTwoHours(),
+      consentVersion: 'test-consent-v2',
     });
     ok(
       enrollAgain.membership_id === enrollmentA.membership_id,
@@ -627,6 +671,194 @@ async function run() {
       '2.24 contexto sem execute de anon',
     );
 
+    const hardenedCustomer = (
+      await admin.query(
+        `select phone_fingerprint, name
+         from public.customers
+         where organization_id = $1 and cpf_fingerprint = $2`,
+        [orgA, fpA],
+      )
+    ).rows[0];
+    ok(hardenedCustomer.phone_fingerprint === phoneFpA, '2.25 telefone protegido persistido');
+    ok(hardenedCustomer.name === 'Maria Clube', '2.26 reenroll nao sobrescreve nome existente');
+    const consent = (
+      await admin.query(
+        `select consented_at, consent_version
+         from public.loyalty_memberships
+         where id = $1`,
+        [enrollmentA.membership_id],
+      )
+    ).rows[0];
+    ok(
+      consent.consented_at instanceof Date && consent.consent_version === 'test-consent-v2',
+      '2.27 reenroll atualiza consentimento explicito',
+    );
+    const consentEvents = await admin.query(
+      `select consent_version
+       from public.loyalty_consent_events
+       where organization_id = $1 and membership_id = $2
+       order by created_at, id`,
+      [orgA, enrollmentA.membership_id],
+    );
+    ok(
+      consentEvents.rows.map((row) => row.consent_version).join(',') ===
+        'test-consent-v1,test-consent-v2',
+      '2.27a reenroll preserva historico append-only de consentimento',
+    );
+    await expectDenied(
+      anon,
+      'select * from public.loyalty_consent_events where organization_id = $1',
+      [orgA],
+      '2.27b anon nao le evidencias de consentimento',
+    );
+
+    const wrongPhoneFingerprint = sha256(`pedon:phone:wrong:${orgA}:${fpA}`);
+    const wrongPhoneLookup = await resolveLoyalty(admin, {
+      organizationId: orgA,
+      fingerprint: fpA,
+      phoneFingerprint: wrongPhoneFingerprint,
+      last2: cpfA.slice(-2),
+      mode: 'lookup',
+      name: null,
+      tokenHash: sha256(randomToken()),
+      expiresAt: inTwoHours(),
+    });
+    ok(
+      exactKeys(wrongPhoneLookup, ['found']) && wrongPhoneLookup.found === false,
+      '2.28 lookup com telefone divergente e uniformemente desconhecido',
+    );
+    const wrongPhoneEnroll = await resolveLoyalty(admin, {
+      organizationId: orgA,
+      fingerprint: fpA,
+      phoneFingerprint: wrongPhoneFingerprint,
+      last2: cpfA.slice(-2),
+      mode: 'enroll',
+      name: 'Tentativa Divergente',
+      tokenHash: sha256(randomToken()),
+      expiresAt: inTwoHours(),
+    });
+    ok(
+      exactKeys(wrongPhoneEnroll, ['found']) && wrongPhoneEnroll.found === false,
+      '2.29 enroll existente com telefone divergente nao reivindica CPF',
+    );
+    const customerAfterWrongPhone = (
+      await admin.query(
+        `select phone_fingerprint, name
+         from public.customers
+         where organization_id = $1 and cpf_fingerprint = $2`,
+        [orgA, fpA],
+      )
+    ).rows[0];
+    ok(
+      customerAfterWrongPhone.phone_fingerprint === phoneFpA &&
+        customerAfterWrongPhone.name === 'Maria Clube',
+      '2.29a telefone divergente nao altera nome nem telefone protegido',
+    );
+    const missingIdentity = await resolveLoyalty(admin, {
+      organizationId: orgA,
+      fingerprint: sha256(`pedon:cpf:missing:${orgA}`),
+      last2: '00',
+      mode: 'lookup',
+      name: null,
+      tokenHash: sha256(randomToken()),
+      expiresAt: inTwoHours(),
+    });
+    ok(
+      JSON.stringify(missingIdentity) === JSON.stringify(wrongPhoneLookup),
+      '2.30 CPF ausente e telefone incorreto possuem resposta uniforme',
+    );
+    await expectError(
+      admin,
+      `select public.resolve_loyalty_identity_internal_v2(
+         $1, $2, $3, $4, $5, $6, $7, $8, $9
+       ) as out`,
+      [
+        orgA,
+        fpA,
+        phoneFpA,
+        cpfA.slice(-2),
+        'enroll',
+        'Maria Clube',
+        sha256(randomToken()),
+        inTwoHours(),
+        null,
+      ],
+      'PED53',
+      '2.31 enroll v2 exige versao de consentimento',
+    );
+
+    const legacyFingerprint = sha256(`pedon:cpf:legacy:${orgA}`);
+    legacyCustomerId = (
+      await admin.query(
+        `insert into public.customers
+           (organization_id, cpf_fingerprint, cpf_last2, name)
+         values ($1, $2, $3, $4)
+         returning id`,
+        [orgA, legacyFingerprint, '90', 'Cliente Legado'],
+      )
+    ).rows[0].id;
+    const legacyLookup = await resolveLoyalty(admin, {
+      organizationId: orgA,
+      fingerprint: legacyFingerprint,
+      phoneFingerprint: sha256(`pedon:phone:legacy:${orgA}`),
+      last2: '90',
+      mode: 'lookup',
+      name: null,
+      tokenHash: sha256(randomToken()),
+      expiresAt: inTwoHours(),
+    });
+    const legacyEnroll = await resolveLoyalty(admin, {
+      organizationId: orgA,
+      fingerprint: legacyFingerprint,
+      phoneFingerprint: sha256(`pedon:phone:legacy:${orgA}`),
+      last2: '90',
+      mode: 'enroll',
+      name: 'Cliente Legado',
+      tokenHash: sha256(randomToken()),
+      expiresAt: inTwoHours(),
+    });
+    ok(
+      legacyLookup.found === false && legacyEnroll.found === false,
+      '2.32 identidade legada sem telefone nao confirma nem pode ser reivindicada',
+    );
+    await expectDenied(
+      anon,
+      `select public.resolve_loyalty_identity_internal_v2(
+         $1, $2, $3, $4, $5, $6, $7, $8, $9
+       ) as out`,
+      [
+        orgA,
+        fpA,
+        phoneFpA,
+        cpfA.slice(-2),
+        'lookup',
+        null,
+        sha256(randomToken()),
+        inTwoHours(),
+        null,
+      ],
+      '2.33 resolver v2 sem execute de anon',
+    );
+    const resolverPrivileges = (
+      await admin.query(
+        `select
+           has_function_privilege(
+             'service_role',
+             'public.resolve_loyalty_identity_internal(uuid,text,text,text,text,text,timestamptz)',
+             'EXECUTE'
+           ) as legacy,
+           has_function_privilege(
+             'service_role',
+             'public.resolve_loyalty_identity_internal_v2(uuid,text,text,text,text,text,text,timestamptz,text)',
+             'EXECUTE'
+           ) as current`,
+      )
+    ).rows[0];
+    ok(
+      resolverPrivileges.legacy === false && resolverPrivileges.current === true,
+      '2.34 service_role executa somente o resolver v2',
+    );
+
     scenario(3, 'consulta publica por token efemero');
     const pubA = await publicLoyaltyAccount(anon, tokenA);
     ok(pubA.found === true, '3.1 token valido encontra conta');
@@ -636,6 +868,12 @@ async function run() {
       '3.3 cliente mascarado',
     );
     ok(pubA.account.points_balance === 0 && pubA.account.recovery_points === 0, '3.4 saldo zero');
+    ok(Array.isArray(pubA.statement) && pubA.statement.length === 0, '3.9 extrato inicial vazio');
+    const pubARepeat = await publicLoyaltyAccount(anon, tokenA);
+    ok(
+      pubARepeat.found === true && pubARepeat.statement.length === 0,
+      '3.10 token permanece repetivel antes do checkout',
+    );
 
     const pubMissing = await publicLoyaltyAccount(anon, randomToken());
     ok(pubMissing.found === false, '3.5 token desconhecido -> found=false');
@@ -645,12 +883,22 @@ async function run() {
     const expiredToken = randomToken();
     await admin.query(
       `insert into public.loyalty_access_tokens
-       (token_hash, organization_id, membership_id, expires_at, created_at)
-       values ($1, $2, $3, $4, now() - interval '3 hours')`,
+        (token_hash, organization_id, membership_id, expires_at, created_at)
+        values ($1, $2, $3, $4, now() - interval '2 hours')`,
       [sha256(expiredToken), orgA, enrollmentA.membership_id, new Date(Date.now() - 60000)],
     );
     const pubExpired = await publicLoyaltyAccount(anon, expiredToken);
     ok(pubExpired.found === false, '3.7 token expirado -> found=false');
+
+    await expectError(
+      admin,
+      `insert into public.loyalty_access_tokens
+         (token_hash, organization_id, membership_id, expires_at)
+       values ($1, $2, $3, now() + interval '3 hours')`,
+      [sha256(randomToken()), orgA, enrollmentA.membership_id],
+      '23514',
+      '3.7a token nao pode exceder TTL maximo',
+    );
 
     const pubAuth = await publicLoyaltyAccount(ownerAS, tokenB);
     ok(pubAuth.found === true, '3.8 authenticated tambem consulta');
@@ -1119,6 +1367,7 @@ async function run() {
           'loyalty_accounts',
           'loyalty_ledger',
           'loyalty_access_tokens',
+          'loyalty_rate_limits',
         ],
       ],
     );
@@ -1140,6 +1389,284 @@ async function run() {
     ).rows[0].out;
     ok(guestDetail.loyalty === null, '8.22 pedido guest sem bloco loyalty');
 
+    scenario(9, 'rate limit opaco, atomico e com expiracao curta');
+    const rateScope = sha256(`pedon:rate:test:${orgA}:${suffix}`);
+    rateScopeHashes.push(rateScope);
+    const rateBurst = (
+      await admin.query(
+        `select public.consume_loyalty_rate_limit_internal($1, 3, 2) as out
+         from generate_series(1, 3) as attempt
+         order by attempt`,
+        [rateScope],
+      )
+    ).rows.map((row) => row.out);
+    ok(
+      rateBurst[0].allowed === true &&
+        rateBurst[1].allowed === true &&
+        rateBurst[2].allowed === false,
+      '9.1 janela fixa permite ate o limite e bloqueia o excesso',
+    );
+    ok(
+      rateBurst.map((entry) => entry.attempts).join(',') === '1,2,3' &&
+        rateBurst[2].retry_after > 0,
+      '9.2 contador atomico e retry_after informado',
+    );
+    await admin.query('select pg_sleep(3.1)');
+    const rateAfterExpiry = await consumeRateLimit(admin, rateScope, 3, 2);
+    ok(
+      rateAfterExpiry.allowed === true && rateAfterExpiry.attempts === 1,
+      '9.3 nova janela volta a permitir apos expiracao',
+    );
+    const expiredTokenRows = await admin.query(
+      'select count(*)::integer as count from public.loyalty_access_tokens where token_hash = $1',
+      [sha256(expiredToken)],
+    );
+    ok(expiredTokenRows.rows[0].count === 0, '9.3a rate limit coleta tokens expirados');
+    const rateColumns = (
+      await admin.query(
+        `select column_name
+         from information_schema.columns
+         where table_schema = 'public'
+           and table_name = 'loyalty_rate_limits'
+         order by ordinal_position`,
+      )
+    ).rows.map((row) => row.column_name);
+    ok(
+      rateColumns.join(',') === 'scope_hash,bucket_start,attempts,expires_at',
+      '9.4 rate limit nao armazena IP, slug, modo ou CPF',
+    );
+    await expectDenied(
+      anon,
+      'select public.consume_loyalty_rate_limit_internal($1, 3, 2) as out',
+      [rateScope],
+      '9.5 consumidor de rate limit e somente service_role',
+    );
+    await expectError(
+      admin,
+      'select public.consume_loyalty_rate_limit_internal($1, 0, 2) as out',
+      [rateScope],
+      'PED53',
+      '9.6 janela invalida -> PED53',
+    );
+
+    scenario(10, 'checkout v2 e recuperacao por tentativa do cliente');
+    const attemptKey = randomUUID();
+    const attemptHash = sha256(`pedon:checkout:attempt:${orgA}:${suffix}`);
+    const attemptPayload = makePayload(menuA1, singleItem(menuA1, 'Produto Barato', 1));
+    const attemptCreation = await checkoutV2(anon, slugA1, attemptKey, attemptPayload, attemptHash);
+    const recoveredAttempt = await recoverCheckout(anon, slugA1, attemptKey, attemptHash);
+    const { found: attemptFound, ...recoveredCreation } = recoveredAttempt;
+    ok(
+      attemptFound === true &&
+        JSON.stringify(recoveredCreation) === JSON.stringify(attemptCreation),
+      '10.1 recuperacao retorna exatamente a resposta de criacao',
+    );
+    ok(
+      !('id' in recoveredAttempt) &&
+        !('customer_name' in recoveredAttempt) &&
+        !('customer_phone' in recoveredAttempt),
+      '10.2 recuperacao nao expoe IDs internos nem PII',
+    );
+    const wrongAttempt = await recoverCheckout(
+      anon,
+      slugA1,
+      attemptKey,
+      sha256(`pedon:checkout:wrong:${orgA}:${suffix}`),
+    );
+    const wrongAttemptKey = await recoverCheckout(anon, slugA1, randomUUID(), attemptHash);
+    const wrongAttemptUnit = await recoverCheckout(anon, slugB1, attemptKey, attemptHash);
+    ok(
+      wrongAttempt.found === false &&
+        wrongAttemptKey.found === false &&
+        wrongAttemptUnit.found === false,
+      '10.3 hash, chave ou unidade divergente retornam found=false',
+    );
+    const attemptReplay = await checkoutV2(anon, slugA1, attemptKey, attemptPayload, attemptHash);
+    ok(
+      attemptReplay.tracking_token === attemptCreation.tracking_token,
+      '10.4 retry v2 preserva idempotencia do checkout existente',
+    );
+    await expectError(
+      anon,
+      'select public.create_public_order_v2($1, $2, $3::jsonb, $4) as out',
+      [
+        slugA1,
+        attemptKey,
+        JSON.stringify(attemptPayload),
+        sha256(`pedon:checkout:conflict:${orgA}:${suffix}`),
+      ],
+      'PED42',
+      '10.5 mesma criacao nao aceita outro hash de tentativa',
+    );
+    await expectError(
+      anon,
+      'select public.create_public_order_v2($1, $2, $3::jsonb, $4) as out',
+      [slugA1, randomUUID(), JSON.stringify(attemptPayload), 'invalid'],
+      'PED37',
+      '10.6 hash de tentativa invalido -> PED37',
+    );
+    const malformedRecovery = await recoverCheckout(anon, slugA1, attemptKey, 'invalid');
+    ok(malformedRecovery.found === false, '10.7 recovery malformado nao revela pedido');
+
+    scenario(11, 'extrato publico limitado e deltas exatos');
+    const statementTokenA = randomToken();
+    await resolveLoyalty(admin, {
+      organizationId: orgA,
+      fingerprint: fpA,
+      last2: cpfA.slice(-2),
+      mode: 'lookup',
+      name: null,
+      tokenHash: sha256(statementTokenA),
+      expiresAt: inTwoHours(),
+    });
+    const statementA = await publicLoyaltyAccount(anon, statementTokenA);
+    const earnStatement = statementA.statement.find(
+      (entry) =>
+        entry.order_number === earnOrder.creation.order_number && entry.entry_type === 'earn',
+    );
+    const reversalStatement = statementA.statement.find(
+      (entry) =>
+        entry.order_number === earnOrder.creation.order_number && entry.entry_type === 'reversal',
+    );
+    ok(
+      earnStatement.gross_points === 32 &&
+        earnStatement.points_delta === 32 &&
+        earnStatement.recovery_delta === 0 &&
+        Number(earnStatement.eligible_amount) === 32.4,
+      '11.1 earn informa bruto, saldo, recovery e valor elegivel exatos',
+    );
+    ok(
+      reversalStatement.gross_points === 32 &&
+        reversalStatement.points_delta === -32 &&
+        reversalStatement.recovery_delta === 0 &&
+        Number(reversalStatement.eligible_amount) === 32.4,
+      '11.2 reversal informa deltas exatos e pontos brutos absolutos',
+    );
+    ok(
+      exactKeys(earnStatement, [
+        'entry_type',
+        'gross_points',
+        'points_delta',
+        'recovery_delta',
+        'eligible_amount',
+        'order_number',
+        'created_at',
+      ]),
+      '11.3 item do extrato contem somente campos publicos permitidos',
+    );
+
+    const statementTokenD = randomToken();
+    await resolveLoyalty(admin, {
+      organizationId: orgA,
+      fingerprint: fpD,
+      last2: cpfD.slice(-2),
+      mode: 'lookup',
+      name: null,
+      tokenHash: sha256(statementTokenD),
+      expiresAt: inTwoHours(),
+    });
+    const statementD = await publicLoyaltyAccount(anon, statementTokenD);
+    const recoveryStatement = statementD.statement.find(
+      (entry) => entry.order_number === recoveryOrder.creation.order_number,
+    );
+    ok(
+      recoveryStatement.gross_points === 8 &&
+        recoveryStatement.points_delta === 3 &&
+        recoveryStatement.recovery_delta === -5 &&
+        Number(recoveryStatement.eligible_amount) === 8.1,
+      '11.4 earn com recovery separa quitacao de divida e saldo',
+    );
+    ok(
+      statementD.statement.every(
+        (entry, index, entries) =>
+          index === 0 || Date.parse(entries[index - 1].created_at) >= Date.parse(entry.created_at),
+      ),
+      '11.5 extrato ordenado por created_at decrescente',
+    );
+
+    await admin.query(
+      `insert into public.loyalty_ledger (
+         organization_id, membership_id, entry_type, amount,
+         points_delta, recovery_delta, eligible_amount, created_at
+       )
+       select $1, $2, 'earn', 1, 1, 0, null,
+              clock_timestamp() + make_interval(secs => g)
+       from generate_series(1, 55) as g`,
+      [orgA, enrollmentA.membership_id],
+    );
+    const limitedStatement = await publicLoyaltyAccount(anon, statementTokenA);
+    ok(limitedStatement.statement.length === 50, '11.6 extrato limitado aos 50 mais recentes');
+    ok(
+      limitedStatement.statement.every(
+        (entry) =>
+          exactKeys(entry, [
+            'entry_type',
+            'gross_points',
+            'points_delta',
+            'recovery_delta',
+            'eligible_amount',
+            'order_number',
+            'created_at',
+          ]) &&
+          !('id' in entry) &&
+          !('membership_id' in entry) &&
+          !('order_id' in entry),
+      ),
+      '11.7 limite mantem shape sem identificadores internos',
+    );
+
+    scenario(12, 'leitura desabilitada e falhas de integridade explicitas');
+    const disabledReadable = await publicLoyaltyAccount(anon, orgBToken);
+    ok(
+      disabledReadable.found === true && Array.isArray(disabledReadable.statement),
+      '12.1 token existente continua legivel com programa desabilitado',
+    );
+    const orgBMembershipId = (
+      await admin.query(
+        `delete from public.loyalty_accounts
+         where membership_id = (
+           select m.id
+           from public.loyalty_memberships as m
+           join public.customers as c
+             on c.id = m.customer_id
+            and c.organization_id = m.organization_id
+           where m.organization_id = $1
+             and c.cpf_fingerprint = $2
+         )
+         returning membership_id`,
+        [orgB, fpC],
+      )
+    ).rows[0].membership_id;
+    await expectError(
+      anon,
+      'select public.get_public_loyalty_account($1) as out',
+      [orgBToken],
+      'PED53',
+      '12.2 token valido com conta ausente -> PED53',
+    );
+    await admin.query(
+      `insert into public.loyalty_accounts (organization_id, membership_id)
+       values ($1, $2)`,
+      [orgB, orgBMembershipId],
+    );
+
+    const brokenMembershipId = (
+      await admin.query(
+        `insert into public.loyalty_memberships (organization_id, customer_id)
+         values ($1, $2)
+         returning id`,
+        [orgA, legacyCustomerId],
+      )
+    ).rows[0].id;
+    await expectError(
+      ownerAS,
+      'select public.get_loyalty_members_admin($1, $2, $3) as out',
+      [orgA, 50, null],
+      'PED53',
+      '12.3 listagem admin detecta membership sem conta antes de contar',
+    );
+    await admin.query('delete from public.loyalty_memberships where id = $1', [brokenMembershipId]);
+
     console.log('');
     console.log(`Resultado: ${passed} passaram, ${failed} falharam`);
     if (failed > 0) {
@@ -1153,6 +1680,13 @@ async function run() {
   } finally {
     for (const client of openClients) {
       await client.end().catch(() => {});
+    }
+    if (rateScopeHashes.length > 0) {
+      await admin
+        .query('delete from public.loyalty_rate_limits where scope_hash = any($1::text[])', [
+          rateScopeHashes,
+        ])
+        .catch(() => console.warn('cleanup rate limit warning'));
     }
     if (createdOrgIds.length > 0) {
       await admin

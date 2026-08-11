@@ -1,4 +1,5 @@
-import { screen } from '@testing-library/react';
+import { useQuery } from '@tanstack/react-query';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Route, Routes } from 'react-router';
@@ -12,6 +13,8 @@ vi.mock('../lib/supabase', () =>
 
 import { resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
 import { AdminProvider } from '../lib/admin/AdminProvider';
+import { useAdmin } from '../lib/admin/admin-context';
+import { fetchLoyaltyMembersAdmin, loyaltyMembersPrefix, maskCpf } from '../lib/loyalty/loyalty';
 import { AppPage } from '../pages/AppPage';
 import { LoginPage } from '../pages/LoginPage';
 import { SignupPage } from '../pages/SignupPage';
@@ -36,6 +39,30 @@ function makeSession() {
     expires_at: 9999999999,
     token_type: 'bearer',
   };
+}
+
+function PrivateSessionProbe() {
+  const { organization, profile, role, selectedUnit } = useAdmin();
+  const userId = profile?.id ?? '';
+  const organizationId = organization?.id ?? '';
+  const membersQuery = useQuery({
+    queryKey: loyaltyMembersPrefix(userId, organizationId),
+    queryFn: () => fetchLoyaltyMembersAdmin(organizationId, null),
+    enabled: userId !== '' && organizationId !== '',
+  });
+  const member = membersQuery.data?.members[0];
+  return (
+    <div>
+      <p>{organization?.name ?? 'sem organização'}</p>
+      <p>{role ?? 'sem função'}</p>
+      <p>{selectedUnit?.name ?? 'sem unidade'}</p>
+      {member !== undefined && (
+        <p>
+          {member.name} {maskCpf(member.cpf_last2)} {member.points_balance} pontos
+        </p>
+      )}
+    </div>
+  );
 }
 
 describe('AuthProvider e guards', () => {
@@ -137,6 +164,102 @@ describe('AuthProvider e guards', () => {
     );
 
     expect(await screen.findByText('página de login')).toBeInTheDocument();
+  });
+
+  it('remove todo dado privado de A antes da resposta da sessão B', async () => {
+    let authCallback!: (event: string, session: ReturnType<typeof makeSession>) => void;
+    let switched = false;
+    let resolveAdminB!: (value: { data: unknown; error: null }) => void;
+    const adminB = new Promise<{ data: unknown; error: null }>((resolve) => {
+      resolveAdminB = resolve;
+    });
+    const userB = { ...sessionUser, id: 'user-2', email: 'ana@example.com' };
+    const sessionB = { ...makeSession(), user: userB };
+    const contextA = {
+      profile: { id: 'user-1', full_name: 'João', email: 'joao@example.com' },
+      organization: { id: 'org-a', name: 'Organização A' },
+      role: 'owner',
+      units: [{ id: 'unit-a', name: 'Unidade A', is_active: true }],
+    };
+    const contextB = {
+      profile: { id: 'user-2', full_name: 'Ana', email: 'ana@example.com' },
+      organization: { id: 'org-b', name: 'Organização B' },
+      role: 'manager',
+      units: [{ id: 'unit-b', name: 'Unidade B', is_active: true }],
+    };
+    window.localStorage.setItem('pedon:selectedUnitId', 'unit-a');
+    supabaseMock.auth.getSession.mockResolvedValue({
+      data: { session: makeSession() },
+      error: null,
+    });
+    supabaseMock.auth.onAuthStateChange.mockImplementation((callback) => {
+      authCallback = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'get_my_admin_context') {
+        return switched ? adminB : Promise.resolve({ data: contextA, error: null });
+      }
+      if (name === 'get_loyalty_members_admin') {
+        return Promise.resolve({
+          data: {
+            organization_id: switched ? 'org-b' : 'org-a',
+            count: 1,
+            has_more: false,
+            next_cursor: null,
+            members: [
+              switched
+                ? {
+                    id: 'member-b',
+                    cpf_last2: '44',
+                    name: 'Membro B',
+                    points_balance: 20,
+                    recovery_points: 0,
+                    total_earned: 20,
+                    total_reversed: 0,
+                    member_since: '2026-08-11T00:00:00Z',
+                  }
+                : {
+                    id: 'member-a',
+                    cpf_last2: '25',
+                    name: 'Membro A',
+                    points_balance: 999,
+                    recovery_points: 0,
+                    total_earned: 999,
+                    total_reversed: 0,
+                    member_since: '2026-08-10T00:00:00Z',
+                  },
+            ],
+          },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    renderWithAuth(
+      <AdminProvider>
+        <PrivateSessionProbe />
+      </AdminProvider>,
+    );
+
+    expect(await screen.findByText('Organização A')).toBeInTheDocument();
+    expect(await screen.findByText(/Membro A.*999 pontos/)).toHaveTextContent('***.***.***-25');
+
+    switched = true;
+    authCallback('SIGNED_IN', sessionB);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Organização A')).not.toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent(
+        /owner|Unidade A|Membro A|\*\*\*\.\*\*\*\.\*\*\*-25|999 pontos/,
+      );
+    });
+    expect(window.localStorage.getItem('pedon:selectedUnitId')).toBeNull();
+
+    resolveAdminB({ data: contextB, error: null });
+    expect(await screen.findByText('Organização B')).toBeInTheDocument();
+    expect(await screen.findByText(/Membro B.*20 pontos/)).toHaveTextContent('***.***.***-44');
   });
 });
 
@@ -273,10 +396,12 @@ describe('OnboardingPage', () => {
 
 describe('AppPage', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     resetSupabaseMock();
   });
 
   it('mostra a organização, a unidade selecionada e o link de configuração', async () => {
+    window.localStorage.setItem('pedon:selectedUnitId', 'unit-invalida');
     supabaseMock.auth.getSession.mockResolvedValue({
       data: { session: makeSession() },
       error: null,
@@ -303,6 +428,36 @@ describe('AppPage', () => {
       'href',
       '/app/configuracoes',
     );
+    await waitFor(() => expect(window.localStorage.getItem('pedon:selectedUnitId')).toBeNull());
+  });
+
+  it('preserva unidade válida durante a hidratação inicial da sessão', async () => {
+    window.localStorage.setItem('pedon:selectedUnitId', 'unit-2');
+    supabaseMock.auth.getSession.mockResolvedValue({
+      data: { session: makeSession() },
+      error: null,
+    });
+    supabaseMock.rpc.mockResolvedValue({
+      data: {
+        profile: { id: 'user-1', full_name: 'João', email: 'joao@example.com' },
+        organization: { id: 'org-1', name: 'Cantina da Praça' },
+        role: 'owner',
+        units: [
+          { id: 'unit-1', name: 'Loja Centro', is_active: true },
+          { id: 'unit-2', name: 'Loja Norte', is_active: true },
+        ],
+      },
+      error: null,
+    });
+
+    renderWithAuth(
+      <AdminProvider>
+        <AppPage />
+      </AdminProvider>,
+    );
+
+    expect(await screen.findByText('Loja Norte')).toBeInTheDocument();
+    expect(window.localStorage.getItem('pedon:selectedUnitId')).toBe('unit-2');
   });
 
   it('cai para estado vazio quando o contexto administrativo falha', async () => {

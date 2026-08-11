@@ -123,9 +123,6 @@ export function TrackingPage() {
                   <p className="shrink-0 font-medium">{formatBRL(item.line_total)}</p>
                 </div>
                 <p className="mt-1 text-xs text-pedon-text/60">{formatBRL(item.unit_price)} cada</p>
-                {item.note !== null && (
-                  <p className="mt-1 text-sm text-pedon-text/70">Obs.: {item.note}</p>
-                )}
               </li>
             ))}
           </ul>

@@ -187,19 +187,26 @@ async function edgeCall(payload, tokenOverride = null) {
     body: JSON.stringify(payload),
   });
   const text = await response.text();
-  let body = null;
+  let body;
   try {
     body = JSON.parse(text);
   } catch {
     body = { raw: text };
   }
-  return { status: response.status, body, cacheControl: response.headers.get('cache-control') };
+  return {
+    status: response.status,
+    body,
+    cacheControl: response.headers.get('cache-control'),
+    retryAfter: response.headers.get('retry-after'),
+  };
 }
 
 const VALID_CPF = '529.982.247-25';
 const VALID_CPF_DIGITS = '52998224725';
 const OTHER_VALID_CPF = '11144477735';
 const INVALID_CPF = '111.111.111-11';
+const VALID_PHONE = '(11) 98888-7777';
+const WRONG_PHONE = '(21) 97777-6666';
 
 async function run() {
   // Incidentes intermitentes de DNS do host direto do Supabase ja
@@ -267,7 +274,14 @@ async function run() {
 
     scenario(1, 'enroll via Edge (CPF sintetico valido)');
     const enroll = await edgeCall(
-      { public_slug: slug, mode: 'enroll', cpf: VALID_CPF, name: '  Cliente Edge Sintetico  ' },
+      {
+        public_slug: slug,
+        mode: 'enroll',
+        cpf: VALID_CPF,
+        phone: VALID_PHONE,
+        name: '  Cliente Edge Sintetico  ',
+        consent: true,
+      },
       anonKey,
     );
     ok(enroll.status === 200, '1.1 enroll retorna 200');
@@ -286,11 +300,12 @@ async function run() {
     ok(enroll.body?.customer?.cpf_last2 === '25', '1.6 cpf_last2 mascarado correto');
     ok(enroll.body?.customer?.name === 'Cliente Edge Sintetico', '1.7 nome btrim aplicado');
     ok(enroll.body?.account?.points_balance === 0, '1.8 saldo inicial zero');
+    ok(Array.isArray(enroll.body?.statement), '1.9 extrato presente no primeiro retorno');
     ok(
       typeof enroll.body?.token === 'object' && enroll.body?.token !== null,
-      '1.9 shape token presente',
+      '1.10 shape token presente',
     );
-    ok(enroll.cacheControl?.includes('no-store') === true, '1.10 Cache-Control no-store');
+    ok(enroll.cacheControl?.includes('no-store') === true, '1.11 Cache-Control no-store');
     const edgeToken = enroll.body.token.access_token;
 
     scenario(2, 'consulta publica de saldo com o token emitido pela Edge');
@@ -307,34 +322,91 @@ async function run() {
     );
 
     scenario(3, 'lookup do mesmo CPF (novo token, mesma membership)');
-    const lookup = await edgeCall({ public_slug: slug, mode: 'lookup', cpf: VALID_CPF }, anonKey);
+    const lookup = await edgeCall(
+      { public_slug: slug, mode: 'lookup', cpf: VALID_CPF, phone: VALID_PHONE },
+      anonKey,
+    );
     ok(lookup.status === 200 && lookup.body?.found === true, '3.1 lookup encontra cadastro');
     ok(lookup.body?.membership_id === enroll.body.membership_id, '3.2 mesma membership no lookup');
     ok(lookup.body?.customer?.cpf_last2 === '25', '3.3 cpf_last2 consistente');
-
-    scenario(4, 'CPF valido porem nao cadastrado (mismatch generico)');
-    const miss = await edgeCall(
-      { public_slug: slug, mode: 'lookup', cpf: OTHER_VALID_CPF },
+    const existingEnroll = await edgeCall(
+      {
+        public_slug: slug,
+        mode: 'enroll',
+        cpf: VALID_CPF,
+        phone: VALID_PHONE,
+        name: 'Nome Sentinela',
+        consent: true,
+      },
       anonKey,
     );
-    ok(miss.status === 200 && miss.body?.found === false, '4.1 found false sem vazar dados');
+    ok(
+      existingEnroll.status === 200 &&
+        existingEnroll.body?.membership_id === enroll.body.membership_id,
+      '3.4 reenroll confirmado reutiliza membership',
+    );
+    ok(
+      existingEnroll.body?.customer?.name === 'Cliente Edge Sintetico',
+      '3.5 reenroll nao sobrescreve nome',
+    );
+
+    scenario(4, 'mismatch uniforme sem enumeracao de identidade');
+    const miss = await edgeCall(
+      { public_slug: slug, mode: 'lookup', cpf: OTHER_VALID_CPF, phone: VALID_PHONE },
+      anonKey,
+    );
+    const wrongPhone = await edgeCall(
+      { public_slug: slug, mode: 'lookup', cpf: VALID_CPF, phone: WRONG_PHONE },
+      anonKey,
+    );
+    const expectedMismatch = JSON.stringify({
+      error: {
+        code: 'IDENTITY_NOT_CONFIRMED',
+        message: 'Não foi possível confirmar os dados informados.',
+      },
+    });
+    ok(miss.status === 422 && wrongPhone.status === 422, '4.1 mismatch usa status uniforme');
+    ok(
+      JSON.stringify(miss.body) === expectedMismatch &&
+        JSON.stringify(wrongPhone.body) === expectedMismatch,
+      '4.2 mismatch usa body uniforme',
+    );
+    const existingEnrollWrongPhone = await edgeCall(
+      {
+        public_slug: slug,
+        mode: 'enroll',
+        cpf: VALID_CPF,
+        phone: WRONG_PHONE,
+        name: 'Nome Sentinela',
+        consent: true,
+      },
+      anonKey,
+    );
+    ok(
+      existingEnrollWrongPhone.status === 422 &&
+        JSON.stringify(existingEnrollWrongPhone.body) === expectedMismatch,
+      '4.3 enroll existente com telefone incorreto permanece generico',
+    );
 
     scenario(5, 'erros de contrato');
     const invalidCpf = await edgeCall(
-      { public_slug: slug, mode: 'lookup', cpf: INVALID_CPF },
+      { public_slug: slug, mode: 'lookup', cpf: INVALID_CPF, phone: VALID_PHONE },
       anonKey,
     );
     ok(
       invalidCpf.status === 422 && invalidCpf.body?.error?.code === 'INVALID_CPF',
       '5.1 CPF com digitos invalidos rejeitado 422',
     );
-    const badMode = await edgeCall({ public_slug: slug, mode: 'reset', cpf: VALID_CPF }, anonKey);
+    const badMode = await edgeCall(
+      { public_slug: slug, mode: 'reset', cpf: VALID_CPF, phone: VALID_PHONE },
+      anonKey,
+    );
     ok(
       badMode.status === 400 && badMode.body?.error?.code === 'INVALID_MODE',
       '5.2 mode invalido rejeitado 400',
     );
     const badSlug = await edgeCall(
-      { public_slug: '0'.repeat(24), mode: 'lookup', cpf: VALID_CPF },
+      { public_slug: '0'.repeat(24), mode: 'lookup', cpf: VALID_CPF, phone: VALID_PHONE },
       anonKey,
     );
     ok(
@@ -342,7 +414,14 @@ async function run() {
       '5.3 slug inexistente 404',
     );
     const badName = await edgeCall(
-      { public_slug: slug, mode: 'enroll', cpf: OTHER_VALID_CPF, name: 'A' },
+      {
+        public_slug: slug,
+        mode: 'enroll',
+        cpf: OTHER_VALID_CPF,
+        phone: VALID_PHONE,
+        name: 'A',
+        consent: true,
+      },
       anonKey,
     );
     ok(
@@ -350,17 +429,52 @@ async function run() {
       '5.4 nome curto rejeitado 422',
     );
     const htmlName = await edgeCall(
-      { public_slug: slug, mode: 'enroll', cpf: OTHER_VALID_CPF, name: '<b>X</b>' },
+      {
+        public_slug: slug,
+        mode: 'enroll',
+        cpf: OTHER_VALID_CPF,
+        phone: VALID_PHONE,
+        name: '<b>X</b>',
+        consent: true,
+      },
       anonKey,
     );
     ok(
       htmlName.status === 422 && htmlName.body?.error?.code === 'INVALID_NAME',
       '5.5 nome com marcacao rejeitado 422',
     );
+    const missingPhone = await edgeCall(
+      { public_slug: slug, mode: 'lookup', cpf: VALID_CPF },
+      anonKey,
+    );
+    ok(
+      missingPhone.status === 422 && missingPhone.body?.error?.code === 'INVALID_PHONE',
+      '5.6 telefone obrigatorio',
+    );
+    for (const consent of [undefined, false]) {
+      const consentResult = await edgeCall(
+        {
+          public_slug: slug,
+          mode: 'enroll',
+          cpf: OTHER_VALID_CPF,
+          phone: VALID_PHONE,
+          name: 'Cliente Consentimento',
+          ...(consent === undefined ? {} : { consent }),
+        },
+        anonKey,
+      );
+      ok(
+        consentResult.status === 422 && consentResult.body?.error?.code === 'CONSENT_REQUIRED',
+        `5.${consent === undefined ? '7' : '8'} consentimento ${consent === undefined ? 'ausente' : 'false'} rejeitado`,
+      );
+    }
 
     scenario(6, 'programa desabilitado => LOYALTY_UNAVAILABLE');
     await setProgramEnabled(ownerS, orgId, false);
-    const disabled = await edgeCall({ public_slug: slug, mode: 'lookup', cpf: VALID_CPF }, anonKey);
+    const disabled = await edgeCall(
+      { public_slug: slug, mode: 'lookup', cpf: VALID_CPF, phone: VALID_PHONE },
+      anonKey,
+    );
     ok(
       disabled.status === 403 && disabled.body?.error?.code === 'LOYALTY_UNAVAILABLE',
       '6.1 programa off bloqueia 403',
@@ -368,8 +482,28 @@ async function run() {
     await setProgramEnabled(ownerS, orgId, true);
 
     scenario(7, 'sem header de autenticacao (verify_jwt)');
-    const noAuth = await edgeCall({ public_slug: slug, mode: 'lookup', cpf: VALID_CPF });
+    const noAuth = await edgeCall({
+      public_slug: slug,
+      mode: 'lookup',
+      cpf: VALID_CPF,
+      phone: VALID_PHONE,
+    });
     ok(noAuth.status === 401, '7.1 chamada sem token JWT negada');
+
+    scenario(8, 'rate limit persistente retorna 429 com Retry-After');
+    let limited = null;
+    for (let attempt = 0; attempt < 12 && limited === null; attempt += 1) {
+      const response = await edgeCall(
+        { public_slug: slug, mode: 'lookup', cpf: VALID_CPF, phone: VALID_PHONE },
+        anonKey,
+      );
+      if (response.status === 429) limited = response;
+    }
+    ok(limited?.body?.error?.code === 'RATE_LIMITED', '8.1 limite retorna erro generico');
+    ok(
+      Number.isInteger(Number(limited?.retryAfter)) && Number(limited?.retryAfter) > 0,
+      '8.2 limite retorna Retry-After positivo',
+    );
   } finally {
     for (const client of openClients) await client.end().catch(() => {});
     for (const org of createdOrgIds) {

@@ -2,12 +2,15 @@ import { createBrowserRouter, type RouteObject } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { PublicOrderLayout } from '../components/PublicOrderLayout';
 import { AdminProvider } from '../lib/admin/AdminProvider';
-import { RequireManageUnit } from '../lib/admin/guards';
+import { RequireManageUnit, RequireOwner } from '../lib/admin/guards';
 import { AppGate, GuestOnly, OnboardingGate } from '../lib/auth/guards';
 import { AppPage } from '../pages/AppPage';
 import { CardapioPage } from '../pages/CardapioPage';
 import { CartPage } from '../pages/CartPage';
 import { CatalogoPage } from '../pages/CatalogoPage';
+import { CheckoutPage } from '../pages/CheckoutPage';
+import { ClubeAdminPage } from '../pages/ClubeAdminPage';
+import { ClubePage } from '../pages/ClubePage';
 import { ConfiguracoesPage } from '../pages/ConfiguracoesPage';
 import { FoundationPage } from '../pages/FoundationPage';
 import { LoginPage } from '../pages/LoginPage';
@@ -15,7 +18,6 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
 import { PedidosPage } from '../pages/PedidosPage';
 import { PublicMenuPage } from '../pages/PublicMenuPage';
-import { CheckoutPage } from '../pages/CheckoutPage';
 import { TrackingPage } from '../pages/TrackingPage';
 import { SignupPage } from '../pages/SignupPage';
 import { App } from './App';
@@ -60,6 +62,7 @@ export const appRoutes: RouteObject[] = [
         ],
       },
       { path: 'pedido/:trackingToken', element: <TrackingPage /> },
+      { path: 'clube/:publicSlug', element: <ClubePage /> },
       {
         path: 'app',
         element: (
@@ -87,6 +90,14 @@ export const appRoutes: RouteObject[] = [
               <RequireManageUnit>
                 <ConfiguracoesPage />
               </RequireManageUnit>
+            ),
+          },
+          {
+            path: 'clube',
+            element: (
+              <RequireOwner>
+                <ClubeAdminPage />
+              </RequireOwner>
             ),
           },
         ],

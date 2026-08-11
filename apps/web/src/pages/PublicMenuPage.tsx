@@ -64,6 +64,21 @@ function PublicMenuFound({ menu, publicSlug }: { menu: PublicMenuData; publicSlu
           </div>
         )}
 
+        {menu.loyalty.enabled && (
+          <Link
+            to={`/clube/${publicSlug}`}
+            className="mt-6 flex min-h-12 items-center justify-between gap-3 rounded-lg border border-pedon-orange/40 bg-orange-50 p-4 text-sm transition hover:bg-orange-100"
+          >
+            <span>
+              <span className="block font-bold text-pedon-navy">Clube Ped-On</span>
+              <span className="block text-pedon-text/70">
+                Ganhe pontos nas suas compras e acompanhe seu saldo.
+              </span>
+            </span>
+            <span className="shrink-0 font-semibold text-pedon-orange">Ver saldo →</span>
+          </Link>
+        )}
+
         {menu.categories.length === 0 ? (
           <p role="status" className="text-pedon-text/70">
             Este cardápio ainda não tem itens publicados.

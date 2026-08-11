@@ -88,6 +88,11 @@ export function AppShell() {
             </NavLink>
           </>
         )}
+        {role === 'owner' && (
+          <NavLink to="/app/clube" className={navLinkClass}>
+            Clube Ped-On
+          </NavLink>
+        )}
       </nav>
 
       <div className="flex-1 py-6">

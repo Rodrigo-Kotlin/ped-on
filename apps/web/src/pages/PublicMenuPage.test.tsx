@@ -20,6 +20,7 @@ const foundMenu: PublicMenuData = {
   found: true,
   organization: { name: 'Cantina da Praça' },
   unit: { name: 'Loja Centro', is_active: true },
+  loyalty: { enabled: false },
   menu: { version_id: 'version-1', version_number: 1, published_at: '2026-08-10T12:00:00.000Z' },
   operation: {
     configured: true,
@@ -203,5 +204,22 @@ describe('PublicMenuPage', () => {
 
     resolveQuery({ data: foundMenu, error: null });
     expect(await screen.findByRole('heading', { name: 'Loja Centro' })).toBeInTheDocument();
+  });
+
+  it('exibe CTA do Clube Ped-On quando o programa está ativo', async () => {
+    renderPublicMenu({ ...foundMenu, loyalty: { enabled: true } });
+
+    const link = await screen.findByRole('link', { name: /Clube Ped-On/ });
+    expect(link).toHaveAttribute('href', '/clube/abc');
+    expect(
+      screen.getByText('Ganhe pontos nas suas compras e acompanhe seu saldo.'),
+    ).toBeInTheDocument();
+  });
+
+  it('não exibe CTA do Clube quando o programa está desativado', async () => {
+    renderPublicMenu(foundMenu);
+
+    await screen.findByRole('heading', { name: 'Loja Centro' });
+    expect(screen.queryByRole('link', { name: /Clube Ped-On/ })).not.toBeInTheDocument();
   });
 });

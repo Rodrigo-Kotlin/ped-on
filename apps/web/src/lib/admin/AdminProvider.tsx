@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../supabase';
+import { AuthContext } from '../auth/auth-context';
 import { AdminContext } from './admin-context';
 import type {
   AdminContextValue,
@@ -41,6 +42,8 @@ function defaultUnit(units: AdminUnit[]): AdminUnit | null {
 }
 
 export function AdminProvider({ children }: { children: ReactNode }) {
+  const auth = useContext(AuthContext);
+  const userId = auth?.user?.id ?? 'signed-out';
   const [preferredUnitId, setPreferredUnitId] = useState<string | null>(() => {
     if (typeof window === 'undefined') {
       return null;
@@ -55,7 +58,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     error,
     refetch,
   } = useQuery({
-    queryKey: ['admin-context'],
+    queryKey: ['admin-context', userId],
     queryFn: fetchAdminContext,
   });
 
@@ -66,10 +69,26 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     return preferred ?? defaultUnit(units);
   }, [units, preferredUnitId]);
 
-  const selectUnit = useCallback((unitId: string) => {
-    setPreferredUnitId(unitId);
-    window.localStorage.setItem(SELECTED_UNIT_KEY, unitId);
-  }, []);
+  useEffect(() => {
+    if (admin === undefined || preferredUnitId === null) return;
+    const valid = units.some((unit) => unit.id === preferredUnitId && unit.is_active);
+    if (!valid) {
+      window.localStorage.removeItem(SELECTED_UNIT_KEY);
+    }
+  }, [admin, preferredUnitId, units]);
+
+  const selectUnit = useCallback(
+    (unitId: string) => {
+      if (!units.some((unit) => unit.id === unitId && unit.is_active)) {
+        setPreferredUnitId(null);
+        window.localStorage.removeItem(SELECTED_UNIT_KEY);
+        return;
+      }
+      setPreferredUnitId(unitId);
+      window.localStorage.setItem(SELECTED_UNIT_KEY, unitId);
+    },
+    [units],
+  );
 
   const refresh = useCallback(async () => {
     await refetch();

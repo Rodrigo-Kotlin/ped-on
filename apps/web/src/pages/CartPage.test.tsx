@@ -19,6 +19,7 @@ const menu: PublicMenuData = {
   found: true,
   organization: { name: 'Cantina' },
   unit: { name: 'Centro', is_active: true },
+  loyalty: { enabled: false },
   menu: { version_id: 'version-1', version_number: 1, published_at: '2026-08-10T12:00:00Z' },
   operation: {
     configured: true,

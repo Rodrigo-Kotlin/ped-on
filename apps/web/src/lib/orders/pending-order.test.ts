@@ -1,0 +1,80 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  clearPendingOrderAttempt,
+  createAttemptRecoveryHash,
+  fingerprintOrderPayload,
+  loadPendingOrderAttempt,
+  parsePendingOrderAttempt,
+  pendingOrderStorageKey,
+  savePendingOrderAttempt,
+} from './pending-order';
+import type { CreatePublicOrderPayload } from './orders';
+
+const attempt = {
+  idempotency_key: '11111111-1111-4111-8111-111111111111',
+  request_fingerprint: 'a'.repeat(64),
+  public_slug: 'abc',
+  created_at: '2026-08-11T12:00:00.000Z',
+};
+
+describe('pending order attempt', () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it('persiste e carrega somente o contrato estrito sem PII', () => {
+    savePendingOrderAttempt(attempt);
+
+    const raw = window.localStorage.getItem(pendingOrderStorageKey('abc'))!;
+    expect(JSON.parse(raw)).toEqual(attempt);
+    expect(raw).not.toMatch(/Maria|52998224725|99999|loyalty|token|payload|X-Salada/i);
+    expect(loadPendingOrderAttempt('abc')).toEqual(attempt);
+
+    clearPendingOrderAttempt('abc');
+    expect(loadPendingOrderAttempt('abc')).toBeNull();
+  });
+
+  it('rejeita campos extras, slug divergente e tentativas expiradas', () => {
+    const now = Date.parse('2026-08-11T13:00:00.000Z');
+    expect(
+      parsePendingOrderAttempt(JSON.stringify({ ...attempt, phone: '11999999999' }), 'abc', now),
+    ).toBeNull();
+    expect(parsePendingOrderAttempt(JSON.stringify(attempt), 'outro', now)).toBeNull();
+    expect(
+      parsePendingOrderAttempt(
+        JSON.stringify({ ...attempt, created_at: '2026-08-09T12:00:00.000Z' }),
+        'abc',
+        now,
+      ),
+    ).toBeNull();
+  });
+
+  it('gera SHA-256 estável para o payload normalizado e muda com o token', async () => {
+    const payload: CreatePublicOrderPayload = {
+      menu_version_id: 'v1',
+      operation_revision: 'r1',
+      service_mode: 'pickup',
+      payment_method: 'pix',
+      customer: { name: 'Maria', phone: '11999999999' },
+      items: [{ menu_item_id: 'item-1', quantity: 1 }],
+      loyalty_token: 'a'.repeat(64),
+    };
+    const reordered = {
+      ...payload,
+      customer: { phone: '11999999999', name: 'Maria' },
+    };
+
+    const first = await fingerprintOrderPayload(payload);
+    expect(first).toMatch(/^[a-f0-9]{64}$/);
+    expect(await fingerprintOrderPayload(reordered)).toBe(first);
+    expect(await fingerprintOrderPayload({ ...payload, loyalty_token: 'b'.repeat(64) })).not.toBe(
+      first,
+    );
+  });
+
+  it('gera segredo de recovery aleatório sem derivar PII do payload', () => {
+    const first = createAttemptRecoveryHash();
+    const second = createAttemptRecoveryHash();
+    expect(first).toMatch(/^[a-f0-9]{64}$/);
+    expect(second).toMatch(/^[a-f0-9]{64}$/);
+    expect(second).not.toBe(first);
+  });
+});
