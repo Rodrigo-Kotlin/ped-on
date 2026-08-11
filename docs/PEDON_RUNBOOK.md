@@ -1,7 +1,7 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint Prompt 09 `LOCAL_GATES_PASS`. Backend deployado,
-> frontend implementado e reauditoria local aprovada; status `IN_PROGRESS` até CI e deploy finais.
+> Guia operacional do Ped-On após o Prompt 09 `RELEASE_VERIFIED`. Backend, frontend, reauditoria,
+> CI e deploy Cloudflare da release `2013e8d` aprovados.
 
 ## 1. Pré-requisitos
 
@@ -340,11 +340,15 @@ continua autorizado a exibi-las.
 | Output            | `apps/web/dist`                            |
 | URL estável       | `https://ped-on.pages.dev`                 |
 
-O build local do Prompt 09 passou, mas produção e o último run de CI ainda apontam para `f662fdc`,
-anterior à versão completa. Depois do commit/push, conferir o run da SHA correta, o deployment
-correspondente, fallback SPA, assets/PWA, rotas `/clube/:publicSlug` e `/app/clube`, RPCs v2 no
-bundle, ausência de secret e ausência de runtime cache privado. Só então atualizar o status para
-conclusão.
+Release verificada:
+
+- source `2013e8d232f7f4daecb3c0ec62baa69eca9b64e1`;
+- run CI `31524498264`, com Quality gates e E2E smoke tests aprovados;
+- deployment `63b40263-d3b7-4d41-a5b2-ee8ecc97f4d0`;
+- URL imutável `https://63b40263.ped-on.pages.dev` e domínio estável aprovados;
+- fallback SPA 200 em `/clube/:publicSlug` e `/app/clube`;
+- manifest, service worker e assets aprovados;
+- RPCs públicas v2 presentes no bundle, sem nomes de secret, `service_role` ou runtime cache privado.
 
 ## 12. Diagnóstico rápido
 
@@ -367,7 +371,5 @@ conclusão.
 
 ## 13. Próximo passo
 
-Prompt 09 permanece `IN_PROGRESS`, checkpoint `LOCAL_GATES_PASS`: backend deployado, frontend
-implementado e reauditoria local aprovada. Criar o commit de release, fazer push e validar CI e
-deploy Cloudflare da mesma SHA antes de encerrar. Prompt 10 está `NOT STARTED`; recompensas,
-resgates e vouchers permanecem deferidos.
+Prompt 09 está `COMPLETED`, checkpoint `RELEASE_VERIFIED`. Prompt 10 está `NOT STARTED` e deve ser
+iniciado somente após instrução explícita; recompensas, resgates e vouchers permanecem deferidos.

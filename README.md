@@ -6,9 +6,8 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 3B, Prompt 09: Clientes e Clube Ped-On. O checkpoint de release hardening está
-`LOCAL_GATES_PASS`: backend deployado, frontend implementado e reauditoria local aprovada. O status
-geral permanece `IN_PROGRESS` até commit/push, CI e deploy Cloudflare rastreáveis da versão completa.
+Fase 3B, Prompt 09: Clientes e Clube Ped-On, `COMPLETED`. Backend, frontend, reauditoria, CI e deploy
+Cloudflare da versão completa foram verificados na release `2013e8d`.
 
 O produto atual inclui:
 
@@ -166,8 +165,8 @@ aplicada e não usar `supabase db reset` como substituto desse fluxo.
 - migrations: 14 Local == Remote.
 
 Format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit, alinhamento de migrations e db lint
-passaram na reauditoria local de 2026-08-11. CI e deploy Cloudflare da versão completa ainda não estão
-registrados; o status permanece `IN_PROGRESS` até essas verificações externas.
+passaram na reauditoria local de 2026-08-11. O run CI `31524498264` e o deployment Cloudflare
+`63b40263-d3b7-4d41-a5b2-ee8ecc97f4d0`, ambos da release `2013e8d`, também passaram.
 
 ## Segurança e secrets
 
@@ -194,6 +193,5 @@ registrados; o status permanece `IN_PROGRESS` até essas verificações externas
 - `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 
-Próximo passo oficial: criar o commit de release do Prompt 09, fazer push, validar o run de CI da SHA
-correta e o deployment Cloudflare correspondente. Prompt 10 permanece `NOT STARTED`; recompensas,
-resgates e vouchers continuam deferidos.
+Próximo passo oficial: Prompt 10, ainda `NOT STARTED`. Recompensas, resgates e vouchers continuam
+deferidos até uma instrução explícita para iniciar essa etapa.
