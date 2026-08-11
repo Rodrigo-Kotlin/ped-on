@@ -497,7 +497,148 @@ apenas para invalidar/refazer queries.
 A migration de hardening substitui `create_public_order` para remover uma declaração redundante
 apontada pelo lint e reaplica os grants, sem alterar assinatura ou comportamento.
 
-## 9. Funções e triggers atuais
+## 9. Cliente e Clube Ped-On (Prompt 09 — core DB)
+
+O escopo fiel do Prompt 09 no banco (checkpoint `DB/ledger core completed`): programa por
+organização, identidade de consumidor por fingerprint HMAC de CPF, membership, projeção de saldo e
+ledger append-only. **Nenhum CPF em claro** é persistido. A Edge Function `loyalty-cpf` (HMAC,
+validação de CPF, token efêmero) e as UIs pública/administrativa ainda não existem nesta etapa.
+
+### 9.1 `public.loyalty_programs`
+
+Programa de fidelidade por organização. Inexistente ou `enabled=false` ⇒ Clube indisponível
+(`PED51`). Só passa a existir quando o owner ativa via `set_loyalty_program_enabled`.
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `organization_id` | `uuid` PK | FK `organizations(id)` ON DELETE CASCADE |
+| `enabled` | `boolean` | default `false` |
+| `points_per_real` | `numeric(12,2)` | default `1.00`; `> 0` e `<= 9999999999.99` |
+| `created_at` / `updated_at` | `timestamptz` | default `now()` |
+
+### 9.2 `public.customers`
+
+Cliente por organização; identidade **derivada de CPF**, nunca o CPF em si.
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` PK | `gen_random_uuid()` |
+| `organization_id` | `uuid` | FK `organizations(id)` CASCADE |
+| `cpf_fingerprint` | `text` | `~ '^[a-f0-9]{64}$'`; HMAC-SHA-256 keyed por tenant: `HMAC(secret, 'pedon:cpf:v1:' \|\| org_id \|\| ':' \|\| cpf)` |
+| `cpf_last2` | `text` | `~ '^[0-9]{2}$'`; exibição mascarada |
+| `name` | `text` | nullable; `btrim` 2..120 e `_is_safe_plain_text` |
+| `created_at` | `timestamptz` | default `now()` |
+
+`UNIQUE (organization_id, cpf_fingerprint)` impede duplicidade por tenant. Nenhuma coluna de CPF em
+claro existe (validado em teste).
+
+### 9.3 `public.loyalty_memberships`
+
+Vínculo cliente/organização; é o escopo de pontos. `UNIQUE (organization_id, customer_id)`.
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` PK | `gen_random_uuid()` |
+| `organization_id` | `uuid` | FK `organizations(id)` CASCADE |
+| `customer_id` | `uuid` | FK composta `(organization_id, customer_id)` → `customers` CASCADE |
+| `created_at` | `timestamptz` | default `now()` |
+
+### 9.4 `public.loyalty_accounts`
+
+Projeção derivada do ledger (não é fonte de verdade). Invariante orgânico:
+`sum(loyalty_ledger.amount) = points_balance - recovery_points`.
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `membership_id` | `uuid` PK | FK composta `(organization_id, membership_id)` → memberships CASCADE |
+| `organization_id` | `uuid` | — |
+| `points_balance` | `bigint` | default `0`; `CHECK (points_balance >= 0)` |
+| `recovery_points` | `bigint` | default `0`; `CHECK (recovery_points >= 0)`; dívida quando estorno excede saldo |
+| `updated_at` | `timestamptz` | default `now()` |
+
+`recovery_points` só é alcançável por reparo/manutenção no fluxo atual (todo reversal é pareado com
+o próprio earn); o comportamento de quitação por novas aquisições já está implementado e testado,
+preparando o Prompt 10 (redemption). Não existem colunas `lifetime_*`, `gross_points`,
+`points_delta`, `recovery_delta` nem `eligible_amount`: `total_earned`/`total_reversed` são
+**calculados** na leitura administrativa, não armazenados.
+
+### 9.5 `public.loyalty_ledger`
+
+Ledger append-only (sem UPDATE/DELETE por RPC ou navegador). `earn` sempre `amount > 0`; `reversal`
+sempre `amount < 0`.
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` PK | `gen_random_uuid()` |
+| `organization_id` | `uuid` | FK composta orders `(organization_id, order_id)` ON DELETE RESTRICT |
+| `membership_id` | `uuid` | FK composta memberships `(organization_id, membership_id)` ON DELETE RESTRICT |
+| `order_id` | `uuid` | nullable (pedidos sem Clube nunca geram entrada) |
+| `entry_type` | `text` | `CHECK (entry_type in ('earn','reversal'))` |
+| `amount` | `bigint` | `CHECK` de forma: earn positivo, reversal negativo |
+| `created_at` | `timestamptz` | default `clock_timestamp()` |
+
+Índice único parcial `(order_id, entry_type) WHERE order_id IS NOT NULL` ⇒ no máximo um earn e uma
+reversal por pedido (idempotência sob lock de linha do pedido). `orders` ganhou
+`UNIQUE (organization_id, id)` para suportar a FK composta do ledger.
+
+### 9.6 `public.loyalty_access_tokens`
+
+Token efêmero de acesso/sessão do consumidor. Apenas `SHA-256(token)` é persistido.
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `token_hash` | `text` PK | `~ '^[a-f0-9]{64}$'` |
+| `organization_id` | `uuid` | FK composta memberships `(organization_id, membership_id)` CASCADE |
+| `membership_id` | `uuid` | — |
+| `expires_at` | `timestamptz` | `CHECK (expires_at > created_at)`; janela de 2h gerada pela Edge |
+| `created_at` | `timestamptz` | default `now()` |
+
+Índice `(organization_id, membership_id, expires_at)`.
+
+### 9.7 Integração com pedidos
+
+- `orders.loyalty_membership_id` (`uuid`, nullable) com FK composta
+  `(organization_id, loyalty_membership_id) → loyalty_memberships(organization_id, id)`
+  ON DELETE RESTRICT + índice — garante mesmo tenant entre pedido e membership.
+- `orders.organization_id` ganhou `UNIQUE (organization_id, id)` (insumo da FK do ledger).
+- `create_public_order` aceita `loyalty_token` opcional (64 hex): programa desabilitado ⇒ `PED51`;
+  token ausente/expirado/inválido/outro tenant ⇒ `PED52`; consumo único via DELETE na mesma
+  transação (falha posterior devolve o token). Retry idempotente ocorre antes da validação
+  (DEC-100), então replay nunca reconsome.
+- `set_order_status` chama `_loyalty_earn_order` na transição para `completed`.
+- `set_order_payment_status` chama `_loyalty_reverse_order` na transição para `refunded`.
+- `get_public_menu` expõe apenas `loyalty.enabled`; `_order_admin_json` expõe
+  `loyalty.linked` + `cpf_masked` para o staff.
+
+### 9.8 RPCs internas e públicas
+
+| Objeto | Acesso | Contrato |
+|---|---|---|
+| `get_loyalty_public_context_internal(text)` | `service_role` | slug → `organization_id` + estado do programa (insumo do HMAC) |
+| `resolve_loyalty_identity_internal(uuid,text,text,text,text,text,timestamptz)` | `service_role` | `enroll`/`lookup` por fingerprint + `cpf_last2`; cria customer/membership/account/token; `enroll` idempotente |
+| `get_public_loyalty_account(text)` | `anon`/`authenticated` | única leitura pública; só aceita o access token; dados mascarados + saldo |
+| `get_loyalty_program_admin(uuid)` | owner | programa + `stats.members_count` |
+| `set_loyalty_program_enabled(uuid,boolean)` | owner | ativa/desativa o programa (cria a linha no primeiro enable) |
+| `get_loyalty_members_admin(uuid,integer,uuid)` | owner | lista paginada (`limit` 1..200) com `cpf_last2`, nome, saldo, `recovery_points`, `total_earned`/`total_reversed` calculados e `member_since` |
+| `_loyalty_earn_order(orders)` | interno (revogado de navegador) | earn idempotente: membership presente, `payment_status <> 'refunded'` (guard de hardening), programa habilitado, `points = floor(subtotal * points_per_real) > 0`; paga `recovery_points` antes de compor saldo |
+| `_loyalty_reverse_order(orders)` | interno (revogado de navegador) | reversal idempotente: devolve o earn do pedido; se exceder saldo, cria `recovery_points` |
+
+### 9.9 Regra de pontos (DEC-090)
+
+`points = floor(orders.subtotal * points_per_real)` (1 ponto por R$ 1,00 elegível com
+`points_per_real = 1.00`). `delivery_fee` e centavos não geram pontos; pedido `< R$ 1,00` gera 0
+pontos e nenhuma entrada de ledger. Earn acontece somente na 1ª transição `status → completed` com
+`payment_status <> 'refunded'`; `payment_status → refunded` após o earn gera reversal completo.
+
+### 9.10 Erros do Prompt 09
+
+| SQLSTATE | Mensagem |
+|---|---|
+| `PED51` | `LOYALTY_UNAVAILABLE` (programa ausente/desabilitado) |
+| `PED52` | `INVALID_LOYALTY_TOKEN` (token ausente/expirado/inválido/outro tenant/formato) |
+| `PED53` | `LOYALTY_INTEGRITY` (inconsistência interna; também `limit` fora de 1..200) |
+
+## 10. Funções e triggers atuais
 
 | Objeto | Contrato |
 |---|---|
@@ -519,8 +660,10 @@ apontada pelo lint e reaplica os grants, sem alterar assinatura ou comportamento
 | `get_unit_menu_publication_admin(uuid)` | leitura administrativa da publicação e histórico |
 | `get_public_menu(text)` | cardápio público anônimo via slug (anon) |
 | helpers `_is_safe_plain_text`, `_is_unit_open_at` e serializadores `_order_*_json` | validação e respostas minimizadas de pedidos |
-| `create_public_order(text,uuid,jsonb)` / `get_public_order(text)` | checkout idempotente e tracking público |
+| `create_public_order(text,uuid,jsonb)` / `get_public_order(text)` | checkout idempotente e tracking público (aceita `loyalty_token` opcional) |
 | quatro RPCs administrativas da Seção 8.5 | lista, detalhe e transições server-authoritative |
+| seis RPCs e helpers da Seção 9.8 | programa, identidade do consumidor, conta pública e membros do Clube |
+| `_loyalty_earn_order(orders)` / `_loyalty_reverse_order(orders)` | earn/reversal internos do ledger (revogados de navegador) |
 
 Todas as funções desta tabela, exceto `set_updated_at()`, são `security definer` com
 `search_path=''`; `get_my_admin_context`, helpers de acesso e getters são `stable` quando aplicável,
@@ -539,7 +682,7 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `PED04` | `LAST_ACTIVE_UNIT` |
 | `PED05` | `UNIT_NAME_TOO_LONG` |
 
-## 10. RLS e ACLs
+## 11. RLS e ACLs
 
 | Tabela | SELECT autenticado | Escrita direta |
 |---|---|---|
@@ -558,6 +701,7 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `orders` | policy `can_access_unit(unit_id)` | I/U/D revogados; escrita por RPC |
 | `order_items` | policy `can_access_unit(unit_id)` | I/U/D revogados; escrita por RPC |
 | `order_events` | policy `can_access_unit(unit_id)` | I/U/D revogados; append-only por RPC |
+| seis tabelas do Clube (9.1–9.6) | sem policy seletora; acesso via RPC `security definer` ou `service_role` | grants de `public`/`anon`/`authenticated` revogados (zero) |
 
 Nas tabelas do catálogo e do cardápio publicado, `SELECT` foi concedido a `authenticated` (e a
 `anon` somente nas duas tabelas do catálogo mutável), mas só existe policy `TO authenticated`.
@@ -568,7 +712,22 @@ explicitamente revogado de `PUBLIC` e `anon` e concedido somente a `authenticate
 superfície pública de leitura do cardápio. As tabelas de pedidos não possuem grants para `anon`;
 checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
-## 11. Produção e validação
+## 12. Produção e validação
+
+Checkpoint do Prompt 09 (DB/ledger core):
+
+- migrations `20260810170000_loyalty_customers_ledger.sql` e
+  `20260811080000_loyalty_earn_refunded_guard.sql` aplicadas oficialmente; **12 migrations Local ==
+  Remote**;
+- `supabase db lint --linked`: sem erros;
+- loyalty `loyalty_integrity.test.mjs` **108/108 PASS** cobrindo: ciclo do programa owner-only,
+  resolução de identidade por fingerprint (sem CPF em claro), consulta pública por token efêmero,
+  checkout com token de uso único + retry idempotente + concorrência, earn em `completed`
+  (`floor(subtotal)`), guest sem earn, pedido `< R$ 1,00` sem earn, programa desabilitado na
+  conclusão sem earn, **estornado antes de `completed` sem earn (hardening DEC-091)**, reversal de
+  earn, `recovery_points` quitando dívida antes do saldo, invariante `sum(ledger) =
+  balance - recovery`, admin de membros owner-only com máscara de CPF, e RLS sem grants de navegador;
+- regressões anteriores permanecem verdes (ver Seção 12.1 e runbook Seção 6).
 
 Checkpoint do Prompt 08:
 
@@ -584,7 +743,10 @@ Checkpoint do Prompt 08:
   idempotência/replay, máquinas de estado, PII minimizada, Realtime e concorrência;
 - cleanup automático remove organizações e usuários sintéticos, sem dados residuais esperados.
 
-## 12. Ainda não implementado
+## 13. Ainda não implementado
 
-Imagens, clientes persistentes, CPF, fidelidade, pontos, recompensas, vouchers, gateway, pagamento
-online e logística avançada ainda não fazem parte deste schema.
+O core DB do Clube (9.1–9.10) existe e está validado. Ainda fora deste schema: Edge Function
+`loyalty-cpf` (validação de CPF, HMAC keyed, geração/consumo do token efêmero), secret
+`LOYALTY_CPF_HMAC_KEY` no backend, UIs pública `/clube/:publicSlug` e administrativa `/app/clube`,
+e integração de checkout no frontend. Imagens, recompensas/resgate/vouchers (Prompt 10), gateway,
+pagamento online e logística avançada também não fazem parte deste schema.

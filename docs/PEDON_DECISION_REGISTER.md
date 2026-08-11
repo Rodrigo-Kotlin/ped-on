@@ -625,6 +625,136 @@
   online. Pagamento é externo ao estabelecimento.
 - **Justificativa:** MVP sem intermediação financeira (baseline seção 5) e sem logística.
 
+## Decisões do Prompt 09 — Clientes e Clube Ped-On (Fase 3B)
+
+### DEC-087 — Fidelidade é organization-scoped, compartilhada entre todas as unidades
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** programa, cadastro, saldo e extrato do Clube Ped-On pertencem à organização (tenant),
+  não à unidade; pedidos de qualquer unidade da mesma organização alimentam o mesmo saldo.
+- **Justificativa:** um restaurante com múltiplas unidades deve premiar o cliente de forma única;
+  simplifica RLS e evita saldos duplicados por unidade.
+
+### DEC-088 — Cliente do Clube não usa Supabase Auth; identidade via fingerprint + token efêmero
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** consumidor nunca cria conta nem senha; a identidade é resolvida por fingerprint
+  derivado do CPF (HMAC) na Edge Function `loyalty-cpf`, e a sessão pública usa um access token
+  opaco e de curta duração mantido apenas em memória. Fidelidade é independente do staff.
+- **Justificativa:** sem custo de onboarding do consumidor; evita reutilização do Auth de staff e
+  cumpre DEC-023 sem expor PII.
+
+### DEC-089 — CPF nunca é armazenado; apenas HMAC-SHA-256 keyed por tenant + `cpf_last2`
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o banco guarda `cpf_fingerprint` (64 hex) calculado como
+  `HMAC(secret, 'pedon:cpf:v1:' || organization_id || ':' || cpf_normalizado)` e `cpf_last2`; o CPF
+  bruto não é persistido, logado nem retornado. Proibido SHA-256 simples, MD5, bcrypt lookup ou
+  chave global compartilhada entre tenants.
+- **Justificativa:** fingerprint sem chave é inviável para lookup por força bruta; keyed HMAC com
+  domínio por tenant impede correlação entre organizações.
+
+### DEC-090 — Pontos por pedido = `floor(subtotal)`; taxa de entrega não gera pontos
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** pontos elegíveis = `floor(orders.subtotal)` (1 ponto por R$ 1,00 elegível);
+  `delivery_fee` e centavos abaixo de R$ 1,00 não geram pontos; pedido abaixo de R$ 1,00 gera 0
+  pontos. Reforça DEC-015/DEC-016 e não registra ledger para zerados.
+- **Justificativa:** regra simples, determinística e sem arredondamento por moeda.
+
+### DEC-091 — Earn somente na 1ª transição `status → completed` com pagamento não reembolsado
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** pontos são creditados no ledger apenas quando o pedido alcança `completed` pela
+  primeira vez e `payment_status <> 'refunded'`; transição `payment_status → refunded` após o earn
+  gera estorno completo via ledger. Earn é idempotente por `(order_id, entry_type)`.
+- **Justificativa:** alinhado a DEC-080/DEC-081: completar entrega ou retirada é o marco de
+  fidelidade; reembolso revoga o benefício.
+- **Histórico:** a migration `20260810170000` foi aplicada sem a guarda de `payment_status` em
+  `_loyalty_earn_order`. Para cumprir exatamente este contrato, a migration de hardening
+  `20260811080000_loyalty_earn_refunded_guard.sql` (BUGFIX, não nova decisão) adicionou o guard
+  "pedido estornado antes de `completed` não gera earn"; o reverso de earn já concedido permanece a
+  cargo de `_loyalty_reverse_order` no `payment_status → refunded`.
+
+### DEC-092 — Ledger append-only; saldo derivado e `recovery_points` sem saldo negativo
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `loyalty_ledger` é append-only (sem UPDATE/DELETE); `loyalty_accounts` é projeção;
+  `points_balance` nunca é negativo; estorno que exceda o saldo vira `recovery_points` (dívida) e as
+  próximas aquisições quitam a dívida antes de compor saldo disponível.
+- **Justificativa:** auditoria imutável (DEC-014) com consistência contábil mesmo sob reversões
+  desordenadas no MVP.
+
+### DEC-093 — Access token efêmero 64 hex, hash SHA-256 no banco, 2h, somente em memória
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** a Edge Function gera 32 bytes aleatórios → 64 hex; o banco guarda apenas
+  `token_hash = SHA-256(token)` com expiração de 2 horas; o browser mantém o token apenas em
+  memória (nunca em localStorage) e o envia no payload do pedido e na consulta pública de saldo.
+- **Justificativa:** token revogável e não enumerável (DEC-012); sem estado de sessão persistente
+  para consumidor.
+
+### DEC-094 — Tabelas de loyalty sem escrita direta do navegador; RPCs internas `service_role` + RPC pública por token
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** todas as tabelas do Clube têm RLS ON e nenhuma permissão de escrita para
+  `anon`/`authenticated`; resolução/enrolamento usam RPCs internas executadas somente com
+  `service_role` (Edge Function); `get_public_loyalty_account` é a única RPC pública e aceita apenas
+  o access token.
+- **Justificativa:** camada de serviço única para regras de pontos e proteção de PII.
+
+### DEC-095 — `get_public_menu` expõe apenas `loyalty.enabled`
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o cardápio público ganha `loyalty: { enabled: boolean }` sem contagem de membros,
+  saldo ou qualquer dado do programa além da flag; contratos existentes de cardápio permanecem
+  inalterados.
+- **Justificativa:** flag mínima para renderizar o CTA do Clube sem vazar métricas de negócio.
+
+### DEC-096 — `orders.loyalty_membership_id` nullable com FK composta de mesmo tenant
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** pedido pode opcionalmente carregar `loyalty_membership_id` (nullable), validado por
+  FK composta que exige `organization_id` igual ao do pedido; o payload aceita `loyalty_token`
+  opcional (64 hex); sem token o pedido é um guest normal.
+- **Justificativa:** vínculo seguro e opcional entre pedido e fidelidade sem quebrar guest checkout
+  (DEC-079).
+
+### DEC-097 — Novos SQLSTATE PED51/PED52/PED53 para o Clube
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** contrato de erros do Prompt 09: `PED51 LOYALTY_UNAVAILABLE` (programa desabilitado/
+  ausente), `PED52 LOYALTY_TOKEN_INVALID` (token ausente/expirado/inválido) e
+  `PED53 LOYALTY_INTEGRITY_ERROR` (inconsistência interna do ledger). O checkout sem token continua
+  válido mesmo com programa ativo.
+- **Justificativa:** códigos estáveis e tipados para o frontend tratar cada falha de fidelidade.
+
+### DEC-098 — Página pública `/clube/:publicSlug` e painel `/app/clube` somente owner
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o Clube público é mobile-first e vive fora das rotas autenticadas; o painel
+  administrativo do Clube é restrito ao papel `owner` (frontend + backend), enquanto manager e
+  operator continuam sem acesso a saldos e ao cadastro.
+- **Justificativa:** página pública segue o modelo `/menu/:publicSlug`; gestão de fidelidade é
+  decisão estratégica do proprietário (DEC-004).
+
+### DEC-099 — Sem recompensas, resgates ou vouchers no MVP
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** o Prompt 09 entrega somente acúmulo, consulta de saldo, estorno e recovery; pontos
+  ainda não têm valor de troca. Recompensas, resgate, vouchers, campanhas, multiplicadores, tiers,
+  expiração, transferência e cashback ficam para o Prompt 10.
+- **Justificativa:** escopo mínimo verificável; saldo é registrado antes de ganhar utilidade.
+
+### DEC-100 — Retry idempotente precede a validação de token/programa de fidelidade
+- **Status:** APROVADA
+- **Data:** 2026-08-10
+- **Decisão:** `create_public_order` consulta e devolve o replay da chave idempotente ANTES de
+  validar `loyalty_token` ou o estado do programa; se o retry não traz token, o replay não falha por
+  `PED51/PED52` e retorna o mesmo objeto imutável do pedido original.
+- **Justificativa:** preserva idempotência do Prompt 08 (DEC-011) e não quebra retries de
+  navegadores que perderam o token da sessão.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

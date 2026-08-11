@@ -135,7 +135,7 @@ Os testes conectam diretamente em `db.zmuxkztnilnzjyyojbbr.supabase.co:5432` com
 simulam sessões com `SET ROLE`/claims. Não usar pooler de sessão: reutilização de backend pode vazar
 role/claims entre clients.
 
-Execute os seis scripts **sequencialmente, nunca em paralelo**:
+Execute os sete scripts **sequencialmente, nunca em paralelo**:
 
 ```powershell
 $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
@@ -145,6 +145,7 @@ node supabase/tests/unit_operational_config_integrity.test.mjs
 node supabase/tests/catalog_integrity.test.mjs
 node supabase/tests/menu_publication_integrity.test.mjs
 node supabase/tests/orders_integrity.test.mjs
+node supabase/tests/loyalty_integrity.test.mjs
 ```
 
 | Script | Checkpoint |
@@ -155,12 +156,56 @@ node supabase/tests/orders_integrity.test.mjs
 | `catalog_integrity.test.mjs` | 123/123 PASS |
 | `menu_publication_integrity.test.mjs` | 121/121 PASS |
 | `orders_integrity.test.mjs` | 318/318 PASS |
+| `loyalty_integrity.test.mjs` | 108/108 PASS |
 
 A execução sequencial é obrigatória porque o teste RBAC herdado possui uma verificação de contagem
 global de `membership_units`; outra suíte inserindo vínculos simultaneamente pode produzir falso
 negativo. Cada script cria usuários/organizações sintéticos e executa cleanup automático no
 `finally`. Se houver interrupção abrupta, localizar dados `*@pedon-test.invalid` e organizações de
 teste antes de repetir; não remover dados reais.
+
+### 6.1 Clube Ped-On (Prompt 09) — validação e diagnóstico
+
+Procedimentos de verificação manual do ledger e da identidade do Clube (conexão direta como
+`postgres`, mesmo padrão dos testes):
+
+- **Account × ledger:** `sum(loyalty_ledger.amount)` deve igualar `points_balance - recovery_points`
+  da conta correspondente para fluxos orgânicos (sem reparos manuais):
+  ```sql
+  select ac.membership_id, ac.points_balance, ac.recovery_points,
+         (select coalesce(sum(l.amount),0) from public.loyalty_ledger l
+           where l.membership_id = ac.membership_id) as ledger_sum
+  from public.loyalty_accounts ac;
+  ```
+- **Earn/reversal por pedido:** um pedido gera no máximo um `earn` e um `reversal`; conferir o
+  índice parcial único em `loyalty_ledger (order_id, entry_type)`:
+  ```sql
+  select order_id, entry_type, amount, created_at
+  from public.loyalty_ledger
+  where membership_id = '<membership_id>' order by created_at;
+  ```
+- **`recovery_points`:** estorno que excede o saldo transforma a diferença em dívida; o próximo
+  earn quita a dívida antes de compor saldo (`repayment = least(points, recovery_points)`).
+- **Diagnóstico `PED53`:** inconsistência interna do ledger ou `limit` de
+  `get_loyalty_members_admin` fora de 1..200. Conferir primeiro se há duas entradas do mesmo tipo no
+  mesmo `order_id` (deve ser impossível pelo índice único parcial) e se a conta da membership existe.
+- **Estornado antes de `completed`:** não gera earn (guard de `_loyalty_earn_order`,
+  migration `20260811080000`); o reverso de earn já concedido é feito por `_loyalty_reverse_order`
+  no `payment_status → refunded`.
+- **Sem CPF em claro:** `customers` só contém `cpf_fingerprint` (64 hex) e `cpf_last2`; nenhuma
+  coluna de CPF existe. Nunca inserir/logar CPF.
+- **Cleanup das fixtures do Clube:** a suíte remove `loyalty_ledger`, depois `orders` e por fim as
+  `organizations` de teste (cascade para memberships/accounts/customers). Em interrupção abrupta,
+  remover manualmente nesta ordem — o ledger tem `ON DELETE RESTRICT` para orders e memberships:
+  ```sql
+  delete from public.loyalty_ledger where organization_id in
+    (select id from public.organizations where name like '%Loyalty Org%');
+  delete from public.orders where organization_id in
+    (select id from public.organizations where name like '%Loyalty Org%');
+  delete from public.organizations where name like '%Loyalty Org%';
+  ```
+- **PED51/PED52:** `PED51` = programa ausente/desabilitado; `PED52` = token ausente/expirado/
+  inválido/de outro tenant. O retry idempotente precede a validação (DEC-100).
 
 ## 7. Validação de segurança e cross-tenant
 
