@@ -95,3 +95,72 @@ jobs:
           name: playwright-report
           path: apps/web/playwright-report
           retention-days: 7
+
+  backend:
+    name: Backend release gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate migration history
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f supabase/migrations/20260812030000_prompt10_release_hardening.sql
+          test -f supabase/migrations/20260812090000_prompt10_final_integrity_hardening.sql
+          versions=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -d_ -f1)
+          test "$(printf '%s\n' "$versions" | wc -l)" -eq "$(printf '%s\n' "$versions" | sort -u | wc -l)"
+          test "$(printf '%s\n' "$versions")" = "$(printf '%s\n' "$versions" | sort)"
+
+      - name: Rebuild database from migrations
+        run: >-
+          supabase start
+          --exclude edge-runtime,gotrue,imgproxy,kong,logflare,mailpit,postgres-meta,postgrest,realtime,storage-api,studio,supavisor,vector
+          --ignore-health-check
+
+      - name: Verify local migration alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$(supabase migration list --local)
+          printf '%s\n' "$output"
+          test "$(printf '%s\n' "$output" | grep -c '20260812090000.*20260812090000')" -eq 1
+
+      - name: Database lint
+        run: supabase db lint --local --level error
+
+      - name: Database integration suites
+        run: pnpm test:db
+
+      - name: Edge unit tests
+        run: pnpm test:edge
+
+      - name: Stop isolated database
+        if: ${{ always() }}
+        run: supabase stop --no-backup

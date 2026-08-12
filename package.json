@@ -19,7 +19,9 @@
     "test": "pnpm -r test",
     "test:run": "pnpm -r test:run",
     "test:coverage": "pnpm -r test:coverage",
-    "test:e2e": "pnpm --filter @pedon/web test:e2e"
+    "test:e2e": "pnpm --filter @pedon/web test:e2e",
+    "test:db": "node supabase/tests/run-db-tests.mjs",
+    "test:edge": "deno test --config supabase/functions/loyalty-cpf/deno.json supabase/functions/loyalty-cpf/index_test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
