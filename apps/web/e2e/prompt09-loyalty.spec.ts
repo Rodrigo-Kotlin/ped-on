@@ -114,6 +114,13 @@ async function mockPublicMenu(page: Page) {
   await page.route('**/rest/v1/rpc/get_public_menu', (route) =>
     route.fulfill({ status: 200, headers: jsonHeaders, json: publicMenu }),
   );
+  await page.route('**/rest/v1/rpc/get_public_loyalty_rewards', (route) =>
+    route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      json: { found: true, loyalty_enabled: true, rewards: [] },
+    }),
+  );
 }
 
 async function mockTracking(page: Page) {
