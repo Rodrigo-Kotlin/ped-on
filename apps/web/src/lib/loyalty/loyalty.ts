@@ -22,9 +22,9 @@ export type LoyaltyResolveInput =
 
 export interface LoyaltyStatementEntry {
   entry_type: 'earn' | 'reversal' | 'redeem';
-  gross_points: number;
-  points_delta: number;
-  recovery_delta: number;
+  gross_points: bigint;
+  points_delta: bigint;
+  recovery_delta: bigint;
   eligible_amount: string | null;
   order_number: number | null;
   created_at: string;
@@ -36,7 +36,7 @@ export interface LoyaltyResolveFound {
   found: true;
   membership_id: string;
   customer: { name: string | null; cpf_last2: string };
-  account: { points_balance: number; recovery_points: number };
+  account: { points_balance: bigint; recovery_points: bigint };
   statement?: LoyaltyStatementEntry[] | undefined;
   vouchers?: LoyaltyVoucher[] | undefined;
   token: { access_token: string; expires_at: string };
@@ -51,11 +51,17 @@ export interface LoyaltyVoucher {
   issued_at: string;
 }
 
+const unsignedPointsSchema = z.string().regex(/^\d+$/).transform(BigInt);
+const signedPointsSchema = z
+  .string()
+  .regex(/^-?\d+$/)
+  .transform(BigInt);
+
 const loyaltyStatementEntrySchema = z.object({
   entry_type: z.enum(['earn', 'reversal', 'redeem']),
-  gross_points: z.number(),
-  points_delta: z.number(),
-  recovery_delta: z.number(),
+  gross_points: unsignedPointsSchema,
+  points_delta: signedPointsSchema,
+  recovery_delta: signedPointsSchema,
   eligible_amount: z.string().nullable(),
   order_number: z.number().int().nullable(),
   created_at: z.string(),
@@ -74,7 +80,10 @@ const loyaltyResolveResultSchema = z.discriminatedUnion('found', [
     found: z.literal(true),
     membership_id: z.string().uuid(),
     customer: z.object({ name: z.string().nullable(), cpf_last2: z.string().regex(/^\d{2}$/) }),
-    account: z.object({ points_balance: z.number(), recovery_points: z.number() }),
+    account: z.object({
+      points_balance: unsignedPointsSchema,
+      recovery_points: unsignedPointsSchema,
+    }),
     statement: z.array(loyaltyStatementEntrySchema).optional(),
     vouchers: z.array(loyaltyVoucherSchema).optional(),
     token: z.object({
@@ -250,7 +259,7 @@ export interface PublicLoyaltyAccountFound {
   found: true;
   organization: { name: string };
   customer: { name: string | null; cpf_last2: string };
-  account: { points_balance: number; recovery_points: number; updated_at: string };
+  account: { points_balance: bigint; recovery_points: bigint; updated_at: string };
   statement: LoyaltyStatementEntry[];
   vouchers: LoyaltyVoucher[];
 }
@@ -264,8 +273,8 @@ const publicLoyaltyAccountResultSchema = z.discriminatedUnion('found', [
     organization: z.object({ name: z.string() }),
     customer: z.object({ name: z.string().nullable(), cpf_last2: z.string().regex(/^\d{2}$/) }),
     account: z.object({
-      points_balance: z.number(),
-      recovery_points: z.number(),
+      points_balance: unsignedPointsSchema,
+      recovery_points: unsignedPointsSchema,
       updated_at: z.string(),
     }),
     statement: z.array(loyaltyStatementEntrySchema),
@@ -354,8 +363,9 @@ export interface LoyaltyProgramAdmin {
   program: LoyaltyProgramInfo | null;
   stats: {
     members_count: number;
-    total_earned: number;
-    total_reversed: number;
+    total_earned: bigint;
+    total_redeemed: bigint;
+    total_reversed: bigint;
   };
 }
 
@@ -363,10 +373,11 @@ export interface LoyaltyMember {
   id: string;
   cpf_last2: string;
   name: string | null;
-  points_balance: number;
-  recovery_points: number;
-  total_earned: number;
-  total_reversed: number;
+  points_balance: bigint;
+  recovery_points: bigint;
+  total_earned: bigint;
+  total_redeemed: bigint;
+  total_reversed: bigint;
   member_since: string;
 }
 
@@ -378,8 +389,49 @@ export interface LoyaltyMembersAdmin {
   members: LoyaltyMember[];
 }
 
+const loyaltyProgramInfoSchema = z.object({
+  exists: z.literal(true),
+  enabled: z.boolean(),
+  points_per_real: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+const loyaltyProgramAdminSchema = z.object({
+  organization_id: z.string(),
+  program: loyaltyProgramInfoSchema.nullable(),
+  stats: z.object({
+    members_count: z.number().int().nonnegative(),
+    total_earned: unsignedPointsSchema,
+    total_redeemed: unsignedPointsSchema,
+    total_reversed: unsignedPointsSchema,
+  }),
+});
+
+const loyaltyMembersAdminSchema = z.object({
+  organization_id: z.string(),
+  count: z.number().int().nonnegative(),
+  has_more: z.boolean(),
+  next_cursor: z.string().nullable(),
+  members: z.array(
+    z.object({
+      id: z.string(),
+      cpf_last2: z.string().regex(/^\d{2}$/),
+      name: z.string().nullable(),
+      points_balance: unsignedPointsSchema,
+      recovery_points: unsignedPointsSchema,
+      total_earned: unsignedPointsSchema,
+      total_redeemed: unsignedPointsSchema,
+      total_reversed: unsignedPointsSchema,
+      member_since: z.string(),
+    }),
+  ),
+});
+
 export function fetchLoyaltyProgramAdmin(organizationId: string): Promise<LoyaltyProgramAdmin> {
-  return loyaltyAdminRpc('get_loyalty_program_admin', { p_organization_id: organizationId });
+  return loyaltyAdminRpc('get_loyalty_program_admin', { p_organization_id: organizationId }).then(
+    (data) => loyaltyProgramAdminSchema.parse(data),
+  );
 }
 
 export interface LoyaltyProgramEnabledResult {
@@ -405,7 +457,7 @@ export function fetchLoyaltyMembersAdmin(
     p_organization_id: organizationId,
     p_limit: 50,
     p_cursor: cursor,
-  });
+  }).then((data) => loyaltyMembersAdminSchema.parse(data));
 }
 
 export function loyaltyProgramKey(userId: string, organizationId: string) {

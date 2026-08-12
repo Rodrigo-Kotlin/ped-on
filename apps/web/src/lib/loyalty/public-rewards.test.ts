@@ -95,8 +95,21 @@ describe('public loyalty rewards RPCs', () => {
     });
   });
 
-  it('maps the redemption race error codes without retrying', async () => {
-    supabaseMock.rpc.mockResolvedValue({ data: null, error: { code: 'PED57', message: 'stock' } });
+  it.each([
+    'PED33',
+    'PED51',
+    'PED52',
+    'PED53',
+    'PED54',
+    'PED55',
+    'PED56',
+    'PED57',
+    'PED58',
+    'PED59',
+    'PED63',
+    'PED64',
+  ] as const)('maps deterministic redemption error %s without retrying', async (code) => {
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: { code, message: 'deterministic' } });
     const error = await redeemPublicLoyaltyReward({
       publicSlug: 'slug',
       idempotencyKey: '22222222-2222-4222-8222-222222222222',
@@ -106,7 +119,7 @@ describe('public loyalty rewards RPCs', () => {
       recoverySecret: 'b'.repeat(64),
     }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(PublicRewardError);
-    expect((error as PublicRewardError).code).toBe('PED57');
+    expect((error as PublicRewardError).code).toBe(code);
     expect(supabaseMock.rpc).toHaveBeenCalledTimes(1);
   });
 

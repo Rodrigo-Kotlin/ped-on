@@ -28,7 +28,7 @@ import {
 } from '../lib/loyalty/loyalty';
 import type { LoyaltyMember } from '../lib/loyalty/loyalty';
 
-function formatPoints(value: number): string {
+function formatPoints(value: number | bigint): string {
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value);
 }
 
@@ -59,7 +59,11 @@ function MemberCard({ member }: { member: LoyaltyMember }) {
           {formatPoints(member.points_balance)} pts
         </p>
       </div>
-      <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+        <div>
+          <dt className="text-pedon-text/60">Resgatados</dt>
+          <dd className="font-medium">{formatPoints(member.total_redeemed)}</dd>
+        </div>
         <div>
           <dt className="text-pedon-text/60">Acumulados</dt>
           <dd className="font-medium">{formatPoints(member.total_earned)}</dd>
@@ -185,7 +189,11 @@ function RewardCard({ reward, pending, onUpdate, onStock, onActive }: RewardCard
       </dl>
 
       {validationError !== null && (
-        <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          id={`reward-${reward.id}-validation-error`}
+          role="alert"
+          className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
           {validationError}
         </p>
       )}
@@ -199,6 +207,10 @@ function RewardCard({ reward, pending, onUpdate, onStock, onActive }: RewardCard
               onChange={(event) => setName(event.target.value)}
               maxLength={120}
               required
+              aria-invalid={validationError !== null}
+              aria-describedby={
+                validationError === null ? undefined : `reward-${reward.id}-validation-error`
+              }
               className={fieldClassName}
             />
           </label>
@@ -209,6 +221,10 @@ function RewardCard({ reward, pending, onUpdate, onStock, onActive }: RewardCard
               onChange={(event) => setDescription(event.target.value)}
               maxLength={500}
               rows={3}
+              aria-invalid={validationError !== null}
+              aria-describedby={
+                validationError === null ? undefined : `reward-${reward.id}-validation-error`
+              }
               className={fieldClassName}
             />
           </label>
@@ -220,6 +236,10 @@ function RewardCard({ reward, pending, onUpdate, onStock, onActive }: RewardCard
               inputMode="numeric"
               pattern="[1-9][0-9]*"
               required
+              aria-invalid={validationError !== null}
+              aria-describedby={
+                validationError === null ? undefined : `reward-${reward.id}-validation-error`
+              }
               className={fieldClassName}
             />
           </label>
@@ -258,6 +278,10 @@ function RewardCard({ reward, pending, onUpdate, onStock, onActive }: RewardCard
               inputMode="numeric"
               pattern="[0-9]+"
               required
+              aria-invalid={validationError !== null}
+              aria-describedby={
+                validationError === null ? undefined : `reward-${reward.id}-validation-error`
+              }
               className={fieldClassName}
             />
           </label>
@@ -544,8 +568,12 @@ export function ClubeAdminPage() {
 
       <section aria-label="Métricas do programa" className="mt-5">
         <h3 className="font-bold text-pedon-navy">Resumo</h3>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div className="mt-3 grid gap-3 sm:grid-cols-4">
           <StatCard label="Membros" value={formatPoints(programQuery.data.stats.members_count)} />
+          <StatCard
+            label="Pontos resgatados"
+            value={formatPoints(programQuery.data.stats.total_redeemed)}
+          />
           <StatCard
             label="Pontos acumulados"
             value={formatPoints(programQuery.data.stats.total_earned)}
@@ -581,6 +609,8 @@ export function ClubeAdminPage() {
                 onChange={(event) => setName(event.target.value)}
                 maxLength={120}
                 required
+                aria-invalid={createError !== null}
+                aria-describedby={createError === null ? undefined : 'create-reward-error'}
                 className={fieldClassName}
               />
             </label>
@@ -592,6 +622,8 @@ export function ClubeAdminPage() {
                 inputMode="numeric"
                 pattern="[1-9][0-9]*"
                 required
+                aria-invalid={createError !== null}
+                aria-describedby={createError === null ? undefined : 'create-reward-error'}
                 className={fieldClassName}
               />
             </label>
@@ -602,6 +634,8 @@ export function ClubeAdminPage() {
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={500}
                 rows={3}
+                aria-invalid={createError !== null}
+                aria-describedby={createError === null ? undefined : 'create-reward-error'}
                 className={fieldClassName}
               />
             </label>
@@ -613,12 +647,18 @@ export function ClubeAdminPage() {
                 inputMode="numeric"
                 pattern="[0-9]+"
                 required
+                aria-invalid={createError !== null}
+                aria-describedby={createError === null ? undefined : 'create-reward-error'}
                 className={fieldClassName}
               />
             </label>
           </div>
           {createError !== null && (
-            <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p
+              id="create-reward-error"
+              role="alert"
+              className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
               {createError}
             </p>
           )}

@@ -126,7 +126,11 @@ async function installPublicMock(page: Page, extra?: RestHandler) {
   });
 }
 
-async function installIdentityMock(page: Page, requests: Record<string, unknown>[] = []) {
+async function installIdentityMock(
+  page: Page,
+  requests: Record<string, unknown>[] = [],
+  account = { points_balance: '120', recovery_points: '0' },
+) {
   await page.route('**/functions/v1/**', async (route) => {
     if (await fulfillPreflight(route)) return;
     const pathname = new URL(route.request().url()).pathname;
@@ -139,13 +143,13 @@ async function installIdentityMock(page: Page, requests: Record<string, unknown>
       found: true,
       membership_id: MEMBERSHIP_ID,
       customer: { name: 'Maria Silva', cpf_last2: '25' },
-      account: { points_balance: 120, recovery_points: 0 },
+      account,
       statement: [
         {
           entry_type: 'redeem',
-          gross_points: 20,
-          points_delta: -20,
-          recovery_delta: 0,
+          gross_points: '20',
+          points_delta: '-20',
+          recovery_delta: '0',
           eligible_amount: null,
           order_number: null,
           created_at: '2026-08-10T15:00:00.000Z',
@@ -201,7 +205,12 @@ const program = {
     created_at: CREATED_AT,
     updated_at: CREATED_AT,
   },
-  stats: { members_count: 1, total_earned: 120, total_reversed: 0 },
+  stats: {
+    members_count: 1,
+    total_earned: '120',
+    total_redeemed: '80',
+    total_reversed: '0',
+  },
 };
 
 async function seedAdminSession(page: Page) {
@@ -322,6 +331,9 @@ test('cliente confirma troca suficiente e recebe voucher sem persistir o token',
   expect(request).not.toHaveProperty('points_cost');
   expect(request).not.toHaveProperty('p_points_cost');
   await expect(page.getByRole('button', { name: 'Atualizar saldo' })).toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: 'Consulte novamente para outra troca' }),
+  ).toBeDisabled();
   const browserState = await page.evaluate(() => ({
     local: Object.fromEntries(Object.entries(window.localStorage)),
     session: Object.fromEntries(Object.entries(window.sessionStorage)),
@@ -330,6 +342,90 @@ test('cliente confirma troca suficiente e recebe voucher sem persistir o token',
   expect(JSON.stringify(browserState)).not.toContain(LOYALTY_TOKEN);
   expect(browserState.search).toBe('');
   expect(browserState.local[`pedon:pending-redemption:${SLUG}`]).toBeUndefined();
+  await expectNoHorizontalOverflow(page);
+});
+
+test('erro determinístico não cria pending recovery nem consome a sessão', async ({ page }) => {
+  await installIdentityMock(page);
+  await installPublicMock(page, async (rpc, route) => {
+    if (rpc !== 'redeem_public_loyalty_reward') return false;
+    await fulfillJson(route, 400, {
+      code: 'PED51',
+      message: 'LOYALTY_UNAVAILABLE',
+      details: null,
+      hint: null,
+    });
+    return true;
+  });
+
+  await identify(page);
+  await page.getByRole('button', { name: 'Trocar por 80 pontos' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Confirmar troca' }).click();
+
+  await expect(page.getByRole('alert')).toContainText('indisponível');
+  await expect(page.getByRole('button', { name: 'Trocar por 80 pontos' })).toBeEnabled();
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem(`pedon:pending-redemption:${location.pathname}`),
+    ),
+  ).toBeNull();
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), `pedon:pending-redemption:${SLUG}`),
+  ).toBeNull();
+});
+
+test('recovery com secret incorreto não exibe o voucher bearer', async ({ page }) => {
+  const recoveries: Record<string, unknown>[] = [];
+  await page.addInitScript(
+    ({ key, slug, rewardId }) => {
+      localStorage.setItem(
+        `pedon:pending-redemption:${slug}`,
+        JSON.stringify({
+          public_slug: slug,
+          idempotency_key: key,
+          recovery_secret: 'f'.repeat(64),
+          reward_id: rewardId,
+          created_at: new Date().toISOString(),
+        }),
+      );
+    },
+    {
+      key: '77777777-7777-4777-8777-777777777777',
+      slug: SLUG,
+      rewardId: REWARD_ID,
+    },
+  );
+  await installPublicMock(page, async (rpc, route) => {
+    if (rpc !== 'get_public_redemption_by_attempt') return false;
+    recoveries.push(route.request().postDataJSON() as Record<string, unknown>);
+    await fulfillJson(route, 200, { found: false });
+    return true;
+  });
+
+  await page.goto(`/clube/${SLUG}`);
+
+  await expect.poll(() => recoveries.length).toBe(1);
+  expect(recoveries[0]?.p_recovery_secret).toBe('f'.repeat(64));
+  await expect(page.getByText(VOUCHER_CODE)).toHaveCount(0);
+  await expect(
+    page.getByText('Troca recuperada com sucesso. Seu voucher está pronto.'),
+  ).toHaveCount(0);
+});
+
+test('saldo BigInt acima de MAX_SAFE_INTEGER é renderizado sem arredondamento', async ({
+  page,
+}) => {
+  await installIdentityMock(page, [], {
+    points_balance: '9007199254740993',
+    recovery_points: '0',
+  });
+  await installPublicMock(page);
+
+  await identify(page);
+
+  await expect(page.getByText('Pontos disponíveis').locator('..')).toContainText(
+    '9.007.199.254.740.993',
+  );
   await expectNoHorizontalOverflow(page);
 });
 

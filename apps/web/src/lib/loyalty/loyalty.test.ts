@@ -37,7 +37,7 @@ const foundPayload = {
   found: true,
   membership_id: '99999999-9999-4999-8999-999999999999',
   customer: { name: 'Maria Silva', cpf_last2: '25' },
-  account: { points_balance: 120, recovery_points: 0 },
+  account: { points_balance: '120', recovery_points: '0' },
   token: {
     access_token: 'a'.repeat(64),
     expires_at: '2026-08-11T14:00:00.000Z',
@@ -114,7 +114,10 @@ describe('resolveLoyaltyIdentity', () => {
       phone: '(11) 99999-9999',
     });
 
-    expect(result).toEqual(foundPayload);
+    expect(result).toEqual({
+      ...foundPayload,
+      account: { points_balance: 120n, recovery_points: 0n },
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe(EDGE_URL);
@@ -219,7 +222,11 @@ describe('fetchPublicLoyaltyAccount', () => {
         found: true,
         organization: { name: 'Cantina' },
         customer: { name: 'Maria Silva', cpf_last2: '25' },
-        account: { points_balance: 150, recovery_points: 0, updated_at: '2026-08-11T13:00:00Z' },
+        account: {
+          points_balance: '9007199254740993',
+          recovery_points: '0',
+          updated_at: '2026-08-11T13:00:00Z',
+        },
         statement: [],
       },
       error: null,
@@ -232,7 +239,7 @@ describe('fetchPublicLoyaltyAccount', () => {
     });
     expect(result.found).toBe(true);
     if (result.found) {
-      expect(result.account.points_balance).toBe(150);
+      expect(result.account.points_balance).toBe(9007199254740993n);
     }
   });
 
@@ -251,7 +258,11 @@ describe('fetchPublicLoyaltyAccount', () => {
         found: true,
         organization: { name: 'Cantina' },
         customer: { name: null, cpf_last2: '25' },
-        account: { points_balance: 70, recovery_points: 0, updated_at: '2026-08-11T13:00:00Z' },
+        account: {
+          points_balance: '70',
+          recovery_points: '0',
+          updated_at: '2026-08-11T13:00:00Z',
+        },
         statement: [],
         vouchers: [
           {
@@ -285,7 +296,12 @@ describe('clientes administrativos do Clube', () => {
       data: {
         organization_id: 'org-1',
         program: null,
-        stats: { members_count: 0, total_earned: 0, total_reversed: 0 },
+        stats: {
+          members_count: 0,
+          total_earned: '9007199254740993',
+          total_redeemed: '100',
+          total_reversed: '50',
+        },
       },
       error: null,
     });
@@ -294,6 +310,12 @@ describe('clientes administrativos do Clube', () => {
       p_organization_id: 'org-1',
     });
     expect(result.program).toBeNull();
+    expect(result.stats).toEqual({
+      members_count: 0,
+      total_earned: 9007199254740993n,
+      total_redeemed: 100n,
+      total_reversed: 50n,
+    });
   });
 
   it('setLoyaltyProgramEnabled chama RPC com o estado desejado', async () => {

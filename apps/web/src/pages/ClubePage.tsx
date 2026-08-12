@@ -115,9 +115,13 @@ function formatPoints(value: number | bigint): string {
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value);
 }
 
-function formatSignedPoints(value: number): string {
-  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
-  return `${sign}${formatPoints(Math.abs(value))}`;
+function absolutePoints(value: bigint): bigint {
+  return value < 0n ? -value : value;
+}
+
+function formatSignedPoints(value: bigint): string {
+  const sign = value > 0n ? '+' : value < 0n ? '-' : '';
+  return `${sign}${formatPoints(absolutePoints(value))}`;
 }
 
 function StatementEntry({ entry }: { entry: LoyaltyStatementEntry }) {
@@ -145,7 +149,7 @@ function StatementEntry({ entry }: { entry: LoyaltyStatementEntry }) {
         </div>
         <p className={`shrink-0 font-bold ${negative ? 'text-red-700' : 'text-green-700'}`}>
           {negative ? '-' : '+'}
-          {formatPoints(Math.abs(entry.gross_points))} pontos
+          {formatPoints(absolutePoints(entry.gross_points))} pontos
         </p>
       </div>
       {entry.eligible_amount !== null && (
@@ -156,11 +160,11 @@ function StatementEntry({ entry }: { entry: LoyaltyStatementEntry }) {
       <p className="mt-1 text-sm text-pedon-text/70">
         Saldo disponível: {formatSignedPoints(entry.points_delta)} pontos
       </p>
-      {entry.recovery_delta !== 0 && (
+      {entry.recovery_delta !== 0n && (
         <p className="mt-1 text-sm font-medium text-amber-900">
-          {entry.recovery_delta > 0
+          {entry.recovery_delta > 0n
             ? `Em recuperação: +${formatPoints(entry.recovery_delta)} pontos`
-            : `Recuperação compensada: ${formatPoints(Math.abs(entry.recovery_delta))} pontos`}
+            : `Recuperação compensada: ${formatPoints(absolutePoints(entry.recovery_delta))} pontos`}
         </p>
       )}
     </li>
@@ -177,7 +181,10 @@ function VoucherView({
   message?: string;
 }) {
   return (
-    <div className="rounded-lg border-2 border-dashed border-pedon-orange/60 bg-orange-50 p-4">
+    <div
+      role={message === undefined ? undefined : 'status'}
+      className="rounded-lg border-2 border-dashed border-pedon-orange/60 bg-orange-50 p-4"
+    >
       {message !== undefined && <p className="font-semibold text-green-800">{message}</p>}
       <p className="mt-2 text-sm font-medium text-pedon-text/70">{rewardName}</p>
       <p className="mt-1 break-all font-mono text-xl font-bold tracking-wider text-pedon-navy">
@@ -198,7 +205,7 @@ function ConfirmationDialog({
   onConfirm,
 }: {
   reward: PublicReward;
-  balance: number;
+  balance: bigint;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -208,6 +215,7 @@ function ConfirmationDialog({
 
   useEffect(() => {
     cancelRef.current?.focus();
+    if (busy) dialogRef.current?.focus();
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape' && !busy) {
         event.preventDefault();
@@ -218,7 +226,11 @@ function ConfirmationDialog({
       const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
-      if (focusable === undefined || focusable.length === 0) return;
+      if (focusable === undefined || focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;
       if (event.shiftKey && document.activeElement === first) {
@@ -234,7 +246,7 @@ function ConfirmationDialog({
   }, [busy, onCancel]);
 
   const cost = parseRewardPoints(reward.points_cost);
-  const remaining = BigInt(Math.trunc(balance)) - cost;
+  const remaining = balance - cost;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-pedon-navy/55 p-4 sm:items-center">
       <div
@@ -243,6 +255,7 @@ function ConfirmationDialog({
         aria-modal="true"
         aria-labelledby="reward-confirm-title"
         aria-describedby="reward-confirm-description"
+        tabIndex={-1}
         className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
       >
         <h2 id="reward-confirm-title" className="text-xl font-bold text-pedon-navy">
@@ -297,14 +310,16 @@ function RewardsCatalog({
   balance,
   recovery,
   identified,
+  accessAvailable,
   loading,
   error,
   onSelect,
 }: {
   rewards: PublicReward[];
-  balance: number | null;
-  recovery: number;
+  balance: bigint | null;
+  recovery: bigint;
   identified: boolean;
+  accessAvailable: boolean;
   loading: boolean;
   error: string | null;
   onSelect: (reward: PublicReward, opener: HTMLButtonElement) => void;
@@ -337,17 +352,19 @@ function RewardsCatalog({
       <ul className="grid gap-3 sm:grid-cols-2">
         {rewards.map((reward) => {
           const cost = parseRewardPoints(reward.points_cost);
-          const missing = balance === null ? 0n : cost - BigInt(Math.trunc(balance));
+          const missing = balance === null ? 0n : cost - balance;
           const sufficient = balance !== null && missing <= 0n;
           const buttonText = !reward.available
             ? 'Indisponível'
             : !identified
               ? `Trocar por ${formatPoints(cost)} pontos`
-              : recovery > 0
-                ? 'Troca bloqueada durante a recuperação'
-                : sufficient
-                  ? `Trocar por ${formatPoints(cost)} pontos`
-                  : `Faltam ${formatPoints(missing)} pontos`;
+              : !accessAvailable
+                ? 'Consulte novamente para outra troca'
+                : recovery > 0n
+                  ? 'Troca bloqueada durante a recuperação'
+                  : sufficient
+                    ? `Trocar por ${formatPoints(cost)} pontos`
+                    : `Faltam ${formatPoints(missing)} pontos`;
           return (
             <li
               key={reward.id}
@@ -360,7 +377,10 @@ function RewardsCatalog({
               <p className="mt-3 font-semibold text-pedon-orange">{formatPoints(cost)} pontos</p>
               <button
                 type="button"
-                disabled={!reward.available || (identified && (recovery > 0 || !sufficient))}
+                disabled={
+                  !reward.available ||
+                  (identified && (!accessAvailable || recovery > 0n || !sufficient))
+                }
                 onClick={(event) => onSelect(reward, event.currentTarget)}
                 className="mt-3 min-h-11 rounded-md bg-pedon-navy px-3 font-semibold text-white disabled:bg-pedon-navy/35"
               >
@@ -478,7 +498,7 @@ function LoyaltyAccountView({
       setAccessToken(null);
       onConsumeAccessToken();
       clearPendingRedemption(publicSlug);
-      const redeemedPoints = Number(parseRewardPoints(result.redemption.points_cost));
+      const redeemedPoints = parseRewardPoints(result.redemption.points_cost);
       setBalance((current) => current - redeemedPoints);
       setStatement((current) =>
         [
@@ -486,7 +506,7 @@ function LoyaltyAccountView({
             entry_type: 'redeem',
             gross_points: redeemedPoints,
             points_delta: -redeemedPoints,
-            recovery_delta: 0,
+            recovery_delta: 0n,
             eligible_amount: null,
             order_number: null,
             created_at: result.redemption.created_at,
@@ -501,6 +521,10 @@ function LoyaltyAccountView({
       const rewardError = error instanceof PublicRewardError ? error : null;
       if (rewardError !== null && rewardError.code !== null) clearPendingRedemption(publicSlug);
       if (rewardError === null || rewardError.code === null) {
+        setAccessToken(null);
+        onConsumeAccessToken();
+      }
+      if (rewardError?.code === 'PED52') {
         setAccessToken(null);
         onConsumeAccessToken();
       }
@@ -534,11 +558,13 @@ function LoyaltyAccountView({
         </p>
 
         <dl className="mt-5 space-y-3">
-          <div className="flex items-baseline justify-between gap-3 rounded-md bg-pedon-surface p-4">
+          <div className="flex flex-col gap-2 rounded-md bg-pedon-surface p-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
             <dt className="font-medium text-pedon-text/80">Pontos disponíveis</dt>
-            <dd className="text-3xl font-bold text-pedon-navy">{formatPoints(balance)}</dd>
+            <dd className="min-w-0 break-all text-right text-3xl font-bold text-pedon-navy">
+              {formatPoints(balance)}
+            </dd>
           </div>
-          {recovery > 0 && (
+          {recovery > 0n && (
             <div className="flex items-baseline justify-between gap-3 rounded-md bg-amber-50 p-4">
               <dt className="font-medium text-amber-900">Em recuperação</dt>
               <dd className="text-xl font-bold text-amber-900">{formatPoints(recovery)}</dd>
@@ -570,6 +596,7 @@ function LoyaltyAccountView({
           balance={balance}
           recovery={recovery}
           identified
+          accessAvailable={isLoyaltyToken(accessToken)}
           loading={rewardsLoading}
           error={rewardsError}
           onSelect={(reward, opener) => {
@@ -1038,8 +1065,9 @@ export function ClubePage() {
           <RewardsCatalog
             rewards={rewardsQuery.data?.found === true ? rewardsQuery.data.rewards : []}
             balance={null}
-            recovery={0}
+            recovery={0n}
             identified={false}
+            accessAvailable={false}
             loading={rewardsQuery.isLoading}
             error={rewardsQuery.isError ? rewardsQuery.error.message : null}
             onSelect={() => {

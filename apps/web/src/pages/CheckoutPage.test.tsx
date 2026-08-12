@@ -348,7 +348,7 @@ describe('CheckoutPage', () => {
       found: true,
       membership_id: '99999999-9999-4999-8999-999999999999',
       customer: { name: 'Maria Silva', cpf_last2: '25' },
-      account: { points_balance: 120, recovery_points: 0 },
+      account: { points_balance: '120', recovery_points: '0' },
       token: {
         access_token: 'a'.repeat(64),
         expires_at: '2026-08-11T14:00:00.000Z',

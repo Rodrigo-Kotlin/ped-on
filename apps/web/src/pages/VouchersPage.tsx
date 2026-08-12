@@ -44,7 +44,8 @@ function ConfirmationDialog({
 
   useEffect(() => {
     cancelRef.current?.focus();
-  }, []);
+    if (busy) dialogRef.current?.focus();
+  }, [busy]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape' && !busy) {
@@ -57,7 +58,11 @@ function ConfirmationDialog({
     const focusable = Array.from(
       dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? [],
     );
-    if (focusable.length === 0) return;
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) {
@@ -76,6 +81,7 @@ function ConfirmationDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="voucher-confirmation-title"
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
         className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl"
       >
@@ -116,6 +122,11 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
   const [error, setError] = useState<string | null>(null);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const deliveryButtonRef = useRef<HTMLButtonElement>(null);
+  const statusRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (message !== null) statusRef.current?.focus();
+  }, [message]);
 
   const lookupMutation = useMutation({
     mutationFn: (voucherCode: string) => getLoyaltyVoucherStaff(unitId, voucherCode),
@@ -218,7 +229,10 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
               setError(null);
             }}
             placeholder="ABCD-EF12-3456-7890"
-            aria-describedby="voucher-code-help"
+            aria-invalid={error !== null}
+            aria-describedby={
+              error === null ? 'voucher-code-help' : 'voucher-code-help voucher-error'
+            }
             className="min-h-11 min-w-0 flex-1 rounded-md border border-pedon-navy/25 px-3 font-mono uppercase tracking-wider text-pedon-text focus:border-pedon-orange focus:outline-none focus:ring-2 focus:ring-pedon-orange/30"
           />
           <button
@@ -235,12 +249,21 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
       </form>
 
       {error !== null && (
-        <p role="alert" className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          id="voucher-error"
+          role="alert"
+          className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
           {error}
         </p>
       )}
       {message !== null && (
-        <p role="status" className="mt-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
+        <p
+          ref={statusRef}
+          role="status"
+          tabIndex={-1}
+          className="mt-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 focus:outline-none"
+        >
           {message}
         </p>
       )}

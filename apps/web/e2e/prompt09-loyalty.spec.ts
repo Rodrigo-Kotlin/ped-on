@@ -104,7 +104,7 @@ function identityResult(statement: object[] = []) {
     found: true,
     membership_id: '44444444-4444-4444-8444-444444444444',
     customer: { name: 'Maria Silva', cpf_last2: '25' },
-    account: { points_balance: 120, recovery_points: 5 },
+    account: { points_balance: '120', recovery_points: '5' },
     statement,
     token: { access_token: LOYALTY_TOKEN, expires_at: '2026-08-11T14:00:00.000Z' },
   };
@@ -219,27 +219,27 @@ test('Clube público consulta cadastro e rotula ganhos, estornos e recuperação
       identityResult([
         {
           entry_type: 'earn',
-          gross_points: 35,
-          points_delta: 35,
-          recovery_delta: 0,
+          gross_points: '35',
+          points_delta: '35',
+          recovery_delta: '0',
           eligible_amount: '35.50',
           order_number: 42,
           created_at: '2026-08-11T12:30:00Z',
         },
         {
           entry_type: 'reversal',
-          gross_points: 20,
-          points_delta: -15,
-          recovery_delta: 5,
+          gross_points: '20',
+          points_delta: '-15',
+          recovery_delta: '5',
           eligible_amount: null,
           order_number: 43,
           created_at: '2026-08-11T13:00:00Z',
         },
         {
           entry_type: 'earn',
-          gross_points: 8,
-          points_delta: 3,
-          recovery_delta: -5,
+          gross_points: '8',
+          points_delta: '3',
+          recovery_delta: '-5',
           eligible_amount: '8.00',
           order_number: 44,
           created_at: '2026-08-11T14:00:00Z',
@@ -449,10 +449,11 @@ function member(id: string, name: string, points: number) {
     id,
     cpf_last2: id === 'member-a' ? '25' : '44',
     name,
-    points_balance: points,
-    recovery_points: 0,
-    total_earned: points,
-    total_reversed: 0,
+    points_balance: String(points),
+    recovery_points: '0',
+    total_earned: String(points),
+    total_redeemed: '0',
+    total_reversed: '0',
     member_since: CREATED_AT,
   };
 }
@@ -469,7 +470,12 @@ function program(enabled: boolean) {
           updated_at: CREATED_AT,
         }
       : null,
-    stats: { members_count: 2, total_earned: 500, total_reversed: 30 },
+    stats: {
+      members_count: 2,
+      total_earned: '500',
+      total_redeemed: '100',
+      total_reversed: '30',
+    },
   };
 }
 

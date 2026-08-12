@@ -44,7 +44,7 @@ const foundPayload = {
   found: true,
   membership_id: '99999999-9999-4999-8999-999999999999',
   customer: { name: 'Maria Silva', cpf_last2: '25' },
-  account: { points_balance: 120, recovery_points: 0 },
+  account: { points_balance: '120', recovery_points: '0' },
   statement: [],
   token: {
     access_token: 'a'.repeat(64),
@@ -205,7 +205,10 @@ describe('ClubePage', () => {
   it('bloqueia todas as recompensas disponíveis enquanto há pontos em recuperação', async () => {
     const user = userEvent.setup();
     vi.mocked(fetch).mockResolvedValue(
-      edgeResponse(200, { ...foundPayload, account: { points_balance: 120, recovery_points: 5 } }),
+      edgeResponse(200, {
+        ...foundPayload,
+        account: { points_balance: '120', recovery_points: '5' },
+      }),
     );
     renderClube(foundMenu, '/clube/abc', {
       found: true,
@@ -338,6 +341,10 @@ describe('ClubePage', () => {
     );
     expect(localStorage.getItem('pedon:pending-redemption:abc')).toBeNull();
     expect(screen.getByRole('button', { name: 'Atualizar saldo' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Consulte novamente para outra troca' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Recompensa resgatada!');
   });
 
   it('recupera uma troca pendente ao carregar e limpa somente após encontrar o voucher', async () => {
@@ -379,6 +386,81 @@ describe('ClubePage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('ABCD-EF12-3456-7890')).toBeInTheDocument();
     expect(localStorage.getItem('pedon:pending-redemption:abc')).toBeNull();
+  });
+
+  it.each(['PED33', 'PED51', 'PED53'] as const)(
+    'não cria pending recovery para erro determinístico %s',
+    async (code) => {
+      const user = userEvent.setup();
+      vi.mocked(fetch).mockResolvedValue(edgeResponse(200, foundPayload));
+      renderClube(
+        foundMenu,
+        '/clube/abc',
+        { found: true, loyalty_enabled: true, rewards: [publicReward] },
+        (fn) =>
+          Promise.resolve(
+            fn === 'redeem_public_loyalty_reward'
+              ? { data: null, error: { code, message: 'deterministic' } }
+              : { data: null, error: null },
+          ),
+      );
+
+      await openLookup(user);
+      await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+      await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+      await user.click(screen.getByRole('button', { name: 'Consultar' }));
+      await user.click(await screen.findByRole('button', { name: 'Trocar por 80 pontos' }));
+      await user.click(screen.getByRole('button', { name: 'Confirmar troca' }));
+
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(localStorage.getItem('pedon:pending-redemption:abc')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Trocar por 80 pontos' })).toBeEnabled();
+    },
+  );
+
+  it('mantém pending recovery somente para ambiguidade de transporte', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(edgeResponse(200, foundPayload));
+    renderClube(
+      foundMenu,
+      '/clube/abc',
+      { found: true, loyalty_enabled: true, rewards: [publicReward] },
+      (fn) =>
+        Promise.resolve(
+          fn === 'redeem_public_loyalty_reward'
+            ? { data: null, error: { message: 'Failed to fetch' } }
+            : { data: null, error: null },
+        ),
+    );
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+    await user.click(await screen.findByRole('button', { name: 'Trocar por 80 pontos' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar troca' }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(localStorage.getItem('pedon:pending-redemption:abc')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Atualizar saldo' })).toBeDisabled();
+  });
+
+  it('renderiza saldo acima de MAX_SAFE_INTEGER sem perda de precisão', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(
+      edgeResponse(200, {
+        ...foundPayload,
+        account: { points_balance: '9007199254740993', recovery_points: '0' },
+      }),
+    );
+    renderClube(foundMenu);
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+
+    expect(await screen.findByText('9.007.199.254.740.993')).toBeInTheDocument();
   });
 
   it('consulta o CPF e exibe o saldo do cliente', async () => {
@@ -505,8 +587,8 @@ describe('ClubePage', () => {
             organization: { name: 'Cantina da Praça' },
             customer: { name: 'Maria Silva', cpf_last2: '25' },
             account: {
-              points_balance: 150,
-              recovery_points: 0,
+              points_balance: '150',
+              recovery_points: '0',
               updated_at: '2026-08-11T13:00:00Z',
             },
             statement: [],
@@ -556,9 +638,9 @@ describe('ClubePage', () => {
         statement: [
           {
             entry_type: 'earn',
-            gross_points: 35,
-            points_delta: 35,
-            recovery_delta: 0,
+            gross_points: '35',
+            points_delta: '35',
+            recovery_delta: '0',
             eligible_amount: '35.50',
             order_number: 42,
             created_at: '2026-08-11T12:30:00Z',
@@ -587,9 +669,9 @@ describe('ClubePage', () => {
         statement: [
           {
             entry_type: 'reversal',
-            gross_points: 20,
-            points_delta: -20,
-            recovery_delta: 0,
+            gross_points: '20',
+            points_delta: '-20',
+            recovery_delta: '0',
             eligible_amount: null,
             order_number: 43,
             created_at: '2026-08-11T13:00:00Z',
@@ -618,9 +700,9 @@ describe('ClubePage', () => {
         statement: [
           {
             entry_type: 'redeem',
-            gross_points: 80,
-            points_delta: -80,
-            recovery_delta: 0,
+            gross_points: '80',
+            points_delta: '-80',
+            recovery_delta: '0',
             eligible_amount: null,
             order_number: null,
             created_at: '2026-08-11T13:00:00Z',
@@ -658,18 +740,18 @@ describe('ClubePage', () => {
         statement: [
           {
             entry_type: 'reversal',
-            gross_points: 15,
-            points_delta: -10,
-            recovery_delta: 5,
+            gross_points: '15',
+            points_delta: '-10',
+            recovery_delta: '5',
             eligible_amount: null,
             order_number: 44,
             created_at: '2026-08-11T13:00:00Z',
           },
           {
             entry_type: 'earn',
-            gross_points: 8,
-            points_delta: 3,
-            recovery_delta: -5,
+            gross_points: '8',
+            points_delta: '3',
+            recovery_delta: '-5',
             eligible_amount: '8.00',
             order_number: 45,
             created_at: '2026-08-11T14:00:00Z',

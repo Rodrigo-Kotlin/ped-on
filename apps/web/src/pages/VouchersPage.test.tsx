@@ -166,6 +166,20 @@ describe('VouchersPage', () => {
     });
   });
 
+  it('associa erro de voucher ao campo inválido', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const input = screen.getByLabelText('Código do voucher');
+    await user.type(input, 'invalido');
+    await user.click(screen.getByRole('button', { name: 'Validar' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveAttribute('id', 'voucher-error');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', 'voucher-code-help voucher-error');
+  });
+
   it('confirma a entrega em diálogo e apresenta o sucesso consumido', async () => {
     const user = userEvent.setup();
     supabaseMock.rpc.mockImplementation((name: string) =>
@@ -189,7 +203,8 @@ describe('VouchersPage', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     await user.click(within(dialog).getByRole('button', { name: 'Confirmar entrega' }));
 
-    expect(await screen.findByText('Voucher utilizado com sucesso.')).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent('Voucher utilizado com sucesso.');
+    expect(screen.getByRole('status')).toHaveFocus();
     expect(screen.getByText('Utilizado')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Confirmar entrega' })).not.toBeInTheDocument();

@@ -33,7 +33,7 @@ const publicRedemptionSchema = z.object({
   }),
   voucher: z.object({
     code: z.string().regex(/^[A-F0-9]{4}(?:-[A-F0-9]{4}){3}$/),
-    status: z.string(),
+    status: z.enum(['issued', 'consumed']),
     issued_at: z.string(),
   }),
 });
@@ -49,10 +49,25 @@ export type PublicRedemption = z.infer<typeof publicRedemptionSchema>;
 export type PublicRedemptionResult = z.infer<typeof publicRedemptionResultSchema>;
 
 export type PublicRewardErrorCode =
-  'PED52' | 'PED54' | 'PED55' | 'PED56' | 'PED57' | 'PED58' | 'PED59' | 'PED63' | 'PED64' | null;
+  | 'PED33'
+  | 'PED51'
+  | 'PED52'
+  | 'PED53'
+  | 'PED54'
+  | 'PED55'
+  | 'PED56'
+  | 'PED57'
+  | 'PED58'
+  | 'PED59'
+  | 'PED63'
+  | 'PED64'
+  | null;
 
 const ERROR_MESSAGES: Record<Exclude<PublicRewardErrorCode, null>, string> = {
+  PED33: 'Cardápio não encontrado.',
+  PED51: 'O Clube Ped-On está indisponível para este cardápio.',
   PED52: 'Sua consulta expirou. Consulte seus pontos novamente.',
+  PED53: 'Inconsistência interna do Clube. Consulte seus pontos novamente.',
   PED54: 'Esta recompensa não está mais disponível.',
   PED55: 'Esta recompensa não está mais disponível.',
   PED56: 'A recompensa foi atualizada. Revise as novas condições antes de confirmar a troca.',
@@ -77,7 +92,7 @@ type RpcError = { code?: string | null; message?: string; details?: string | nul
 
 function rewardError(error: RpcError | undefined, fallback: string): PublicRewardError {
   const content = [error?.code, error?.message, error?.details].filter(Boolean).join(' ');
-  const match = content.match(/\bPED(?:52|54|55|56|57|58|59|63|64)\b/)?.[0];
+  const match = content.match(/\bPED(?:33|51|52|53|54|55|56|57|58|59|63|64)\b/)?.[0];
   const code = (match ?? null) as PublicRewardErrorCode;
   return new PublicRewardError(code === null ? fallback : ERROR_MESSAGES[code], code);
 }

@@ -10,17 +10,20 @@ import {
 } from './pending-order';
 import type { CreatePublicOrderPayload } from './orders';
 
-const attempt = {
-  idempotency_key: '11111111-1111-4111-8111-111111111111',
-  request_fingerprint: 'a'.repeat(64),
-  public_slug: 'abc',
-  created_at: '2026-08-11T12:00:00.000Z',
-};
+function attemptAt(createdAt = new Date().toISOString()) {
+  return {
+    idempotency_key: '11111111-1111-4111-8111-111111111111',
+    request_fingerprint: 'a'.repeat(64),
+    public_slug: 'abc',
+    created_at: createdAt,
+  };
+}
 
 describe('pending order attempt', () => {
   beforeEach(() => window.localStorage.clear());
 
   it('persiste e carrega somente o contrato estrito sem PII', () => {
+    const attempt = attemptAt();
     savePendingOrderAttempt(attempt);
 
     const raw = window.localStorage.getItem(pendingOrderStorageKey('abc'))!;
@@ -34,6 +37,7 @@ describe('pending order attempt', () => {
 
   it('rejeita campos extras, slug divergente e tentativas expiradas', () => {
     const now = Date.parse('2026-08-11T13:00:00.000Z');
+    const attempt = attemptAt('2026-08-11T12:00:00.000Z');
     expect(
       parsePendingOrderAttempt(JSON.stringify({ ...attempt, phone: '11999999999' }), 'abc', now),
     ).toBeNull();

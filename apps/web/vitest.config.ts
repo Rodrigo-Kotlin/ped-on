@@ -8,6 +8,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     pool: 'threads',
+    maxWorkers: 2,
     exclude: [...configDefaults.exclude, 'e2e/**'],
     coverage: {
       provider: 'v8',
