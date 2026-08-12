@@ -306,16 +306,6 @@ async function setRewardStock(client, rewardId, stock) {
   ).rows[0].out;
 }
 
-async function adminRewards(client, orgId, limit = 50, cursor = null) {
-  return (
-    await client.query('select public.get_loyalty_rewards_admin($1, $2, $3) as out', [
-      orgId,
-      limit,
-      cursor,
-    ])
-  ).rows[0].out;
-}
-
 async function publicRewards(client, slug) {
   return (await client.query('select public.get_public_loyalty_rewards($1) as out', [slug])).rows[0]
     .out;
@@ -889,7 +879,7 @@ async function run() {
       const revision = await currentRevision(admin, item.rewardId);
       const key = randomUUID();
       const token = await freshToken(admin, orgA, maria);
-      const out = await redeem(anon, slugA1, key, item.rewardId, revision, token, earlySecret);
+      await redeem(anon, slugA1, key, item.rewardId, revision, token, earlySecret);
       const redemption = await redemptionByKey(admin, orgA, key);
       const voucher = redemption ? await voucherForRedemption(admin, redemption.id) : null;
       if (item.name === 'inactive') vInactiveCode = voucher?.voucher_code;
@@ -1738,7 +1728,6 @@ async function run() {
     );
     ok(snapRedeem.found === true, '90. resgate do reward Snap A/100');
     await updateReward(ownerAS, rSnap.id, { name: 'Snap B', points_cost: '200' });
-    const snapVoucherRow = await voucherByCode(admin, snapRedeem.voucher.code.replaceAll('-', ''));
     const snapRedemption = await redemptionByKey(admin, orgA, keySnap);
     ok(
       snapRedemption.reward_name_snapshot === 'Snap A' &&
