@@ -13,20 +13,20 @@
 | FASE ATUAL             | Fase 3C — Recompensas e Vouchers                                                                                                                                                                                                                                                           |
 | PROMPT ATUAL           | Prompt 10 — Recompensas, resgate atômico e vouchers do Clube Ped-On                                                                                                                                                                                                                        |
 | STATUS                 | `IN_PROGRESS`                                                                                                                                                                                                                                                                              |
-| CHECKPOINT             | `BACKEND_CORE_COMPLETED` — backend versionado em `0d4dfd5`, CI aprovado; frontend ainda não iniciado                                                                                                                                                                                       |
+| CHECKPOINT             | `FRONTEND_IMPLEMENTED` — release funcional `9a62b79`, CI e produção aprovadas; fechamento documental em andamento                                                                                                                                                                         |
 | HEAD INICIAL DO PROMPT | `429e2fe` — docs: close Prompt 09 status record                                                                                                                                                                                                                                            |
 | BACKEND                | `IMPLEMENTED` — 15 migrations Local == Remote até `20260811200418_loyalty_rewards_redemptions_vouchers`; rewards, resgate atômico, vouchers e auditoria implementados; `supabase db lint --linked` sem erros                                                                                 |
-| FRONTEND               | `NOT STARTED` — catálogo público, resgate/recovery, vouchers do membro, reward management e operação staff ainda pendentes                                                                                                                                                                 |
+| FRONTEND               | `IMPLEMENTED` — catálogo público, resgate/recovery, vouchers do membro e extrato `redeem`; Reward management owner-only sem DELETE; `/app/vouchers` para staff com acesso à unidade                                                                                                          |
 | IDENTIDADE V2          | CPF + telefone protegidos por HMAC-SHA-256 tenant-bound; lookup desconhecido e telefone incorreto usam a mesma resposta exata HTTP 422 `IDENTITY_NOT_CONFIRMED`; resolver legado revogado de `service_role`; enroll exige consentimento e gera evidência append-only                         |
 | RATE LIMIT             | Fixed-window persistente no PostgreSQL, chaveado por HMAC(IP confiável + slug canônico + mode), sem PII; lookup 10/60s e enroll 5/60s; excesso HTTP 429 com `Retry-After`; slugs inexistentes compartilham escopo canônico                                                                        |
 | TOKEN                  | 64 hex, hash SHA-256 no banco, TTL máximo de 2h + tolerância transacional de 5 min; leitura repetível de conta/extrato até checkout; checkout o remove atomicamente; cleanup incremental remove expirados; token existente continua legível após disable                              |
-| TESTES VERIFICADOS     | Backend Prompt 10: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, menu 121/121, pedidos 318/318, loyalty 148/148 e rewards/vouchers 215/215; db lint linked sem erros; 15 migrations Local == Remote; CI `31552880755` SUCCESS                                                               |
-| PWA                    | Nenhum cache de API/dados privados/tokens; tentativa pendente persiste somente UUID de idempotência, segredo aleatório de recuperação, slug e timestamp                                                                                                                                     |
-| CLOUDFLARE             | Deployment de produção `63b40263-d3b7-4d41-a5b2-ee8ecc97f4d0`, source `2013e8d`, verificado no domínio estável e na URL imutável; SPA fallback, manifest, service worker, assets, rotas do Clube e bundle aprovados                                                                      |
-| GITHUB ACTIONS         | Run `31552880755`, SHA `0d4dfd5e19a2736317fbd38d1fa2b5a069614d06`, sucesso em Quality gates e E2E smoke tests                                                                                                                                                                            |
+| TESTES VERIFICADOS     | Frontend 216/216; E2E 176/176 e Prompt 10 28/28 em 360/768/1024/1440; Edge unit 15/15 e smoke 36/36; DB: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, menu 121/121, pedidos 318/318, loyalty 148/148, rewards/vouchers 215/215; db lint sem erros; 15 migrations Local == Remote |
+| PWA                    | Nenhum cache de API/dados privados/tokens; recoveries de pedido e redemption persistem somente identificadores/segredos aleatórios, slug, timestamp e, no resgate, reward ID                                                                                                                                   |
+| CLOUDFLARE             | Deployment de produção `75cefe86-d513-48f3-ab7d-c483100d3127`, source `9a62b79`, verificado em `ped-on.pages.dev` e `75cefe86.ped-on.pages.dev`; SPA fallback, manifest, service worker e assets aprovados                                                                                   |
+| GITHUB ACTIONS         | Run `31556667041`, SHA `9a62b7918e6bfc26b5335e67fb5b62221a201f2e`, SUCCESS em Quality gates e E2E smoke tests                                                                                                                                                                             |
 | PENDÊNCIAS             | Heranças não bloqueantes: ícones PWA definitivos, atualização das actions que ainda recebem aviso de Node.js 20, TypeScript 7.x, gestão de `membership_units` via UI e otimização do bundle                                                                                              |
-| NEXT_STEP              | Implementar frontend público do Prompt 10 em `/clube/:publicSlug`, seguido por reward management owner-only e operação de vouchers por unidade                                                                                                                                             |
-| PROMPT 10              | `IN_PROGRESS` — checkpoint `BACKEND_CORE_COMPLETED`; não marcar `COMPLETED` antes de frontend, testes, CI e produção                                                                                                                                                                       |
+| NEXT_STEP              | Versionar este fechamento documental, validar seus gates e a CI correspondente antes da decisão de encerramento                                                                                                                                                                             |
+| PROMPT 10              | `IN_PROGRESS` — checkpoint `FRONTEND_IMPLEMENTED`; não marcar `COMPLETED` ou `RELEASE_VERIFIED` antes do fechamento documental validado                                                                                                                                                      |
 
 ---
 
@@ -45,6 +45,13 @@
   permanece apenas no detalhe administrativo.
 - O domínio de rewards/vouchers usa `PED54` a `PED66`; DELETE de reward é
   `NOT SUPPORTED BY DESIGN` e a remoção operacional usa `set_loyalty_reward_active(false)`.
+- `redeem_public_loyalty_reward` executa débito de pontos, débito de estoque, ledger `redeem`,
+  redemption e emissão de voucher em uma transação; o token é consumido somente no sucesso.
+- O browser persiste em `pedon:pending-redemption:<slug>` somente `public_slug`, `idempotency_key`,
+  `recovery_secret`, `reward_id` e `created_at`, por no máximo 24 horas; não persiste token, CPF,
+  telefone, saldo ou payload da conta.
+- `/app/vouchers` normaliza o código em memória e não o coloca na URL, Local Storage ou Session
+  Storage; owner, manager e operator ainda dependem de `can_access_unit` no PostgreSQL.
 
 ## Histórico de execução
 
@@ -59,5 +66,5 @@
 | Fase 2B — Catálogo administrativo | Prompt 06 — Catálogo base                               | COMPLETED                       | `c61bafa`, `891257f`                       | 2026-08-10 |
 | Fase 2C — Cardápio                | Prompt 07 — Versionamento e publicação imutável         | COMPLETED                       | `87a796b`, `ee509b7`, `3e2bfdd`, `a1640ad` | 2026-08-10 |
 | Fase 3A — Pedidos                 | Prompt 08 — Carrinho, checkout e Central de Pedidos     | COMPLETED                       | `41b9da2`, `b801468`, `7fe07df`            | 2026-08-10 |
-| Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED | `2013e8d`                                 | 2026-08-11 |
-| Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | IN_PROGRESS — BACKEND_CORE_COMPLETED | `0d4dfd5`                    | 2026-08-11 |
+| Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED                       | `2013e8d`                                  | 2026-08-11 |
+| Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | IN_PROGRESS — FRONTEND_IMPLEMENTED | `0d4dfd5`, `9a62b79`                    | 2026-08-11 |

@@ -1,7 +1,8 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On após o Prompt 09 `RELEASE_VERIFIED`. Backend, frontend, reauditoria,
-> CI e deploy Cloudflare da release `2013e8d` aprovados.
+> Guia operacional do Ped-On no checkpoint `FRONTEND_IMPLEMENTED` do Prompt 10. Backend, frontend,
+> testes, CI e deploy Cloudflare da release funcional `9a62b79` aprovados; fechamento documental em
+> andamento.
 
 ## 1. Pré-requisitos
 
@@ -37,9 +38,9 @@ pnpm --filter @pedon/web exec playwright install chromium
 O build de produção fica em `apps/web/dist`. O PWA cacheia apenas assets estáticos; não há
 `runtimeCaching` de API, dados privados, tokens ou respostas do Clube.
 
-## 3. Gates do Prompt 09
+## 3. Gates do Prompt 10
 
-Gates locais obrigatórios antes de encerrar o Prompt 09:
+Gates locais obrigatórios antes de encerrar o Prompt 10:
 
 ```bash
 pnpm format:check
@@ -51,16 +52,16 @@ pnpm test:e2e
 gitleaks detect --source . --redact --log-level warn
 ```
 
-Também executar os testes DB/Edge da Seção 6, conferir as 14 migrations e o db lint. No checkpoint
+Também executar os testes DB/Edge da Seção 6, conferir as 15 migrations e o db lint. No checkpoint
 atual estão verificados:
 
-- frontend unit/component 157/157;
-- E2E mocked 148/148 em 360/768/1024/1440;
+- frontend unit/component 216/216;
+- E2E mocked 176/176 em 360/768/1024/1440; suíte Prompt 10 28/28;
 - DB: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, menu 121/121, pedidos 318/318 e
-  loyalty 148/148;
-- Edge unit 14/14 e remote smoke 36/36;
+  loyalty 148/148 e rewards/vouchers 215/215;
+- Edge unit 15/15 e remote smoke 36/36;
 - `supabase db lint --linked` PASS;
-- 14 migrations Local == Remote.
+- 15 migrations Local == Remote.
 
 Na reauditoria de 2026-08-11, format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit,
 alinhamento de migrations e db lint passaram. CI e deploy Cloudflare devem ser declarados concluídos
@@ -120,6 +121,7 @@ $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
 12. `20260811080000_loyalty_earn_refunded_guard.sql`
 13. `20260811130000_prompt09_release_hardening.sql`
 14. `20260811170000_prompt09_reaudit_hardening.sql`
+15. `20260811200418_loyalty_rewards_redemptions_vouchers.sql`
 
 ### 5.2 Fluxo linked não destrutivo
 
@@ -142,7 +144,7 @@ Regras:
 ## 6. Testes DB e Edge
 
 Os testes DB usam conexão PostgreSQL administrativa para setup/cleanup e sessões dedicadas com
-`SET ROLE`/claims para cenários de cliente. Execute os sete scripts sequencialmente, nunca em
+`SET ROLE`/claims para cenários de cliente. Execute os oito scripts sequencialmente, nunca em
 paralelo:
 
 ```powershell
@@ -154,6 +156,7 @@ node supabase/tests/catalog_integrity.test.mjs
 node supabase/tests/menu_publication_integrity.test.mjs
 node supabase/tests/orders_integrity.test.mjs
 node supabase/tests/loyalty_integrity.test.mjs
+node supabase/tests/loyalty_rewards_integrity.test.mjs
 ```
 
 | Script                                       |   Checkpoint |
@@ -165,6 +168,7 @@ node supabase/tests/loyalty_integrity.test.mjs
 | `menu_publication_integrity.test.mjs`        | 121/121 PASS |
 | `orders_integrity.test.mjs`                  | 318/318 PASS |
 | `loyalty_integrity.test.mjs`                 | 148/148 PASS |
+| `loyalty_rewards_integrity.test.mjs`         | 215/215 PASS |
 
 A execução sequencial evita interferência na contagem global herdada de `membership_units`. Cada
 script cria fixtures sintéticas e faz cleanup. Nunca limpar registros reais ao recuperar uma
@@ -178,7 +182,7 @@ Use o config Deno versionado, que habilita as libs do runtime e resolução npm:
 deno test --config supabase/functions/loyalty-cpf/deno.json supabase/functions/loyalty-cpf/index_test.ts
 ```
 
-Checkpoint: 14/14 PASS.
+Checkpoint: 15/15 PASS.
 
 ### 6.2 Edge deploy e smoke remoto
 
@@ -195,8 +199,8 @@ node supabase/tests/loyalty_edge_smoke.mjs
 ```
 
 Checkpoint: 36/36 PASS, incluindo request sem JWT rejeitada, CPF + telefone, consentimento,
-resposta uniforme de identidade, rate limit 429/`Retry-After`, saldo/extrato e programa
-desabilitado. O smoke cria fixtures e executa cleanup.
+resposta uniforme de identidade, rate limit 429/`Retry-After`, saldo/extrato, vouchers públicos e
+programa desabilitado. O smoke cria fixtures e executa cleanup.
 
 ## 7. Contratos operacionais do Clube
 
@@ -272,6 +276,23 @@ Edge HTTP público:
 |  429 | `RATE_LIMITED`, com `Retry-After`                                                            |
 |  500 | `LOYALTY_INTEGRITY`, `SERVER_CONFIG`, `UPSTREAM_ERROR`                                       |
 
+### 7.5 Recompensas, resgate e vouchers
+
+- `get_public_loyalty_rewards`: catálogo público sem estoque exato; `available` é booleano;
+- `redeem_public_loyalty_reward`: custo server-authoritative, débito atômico de saldo/estoque,
+  ledger `redeem`, voucher e consumo do token;
+- `get_public_redemption_by_attempt`: recovery por slug, UUID e segredo aleatório, sem PII;
+- `get_public_loyalty_account`: extrato de até 50 entradas e até 20 vouchers ativos;
+- Reward management em `/app/clube`: owner-only, sem DELETE; desativar usa
+  `set_loyalty_reward_active(false)`;
+- `/app/vouchers`: owner/manager/operator com acesso à unidade consultam e consomem códigos;
+- vouchers não expiram no Core MVP e `issued → consumed` é terminal.
+
+Tentativa pendente de resgate usa `pedon:pending-redemption:<publicSlug>` por no máximo 24 horas e
+contém somente `public_slug`, `idempotency_key`, `recovery_secret`, `reward_id` e `created_at`. Nunca
+persistir access token, CPF, telefone, saldo ou resposta da conta. O código operacional do voucher
+também não deve entrar em URL, Local Storage ou Session Storage.
+
 ## 8. Checkout e recuperação
 
 O checkout público usa `create_public_order_v2`. Antes do envio, o frontend calcula um fingerprint
@@ -299,9 +320,10 @@ continua autorizado a exibi-las.
 
 ## 9. Administração e frontend
 
-- `/clube/:publicSlug`: lookup/enroll por CPF + telefone, consentimento, saldo e extrato;
+- `/clube/:publicSlug`: lookup/enroll, saldo, rewards, resgate/recovery, vouchers e extrato;
 - checkout: vínculo opcional do token do Clube sem quebrar guest checkout;
-- `/app/clube`: protegido por `RequireOwner`; programa, métricas e membros mascarados;
+- `/app/clube`: protegido por `RequireOwner`; programa, métricas, membros e Reward management;
+- `/app/vouchers`: operação por unidade para owner/manager/operator autorizados;
 - manager/operator não acessam a página nem as RPCs owner-only;
 - toggle chama RPC server-authoritative e invalida/refaz a query do programa;
 - mudança de usuário chama `queryClient.clear()` e remove a unidade selecionada;
@@ -321,6 +343,7 @@ continua autorizado a exibi-las.
 | `/app/cardapio`              | publicação owner/manager                  |
 | `/app/pedidos`               | Central de Pedidos                        |
 | `/app/clube`                 | administração owner-only                  |
+| `/app/vouchers`              | consulta e consumo por unidade             |
 | `/menu/:publicSlug`          | cardápio público                          |
 | `/menu/:publicSlug/carrinho` | carrinho público local                    |
 | `/menu/:publicSlug/checkout` | checkout guest/Clube network-only         |
@@ -340,13 +363,13 @@ continua autorizado a exibi-las.
 | Output            | `apps/web/dist`                            |
 | URL estável       | `https://ped-on.pages.dev`                 |
 
-Release verificada:
+Release funcional verificada:
 
-- source `2013e8d232f7f4daecb3c0ec62baa69eca9b64e1`;
-- run CI `31524498264`, com Quality gates e E2E smoke tests aprovados;
-- deployment `63b40263-d3b7-4d41-a5b2-ee8ecc97f4d0`;
-- URL imutável `https://63b40263.ped-on.pages.dev` e domínio estável aprovados;
-- fallback SPA 200 em `/clube/:publicSlug` e `/app/clube`;
+- source `9a62b7918e6bfc26b5335e67fb5b62221a201f2e`;
+- run CI `31556667041`, com Quality gates e E2E smoke tests aprovados;
+- deployment `75cefe86-d513-48f3-ab7d-c483100d3127`;
+- URL imutável `https://75cefe86.ped-on.pages.dev` e domínio estável aprovados;
+- fallback SPA 200 nas rotas públicas e administrativas do Prompt 10;
 - manifest, service worker e assets aprovados;
 - RPCs públicas v2 presentes no bundle, sem nomes de secret, `service_role` ou runtime cache privado.
 
@@ -365,12 +388,19 @@ Release verificada:
 | Recovery retorna `found=false`           | slug, idempotency UUID ou attempt hash não correspondem                    |
 | Tracking não mostra nota de item         | comportamento esperado de minimização pública                              |
 | Manager/operator recebe `PED11` no Clube | comportamento esperado; administração é owner-only                         |
+| Reward não aparece publicamente          | conferir programa, `is_active`, slug e resposta de catálogo                 |
+| Resgate retorna `PED56`                  | reward mudou; recarregar catálogo e pedir nova confirmação                  |
+| Resgate retorna `PED57`/`PED58`          | estoque esgotado ou saldo insuficiente                                      |
+| Recovery de resgate retorna `found=false` | slug, UUID ou recovery secret não correspondem                             |
+| Voucher retorna `PED61`                  | já consumido; a transição é terminal                                        |
+| Staff recebe `PED11` no voucher          | conferir unidade ativa e `membership_units`                                 |
 | Dados antigos após troca de login        | confirmar `queryClient.clear()` em mudança de user ID                      |
 | Migration ausente                        | `supabase migration list`; revisar antes de `db push --linked`             |
 | DB test falha por contagem               | confirmar execução sequencial das oito suítes                              |
 
 ## 13. Próximo passo
 
-Prompt 10 está `IN_PROGRESS`, checkpoint `BACKEND_CORE_COMPLETED`. Backend versionado em `0d4dfd5`,
-CI `31552880755` aprovado e 15 migrations Local == Remote. O frontend permanece `NOT STARTED`; não
-marcar `COMPLETED` ou `RELEASE_VERIFIED` antes dos gates e da produção do Prompt 10.
+Prompt 10 está `IN_PROGRESS`, checkpoint `FRONTEND_IMPLEMENTED`. Backend `0d4dfd5`, release
+funcional `9a62b79`, CI `31556667041`, Cloudflare `75cefe86-d513-48f3-ab7d-c483100d3127` e 15
+migrations Local == Remote estão aprovados. Concluir e versionar a documentação e validar sua CI
+antes de marcar `COMPLETED` ou `RELEASE_VERIFIED`.

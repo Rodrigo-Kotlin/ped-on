@@ -7,7 +7,8 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 ## Estado atual
 
 Fase 3C, Prompt 10: Recompensas, resgate atômico e vouchers do Clube Ped-On, `IN_PROGRESS`.
-Checkpoint `BACKEND_CORE_COMPLETED` versionado em `0d4dfd5`; frontend do Prompt 10 ainda não iniciado.
+Checkpoint `FRONTEND_IMPLEMENTED` na release `9a62b79`: backend, frontend, testes, CI e deploy de
+produção verificados; fechamento documental em andamento.
 
 O produto atual inclui:
 
@@ -20,12 +21,15 @@ O produto atual inclui:
 - consentimento explícito e auditável, saldo, ledger append-only, extrato público e vínculo opcional
   no checkout;
 - painel owner-only para ativar/desativar o programa e consultar métricas e membros mascarados;
+- catálogo público de recompensas, resgate atômico recuperável, vouchers ativos e extrato `redeem`;
+- Reward management owner-only com Create / Read / Update / Activate-Deactivate / Stock Adjustment;
+- validação e consumo de vouchers por owner/manager/operator no contexto da unidade;
 - PWA hospedada em Cloudflare Pages e CI no GitHub Actions.
 
 O CPF e o telefone completos não são persistidos. A Edge Function `loyalty-cpf` usa fingerprints
-HMAC tenant-bound, aplica rate limit persistente e emite token opaco de 2 horas. O backend de
-recompensas, resgates e vouchers está implementado; as interfaces públicas, administrativas e staff
-permanecem pendentes.
+HMAC tenant-bound, aplica rate limit persistente e emite token opaco de 2 horas. Recompensas,
+resgates e vouchers estão implementados de ponta a ponta. Reward management não possui DELETE por
+design; a remoção operacional usa `set_loyalty_reward_active(false)`.
 
 ## Objetivo do MVP
 
@@ -57,8 +61,8 @@ ped-on/
 │       └── src/                   # app, componentes, domínio web e páginas
 ├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # 14 migrations versionadas até Prompt 09 hardening
-│   ├── tests/                     # sete suítes DB e smoke remoto da Edge
+│   ├── migrations/                # 15 migrations versionadas até Prompt 10
+│   ├── tests/                     # oito suítes DB e smoke remoto da Edge
 │   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
 │   └── seed.example.sql           # seed de exemplo, sem dados reais
 ├── docs/                          # continuidade, schema, RLS e operação
@@ -81,7 +85,8 @@ ped-on/
 | `/app/configuracoes`     | configuração operacional da unidade                  |
 | `/app/cardapio`          | publicação e cardápio público                        |
 | `/app/pedidos`           | Central de Pedidos por unidade                       |
-| `/app/clube`             | programa, métricas e membros do Clube; somente owner |
+| `/app/clube`             | programa, métricas, membros e rewards; somente owner |
+| `/app/vouchers`          | validação e consumo de vouchers por unidade          |
 | `/menu/:slug`            | cardápio público do cliente                          |
 | `/menu/:slug/carrinho`   | carrinho público local                               |
 | `/menu/:slug/checkout`   | checkout guest/Clube, idempotente e network-only     |
@@ -125,7 +130,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O projeto oficial possui 14 migrations Local == Remote:
+O projeto oficial possui 15 migrations Local == Remote:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -141,6 +146,7 @@ O projeto oficial possui 14 migrations Local == Remote:
 12. `20260811080000_loyalty_earn_refunded_guard.sql`
 13. `20260811130000_prompt09_release_hardening.sql`
 14. `20260811170000_prompt09_reaudit_hardening.sql`
+15. `20260811200418_loyalty_rewards_redemptions_vouchers.sql`
 
 Fluxo linked não destrutivo:
 
@@ -156,18 +162,18 @@ aplicada e não usar `supabase db reset` como substituto desse fluxo.
 
 ## Testes verificados
 
-- frontend unit/component: 157/157;
-- E2E mocked: 148/148 em 360/768/1024/1440;
+- frontend unit/component: 216/216;
+- E2E mocked: 176/176 em 360/768/1024/1440; suíte dedicada do Prompt 10: 28/28;
 - banco: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, menu 121/121,
-  pedidos 318/318 e loyalty 148/148;
-- Edge unit: 14/14;
+  pedidos 318/318, loyalty 148/148 e rewards/vouchers 215/215;
+- Edge unit: 15/15;
 - Edge remote smoke: 36/36;
 - `supabase db lint --linked`: PASS;
-- migrations: 14 Local == Remote.
+- migrations: 15 Local == Remote.
 
 Format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit, alinhamento de migrations e db lint
-passaram na reauditoria local de 2026-08-11. O run CI `31524498264` e o deployment Cloudflare
-`63b40263-d3b7-4d41-a5b2-ee8ecc97f4d0`, ambos da release `2013e8d`, também passaram.
+passaram na verificação de 2026-08-11. O run CI `31556667041` e o deployment Cloudflare
+`75cefe86-d513-48f3-ab7d-c483100d3127`, ambos da release `9a62b79`, também passaram.
 
 ## Segurança e secrets
 
@@ -194,5 +200,6 @@ passaram na reauditoria local de 2026-08-11. O run CI `31524498264` e o deployme
 - `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 
-Próximo passo oficial: frontend público do Prompt 10. O prompt permanece `IN_PROGRESS`, no checkpoint
-`BACKEND_CORE_COMPLETED`, até frontend, testes, CI e produção serem verificados.
+Próximo passo oficial: concluir e versionar o fechamento documental. O Prompt 10 permanece
+`IN_PROGRESS`, no checkpoint `FRONTEND_IMPLEMENTED`, até essa verificação final; não declarar
+`COMPLETED` ou `RELEASE_VERIFIED` antes dela.

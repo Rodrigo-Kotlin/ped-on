@@ -1,7 +1,7 @@
 # PED-ON — Database Schema
 
 > Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On no checkpoint
-> `BACKEND_CORE_COMPLETED` do Prompt 10.
+> `FRONTEND_IMPLEMENTED` do Prompt 10.
 > Fonte autoritativa: as 15 migrations versionadas em `supabase/migrations/`, aplicadas no
 > projeto `ped-on` (ref `zmuxkztnilnzjyyojbbr`).
 
@@ -33,7 +33,7 @@ versões; `supabase db lint --linked` passou sem erros.
 - PostgreSQL 17 no Supabase; objetos de negócio no schema `public`.
 - Identificadores em `snake_case`; UUIDs gerados por `gen_random_uuid()`.
 - `organization_id` é o tenant e `unit_id` é o escopo operacional.
-- Todas as 25 tabelas `public` possuem RLS habilitado.
+- Todas as 30 tabelas `public` possuem RLS habilitado.
 - Dinheiro usa `numeric(12,2)`, nunca `float`/`double`; RPCs devolvem valores monetários como
   string decimal.
 - Mutações administrativas e de domínio são server-authoritative via RPC; grants diretos são
@@ -70,6 +70,11 @@ versões; `supabase db lint --linked` passou sem erros.
 | `loyalty_ledger`            | fonte append-only de earns/reversals e deltas do extrato                      |
 | `loyalty_access_tokens`     | hash dos tokens públicos efêmeros de 2 horas                                  |
 | `loyalty_rate_limits`       | contadores fixed-window por escopo HMAC opaco                                 |
+| `loyalty_rewards`           | catálogo de recompensas por organização e saldo atual do estoque              |
+| `loyalty_redemptions`       | resgates imutáveis, idempotentes e recuperáveis                               |
+| `loyalty_vouchers`          | vouchers bearer emitidos ou consumidos                                        |
+| `loyalty_reward_stock_events` | auditoria append-only dos movimentos de estoque                             |
+| `loyalty_voucher_events`    | auditoria append-only da emissão e do consumo                                 |
 
 ## 4. Identidade, tenant e RBAC
 
@@ -591,8 +596,8 @@ Projeção derivada do ledger (não é fonte de verdade). Invariante orgânico:
 
 `recovery_points` representa dívida de pontos quando uma reversão excede o saldo disponível. Novos
 earns quitam a dívida antes de compor saldo. `total_earned`/`total_reversed` continuam calculados na
-leitura administrativa; recompensas e redemption permanecem deferidos para o Prompt 10
-`NOT STARTED`.
+leitura administrativa. Resgate é bloqueado quando existe dívida de recuperação e, no sucesso,
+debita `points_balance` pelo custo server-authoritative da recompensa.
 
 ### 9.5 `public.loyalty_ledger`
 
@@ -604,17 +609,19 @@ sempre `amount < 0`.
 | `id`              | `uuid` PK       | `gen_random_uuid()`                                                           |
 | `organization_id` | `uuid`          | FK composta orders `(organization_id, order_id)` ON DELETE RESTRICT           |
 | `membership_id`   | `uuid`          | FK composta memberships `(organization_id, membership_id)` ON DELETE RESTRICT |
-| `order_id`        | `uuid`          | nullable (pedidos sem Clube nunca geram entrada)                              |
-| `entry_type`      | `text`          | `CHECK (entry_type in ('earn','reversal'))`                                   |
+| `order_id`        | `uuid`          | presente em earn/reversal; nulo em redeem                                     |
+| `redemption_id`   | `uuid`          | presente somente em redeem; FK composta com `ON DELETE RESTRICT`              |
+| `entry_type`      | `text`          | `CHECK (entry_type in ('earn','reversal','redeem'))`                          |
 | `amount`          | `bigint`        | `CHECK` de forma: earn positivo, reversal negativo                            |
 | `points_delta`    | `bigint`        | alteração exata do saldo disponível                                           |
 | `recovery_delta`  | `bigint`        | alteração exata da dívida; `points_delta - recovery_delta = amount`           |
 | `eligible_amount` | `numeric(12,2)` | subtotal elegível nullable, nunca negativo                                    |
 | `created_at`      | `timestamptz`   | default `clock_timestamp()`                                                   |
 
-Índice único parcial `(order_id, entry_type) WHERE order_id IS NOT NULL` ⇒ no máximo um earn e uma
-reversal por pedido (idempotência sob lock de linha do pedido). `orders` ganhou
-`UNIQUE (organization_id, id)` para suportar a FK composta do ledger.
+Índices únicos parciais garantem no máximo um earn/reversal por pedido e uma entrada `redeem` por
+redemption. Para `redeem`, `amount = points_delta = -points_cost`, `recovery_delta = 0`,
+`eligible_amount` e `order_id` são nulos. `orders` ganhou `UNIQUE (organization_id, id)` para
+suportar a FK composta do ledger.
 
 ### 9.6 `public.loyalty_access_tokens`
 
@@ -687,7 +694,7 @@ mais recentes do extrato, ordenadas por `created_at DESC, id DESC`. Cada entrada
 | `resolve_loyalty_identity_internal(uuid,text,text,text,text,text,timestamptz)` | revogado/depreciado             | resolver legado preservado apenas como objeto histórico; não executável por `service_role`                                                                                                                      |
 | `resolve_loyalty_identity_internal_v2(...)`                                    | `service_role`                  | CPF + telefone HMAC tenant-bound; consentimento obrigatório no enroll                                                                                                                                           |
 | `consume_loyalty_rate_limit_internal(text,integer,integer)`                    | `service_role`                  | fixed-window persistente e atômico por escopo opaco                                                                                                                                                             |
-| `get_public_loyalty_account(text)`                                             | `anon`/`authenticated`          | token repetível válido; dados mascarados, saldo e até 50 entradas de extrato                                                                                                                                    |
+| `get_public_loyalty_account(text)`                                             | `anon`/`authenticated`          | token repetível válido; dados mascarados, saldo, até 50 entradas de extrato e até 20 vouchers `issued`                                                                                                           |
 | `get_loyalty_program_admin(uuid)`                                              | owner                           | programa + `stats.members_count`                                                                                                                                                                                |
 | `set_loyalty_program_enabled(uuid,boolean)`                                    | owner                           | ativa/desativa o programa (cria a linha no primeiro enable)                                                                                                                                                     |
 | `get_loyalty_members_admin(uuid,integer,uuid)`                                 | owner                           | lista paginada (`limit` 1..200) com `cpf_last2`, nome, saldo, `recovery_points`, `total_earned`/`total_reversed` calculados e `member_since`                                                                    |
@@ -758,7 +765,77 @@ Contrato HTTP completo:
 |  429 | `RATE_LIMITED`, com `Retry-After`                                                            |
 |  500 | `LOYALTY_INTEGRITY`, `SERVER_CONFIG`, `UPSTREAM_ERROR`                                       |
 
-## 10. Funções e triggers atuais
+## 10. Recompensas, resgates e vouchers (Prompt 10)
+
+### 10.1 Entidades
+
+| Tabela                         | Contrato principal                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loyalty_rewards`              | reward por organização; nome único case-insensitive; custo positivo, estoque não negativo, estado ativo e ordenação; não possui valor monetário          |
+| `loyalty_redemptions`          | snapshot imutável de nome/custo/revisão; unique `(organization_id,idempotency_key)`; guarda SHA-256 do request e do segredo de recovery                  |
+| `loyalty_vouchers`             | um voucher por redemption; código global único de 16 hex uppercase; estados `issued`/`consumed`; sem expiração no Core MVP                              |
+| `loyalty_reward_stock_events`  | trilha append-only `initial`/`admin_adjustment`/`redemption`; soma dos deltas corresponde ao estoque atual                                               |
+| `loyalty_voucher_events`       | trilha append-only `issued`/`consumed`; no máximo um evento de cada tipo por voucher                                                                    |
+
+FKs compostas por `organization_id` impedem relações cross-tenant. Redemptions, vouchers e eventos
+usam `ON DELETE RESTRICT`; rewards não são removidas pela API. `DELETE: NOT SUPPORTED BY DESIGN`,
+conforme DEC-108; a remoção operacional é `set_loyalty_reward_active(false)`.
+
+### 10.2 Catálogo e resgate público
+
+`get_public_loyalty_rewards(text)` retorna `found=false` para slug inválido/desconhecido. Para slug
+válido, expõe somente rewards ativas com `id`, nome, descrição, custo textual, disponibilidade
+booleana e revisão opaca; nunca revela estoque exato ou organização. Programa desativado retorna
+`loyalty_enabled=false` e lista vazia.
+
+`redeem_public_loyalty_reward(text,uuid,uuid,text,text,text)` executa atomicamente:
+
+- replay idempotente antes das validações correntes, sob advisory lock por slug + chave;
+- locks do token, reward e conta, nessa ordem; valida programa, revisão, atividade, estoque, saldo e
+  ausência de `recovery_points`;
+- redemption imutável, ledger `redeem`, débito de pontos, débito de uma unidade do estoque, stock
+  event, voucher `issued` e voucher event;
+- remoção do token somente no sucesso; rollback preserva token, saldo e estoque.
+
+O custo vem da reward bloqueada, nunca do browser. O código retornado é formatado como
+`ABCD-EF12-3456-7890`. `get_public_redemption_by_attempt(text,uuid,text)` recupera a mesma resposta
+por slug, idempotency UUID e segredo de 64 hex, ou retorna `found=false`, sem PII ou IDs internos.
+
+### 10.3 Administração e operação
+
+| RPC                                             | Autorização                       | Contrato                                                          |
+| ----------------------------------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| `get_loyalty_rewards_admin(uuid,integer,uuid)`  | owner da organização              | lista paginada com estoque exato, estado e revisão                |
+| `create_loyalty_reward(uuid,jsonb)`             | owner da organização              | cria reward e evento de estoque inicial quando maior que zero     |
+| `update_loyalty_reward(uuid,jsonb)`             | owner da organização              | atualiza nome/descrição/custo; não altera estoque                  |
+| `set_loyalty_reward_active(uuid,boolean)`       | owner da organização              | soft deactivate/reactivate                                        |
+| `set_loyalty_reward_stock(uuid,bigint)`         | owner da organização              | define saldo absoluto e registra o delta append-only               |
+| `get_loyalty_voucher_staff(uuid,text)`          | `can_access_unit` em unidade ativa | valida código e retorna shape operacional minimizado               |
+| `consume_loyalty_voucher(uuid,text)`            | `can_access_unit` em unidade ativa | transição terminal `issued → consumed` sob lock e evento auditável |
+
+Owner, manager e operator podem operar vouchers somente nas unidades autorizadas. Código inválido é
+`PED62`; lookup desconhecido ou cross-tenant retorna `found=false`, enquanto consumo desconhecido
+usa `PED60`. Voucher consumido não pode ser consumido novamente (`PED61`).
+
+### 10.4 Erros do Prompt 10
+
+| SQLSTATE | Mensagem                   |
+| -------- | -------------------------- |
+| `PED54`  | `REWARD_NOT_FOUND`         |
+| `PED55`  | `REWARD_UNAVAILABLE`       |
+| `PED56`  | `REWARD_CHANGED`           |
+| `PED57`  | `REWARD_OUT_OF_STOCK`      |
+| `PED58`  | `INSUFFICIENT_POINTS`      |
+| `PED59`  | `REDEMPTION_CONFLICT`      |
+| `PED60`  | `VOUCHER_NOT_FOUND`        |
+| `PED61`  | `VOUCHER_ALREADY_CONSUMED` |
+| `PED62`  | `INVALID_VOUCHER_CODE`     |
+| `PED63`  | `INVALID_REWARD`           |
+| `PED64`  | `REDEMPTION_INTEGRITY`     |
+| `PED65`  | `REWARD_NAME_CONFLICT`     |
+| `PED66`  | `INVALID_REWARD_STOCK`     |
+
+## 11. Funções e triggers atuais
 
 | Objeto                                                                             | Contrato                                                                              |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -784,6 +861,8 @@ Contrato HTTP completo:
 | quatro RPCs administrativas da Seção 8.5                                           | lista, detalhe e transições server-authoritative                                      |
 | RPCs e helpers das Seções 9.7–9.10                                                 | programa, identidade v2, rate limit, conta/extrato, membros e recuperação de checkout |
 | `_loyalty_earn_order(orders)` / `_loyalty_reverse_order(orders)`                   | earn/reversal internos do ledger (revogados de navegador)                             |
+| RPCs da Seção 10.2                                                                | catálogo, resgate atômico e recovery públicos                                         |
+| RPCs da Seção 10.3                                                                | Reward management owner-only e operação staff de vouchers                            |
 
 Todas as funções desta tabela, exceto `set_updated_at()`, são `security definer` com
 `search_path=''`; `get_my_admin_context`, helpers de acesso e getters são `stable` quando aplicável,
@@ -802,7 +881,7 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `PED04`  | `LAST_ACTIVE_UNIT`   |
 | `PED05`  | `UNIT_NAME_TOO_LONG` |
 
-## 11. RLS e ACLs
+## 12. RLS e ACLs
 
 | Tabela                            | SELECT autenticado                                                       | Escrita direta                                             |
 | --------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -821,7 +900,7 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `orders`                          | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
 | `order_items`                     | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
 | `order_events`                    | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; append-only por RPC                       |
-| oito tabelas do Clube (Seção 9.1) | sem policy seletora; acesso via RPC `security definer` ou `service_role` | grants de `public`/`anon`/`authenticated` revogados (zero) |
+| 13 tabelas do Clube (Seções 9 e 10) | sem policy seletora; acesso via RPC `security definer` ou `service_role` | grants de `public`/`anon`/`authenticated` revogados (zero) |
 
 Nas tabelas do catálogo e do cardápio publicado, `SELECT` foi concedido a `authenticated` (e a
 `anon` somente nas duas tabelas do catálogo mutável), mas só existe policy `TO authenticated`.
@@ -832,24 +911,25 @@ explicitamente revogado de `PUBLIC` e `anon` e concedido somente a `authenticate
 superfície pública de leitura do cardápio. As tabelas de pedidos não possuem grants para `anon`;
 checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
-## 12. Produção e validação
+## 13. Produção e validação
 
-Checkpoint do Prompt 09 (`READY_FOR_REAUDIT`):
+Checkpoint do Prompt 10 (`FRONTEND_IMPLEMENTED`):
 
-- migrations `20260810170000_loyalty_customers_ledger.sql` e
-  `20260811080000_loyalty_earn_refunded_guard.sql` e
-  `20260811130000_prompt09_release_hardening.sql` e
-  `20260811170000_prompt09_reaudit_hardening.sql` aplicadas oficialmente; **14 migrations Local ==
-  Remote**;
+- migration `20260811200418_loyalty_rewards_redemptions_vouchers.sql` aplicada oficialmente;
+  **15 migrations Local == Remote**;
 - `supabase db lint --linked`: sem erros;
 - loyalty `loyalty_integrity.test.mjs` **148/148 PASS** cobrindo identidade CPF + telefone,
   consentimento, token repetível/consumido, disable explícito, rate limit opaco, extrato público,
   checkout v2/recovery, ledger, owner-only e ACL/RLS;
-- Edge unit **14/14 PASS** e remote smoke **36/36 PASS** contra `loyalty-cpf` deployada com
+- rewards/vouchers `loyalty_rewards_integrity.test.mjs` **215/215 PASS** cobrindo ACL/RLS, RBAC,
+  idempotência, concorrência, saldo/estoque, recovery, vouchers e ausência de DELETE;
+- Edge unit **15/15 PASS** e remote smoke **36/36 PASS** contra `loyalty-cpf` deployada com
   `verify_jwt` ativo;
-- regressões anteriores permanecem verdes (ver Seção 12.1 e runbook Seção 6).
+- frontend **216/216**, E2E **176/176** e suíte Prompt 10 **28/28** nos quatro viewports;
+- CI `31556667041` e Cloudflare deployment `75cefe86-d513-48f3-ab7d-c483100d3127`, source
+  `9a62b79`, aprovados.
 
-Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo de 14 migrations acima:
+Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 15 migrations:
 
 - migrations `20260810144145_orders_checkout.sql` e
   `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente naquele checkpoint;
@@ -862,8 +942,7 @@ Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo de 14 mig
   idempotência/replay, máquinas de estado, PII minimizada, Realtime e concorrência;
 - cleanup automático remove organizações e usuários sintéticos, sem dados residuais esperados.
 
-## 13. Ainda não implementado
+## 14. Fora do escopo atual
 
-O backend de recompensas, resgates e vouchers está implementado no checkpoint
-`BACKEND_CORE_COMPLETED`; o frontend do Prompt 10 ainda não foi iniciado. Imagens, gateway,
-pagamento online e logística avançada também não fazem parte deste schema.
+Imagens, expiração/cancelamento de vouchers, gateway, pagamento online e logística avançada não
+fazem parte deste schema. Reward DELETE também não é pendência: é `NOT SUPPORTED BY DESIGN`.

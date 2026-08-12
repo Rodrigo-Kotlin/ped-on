@@ -1,12 +1,12 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL no checkpoint de release hardening do Prompt 09. O
+> Modelo de segurança Supabase/PostgreSQL no checkpoint `FRONTEND_IMPLEMENTED` do Prompt 10. O
 > frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS nega por padrão e o
 > Clube usa superfícies públicas minimizadas e RPCs internas restritas ao backend.
 
 ## 1. Princípios
 
-- RLS está habilitado nas 25 tabelas `public` atuais.
+- RLS está habilitado nas 30 tabelas `public` atuais.
 - `organization_id` delimita o tenant; `unit_id` delimita o acesso operacional.
 - Owner acessa todas as unidades da própria organização. Manager/operator dependem de vínculo em
   `membership_units`.
@@ -23,7 +23,7 @@
   respostas anônimas não expõem PII, endereço, IDs internos ou idempotência.
 - Identidade do Clube v2 exige CPF + telefone; o PostgreSQL recebe somente fingerprints HMAC
   tenant-bound, e desconhecido/telefone divergente são indistinguíveis no contrato HTTP.
-- As oito tabelas do Clube não possuem grants de navegador. Edge identity/rate limit usam RPCs
+- As 13 tabelas do Clube não possuem grants de navegador. Edge identity/rate limit usam RPCs
   internas `service_role`; conta/extrato e checkout usam RPCs públicas minimizadas.
 - `LOYALTY_CPF_HMAC_KEY` é Supabase Edge Secret de ambiente, não Vault, e nunca entra em variável
   `VITE_*`.
@@ -58,6 +58,11 @@
 | `loyalty_ledger`            | ON  | nenhuma                                      | append-only interno; leitura por serializadores    |
 | `loyalty_access_tokens`     | ON  | nenhuma                                      | hash acessado somente por RPC                      |
 | `loyalty_rate_limits`       | ON  | nenhuma                                      | contador opaco acessado somente por `service_role` |
+| `loyalty_rewards`           | ON  | nenhuma                                      | acesso somente por RPC                             |
+| `loyalty_redemptions`       | ON  | nenhuma                                      | resgate imutável via RPC pública                   |
+| `loyalty_vouchers`          | ON  | nenhuma                                      | emissão/consumo somente por RPC                    |
+| `loyalty_reward_stock_events` | ON | nenhuma                                     | auditoria append-only interna                      |
+| `loyalty_voucher_events`    | ON  | nenhuma                                      | auditoria append-only interna                      |
 
 Não há policies `INSERT` ou `DELETE` para clientes. Fora do `UPDATE(full_name)` de `profiles`, não há
 policy/grant de update direto para `authenticated`.
@@ -95,6 +100,8 @@ role sem escopo.
 | Registrar `paid → refunded`                                  |   Sim |               Sim |                Não |
 | Ler programa/métricas/membros do Clube                       |   Sim |               Não |                Não |
 | Ativar/desativar o Clube                                     |   Sim |               Não |                Não |
+| Gerenciar rewards e estoque                                  |   Sim |               Não |                Não |
+| Consultar/consumir voucher na unidade                        |   Sim |               Sim |                Sim |
 
 `is_active` é estrutural; `is_available` é operacional. Desativar categoria não altera produtos e
 desativar produto não altera disponibilidade. Operator não acessa nenhuma RPC estrutural nem a
@@ -117,7 +124,7 @@ publicação.
 - `get_public_menu(text)` é a única leitura anônima efetiva do cardápio.
 - As três tabelas de pedidos concedem `SELECT` somente a `authenticated`, filtrado por
   `can_access_unit`; `anon` não possui acesso direto e nenhum papel cliente recebe I/U/D.
-- As oito tabelas do Clube executam `REVOKE ALL` de `PUBLIC`, `anon` e `authenticated`; não há
+- As 13 tabelas do Clube executam `REVOKE ALL` de `PUBLIC`, `anon` e `authenticated`; não há
   leitura nem escrita direta efetiva por navegador. Isso inclui `loyalty_rate_limits`, que contém
   somente escopo HMAC opaco e metadados de janela.
 
@@ -142,6 +149,12 @@ minimizados. `get_public_loyalty_account(text)` é a única leitura pública de 
 `authenticated` e validam `is_org_owner` no servidor. `get_loyalty_public_context_internal`,
 `resolve_loyalty_identity_internal_v2` e `consume_loyalty_rate_limit_internal` têm execute somente
 para `service_role`; o resolver de identidade legado não possui mais esse grant.
+
+`get_public_loyalty_rewards`, `redeem_public_loyalty_reward` e
+`get_public_redemption_by_attempt` têm `EXECUTE` para `anon`/`authenticated` e retornos públicos
+minimizados. As cinco RPCs de Reward management têm `EXECUTE` apenas para `authenticated` e validam
+`is_org_owner`; não existe RPC de DELETE. `get_loyalty_voucher_staff` e
+`consume_loyalty_voucher` também exigem `authenticated` e validam `can_access_unit` em unidade ativa.
 
 `PUBLIC` e `anon` foram explicitamente revogados das funções administrativas. O helper
 `_validate_catalog_price(text)` não possui `EXECUTE` para `PUBLIC`, `anon` ou `authenticated`.
@@ -222,6 +235,21 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 - Programa, métricas, membros e toggle são owner-only no frontend e no banco. Após toggle, o
   frontend invalida/refaz a query; troca de usuário chama `queryClient.clear()`.
 
+### 6.7 Recompensas e vouchers
+
+- Catálogo público revela somente rewards ativas, custo, disponibilidade e revisão; estoque exato e
+  tenant não são expostos.
+- Resgate usa custo e estoque bloqueados no servidor. Débito da conta, ledger `redeem`, redemption,
+  stock event, voucher e consumo do token formam uma única transação.
+- Replay idempotente precede validações correntes. Recovery requer slug, UUID e segredo aleatório de
+  64 hex; nenhum dos contratos retorna membership, customer, redemption ou voucher ID.
+- O browser não persiste o token do Clube. A tentativa pendente persiste somente slug, UUID,
+  recovery secret, reward ID e timestamp por até 24 horas.
+- Reward management é owner-only. `DELETE: NOT SUPPORTED BY DESIGN`; somente soft deactivation por
+  `set_loyalty_reward_active(false)`.
+- Owner/manager/operator consultam e consomem vouchers somente em unidade ativa autorizada. Código
+  cross-tenant/desconhecido não é enumerado pelo lookup; consumo é terminal e auditável.
+
 ## 7. Isolamento e integridade anti-IDOR
 
 | Vetor                                                 | Defesa                                                                 |
@@ -257,6 +285,14 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 | Programa é desligado após emissão                     | token existente só lê; nova identificação/checkout/earn bloqueados     |
 | Recovery tenta outro hash/chave/slug                  | `get_public_order_by_attempt` retorna `found=false`                    |
 | Tracking tenta obter nota livre                       | serializador público omite `order_items.note`                          |
+| Público tenta inferir estoque exato                   | catálogo expõe somente `available`                                    |
+| Browser envia custo de resgate                        | RPC não aceita custo; lê reward sob lock                              |
+| Resgates concorrentes excedem saldo/estoque           | ordem de locks + transação serializam conta e reward                   |
+| Recovery usa segredo/chave/slug divergente            | retorna `found=false` sem IDs internos                                |
+| Manager/operator tenta gerenciar reward               | `is_org_owner` obrigatório; `PED11`                                   |
+| Staff tenta voucher de outro tenant/unidade           | unidade + `can_access_unit`; lookup retorna `found=false`              |
+| Voucher é consumido duas vezes                        | row lock + estado terminal; `PED61`                                   |
+| Browser tenta DELETE de reward                        | sem RPC, grant, policy ou ação de UI                                  |
 
 As FKs compostas são defesa de integridade adicional, não substituto da autorização. As RPCs
 verificam autorização antes da mutação e restringem updates por tenant/unidade já resolvidos.
@@ -291,15 +327,19 @@ Configuração operacional usa `PED10..PED18`; RPCs históricas de unidade usam 
 `get_public_menu` nunca lança erro (retorna `found=false`). Detalhes completos estão em
 `PEDON_DATABASE_SCHEMA.md`.
 
-SQL do Clube permanece limitado a `PED51 LOYALTY_UNAVAILABLE`,
+O núcleo de identidade e pontos usa `PED51 LOYALTY_UNAVAILABLE`,
 `PED52 INVALID_LOYALTY_TOKEN` e `PED53 LOYALTY_INTEGRITY`. A Edge expõe códigos HTTP próprios: 403
 `LOYALTY_UNAVAILABLE`; 422 `INVALID_CPF`, `INVALID_PHONE`, `INVALID_NAME`,
 `CONSENT_REQUIRED` ou `IDENTITY_NOT_CONFIRMED`; 429 `RATE_LIMITED` com `Retry-After`; e 500 para
 integridade/configuração/upstream. Slug inválido/desconhecido usa 404 `INVALID_SLUG`.
 
+Recompensas e vouchers usam `PED54..PED66`: reward ausente/indisponível/alterada/sem estoque,
+saldo insuficiente, conflito/integridade de redemption, voucher ausente/já consumido/código inválido,
+payload/nome/estoque inválidos. O contrato completo está no schema, Seção 10.4.
+
 ## 9. Testes executados
 
-Os sete scripts DB em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
+Os oito scripts DB em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
 organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup automático:
 
 | Script                                       | Resultado oficial | Cobertura principal                                                                       |
@@ -311,6 +351,7 @@ organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup au
 | `menu_publication_integrity.test.mjs`        |           121/121 | publicação, imutabilidade, slug, overlay, API pública e isolamento                        |
 | `orders_integrity.test.mjs`                  |           318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência       |
 | `loyalty_integrity.test.mjs`                 |           148/148 | identidade v2, consent auditável, ACL legado, TTL, rate limit, recovery e ledger           |
+| `loyalty_rewards_integrity.test.mjs`         |           215/215 | rewards, resgate, estoque, vouchers, RBAC, concorrência e ausência de DELETE               |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das quatro tabelas, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
@@ -320,7 +361,9 @@ organizações, publicações concorrentes e ausência de vazamento entre unidad
 payload estrito, dinheiro exato, replay durável, tracking minimizado, máquinas de estado,
 autorização de refund e publicação Realtime sem PII. Clube valida grants zero, HMACs, mismatch
 uniforme, consentimento, token repetível/consumido, disable explícito, rate limit sem PII, statement
-máximo 50 e recuperação sem PII. Edge unit 14/14 e remote smoke 36/36 também passaram;
+máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
+concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108. Edge
+unit 15/15 e remote smoke 36/36 também passaram;
 `supabase db lint --linked` passou sem erros.
 
 Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
@@ -333,7 +376,7 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial dos sete testes DB e
+- Alterações de autorização exigem execução sequencial dos oito testes DB e
   `supabase db lint --linked`.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.
