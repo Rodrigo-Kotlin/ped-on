@@ -299,7 +299,7 @@ async function run() {
     );
     ok(enroll.body?.customer?.cpf_last2 === '25', '1.6 cpf_last2 mascarado correto');
     ok(enroll.body?.customer?.name === 'Cliente Edge Sintetico', '1.7 nome btrim aplicado');
-    ok(enroll.body?.account?.points_balance === 0, '1.8 saldo inicial zero');
+    ok(enroll.body?.account?.points_balance === '0', '1.8 saldo inicial zero como texto decimal');
     ok(Array.isArray(enroll.body?.statement), '1.9 extrato presente no primeiro retorno');
     ok(
       typeof enroll.body?.token === 'object' && enroll.body?.token !== null,
