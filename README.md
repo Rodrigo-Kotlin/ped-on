@@ -7,8 +7,8 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 ## Estado atual
 
 Fase 3C, Prompt 10: Recompensas, resgate atômico e vouchers do Clube Ped-On, `IN_PROGRESS`.
-Checkpoint `READY_FOR_REAUDIT`: hardening de banco, frontend, testes e CI preparado para reauditoria
-produção verificados; fechamento documental em andamento.
+Checkpoint `READY_FOR_REAUDIT`: hardening de banco, frontend, testes, CI e deploy verificados;
+fechamento documental em andamento.
 
 O produto atual inclui:
 
@@ -171,11 +171,11 @@ aplicada e não usar `supabase db reset` como substituto desse fluxo.
 - Edge unit: 15/15;
 - Edge remote smoke: 36/36;
 - `supabase db lint --linked`: PASS;
-- migrations: 15 Local == Remote.
+- migrations: 17 Local == Remote.
 
 Format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit, alinhamento de migrations e db lint
-passaram na verificação de 2026-08-11. O run CI `31556667041` e o deployment Cloudflare
-`75cefe86-d513-48f3-ab7d-c483100d3127`, ambos da release `9a62b79`, também passaram.
+passaram no hardening técnico de 2026-08-12. O run CI `31598675826` e o deployment Cloudflare
+`ceaf4832-bc0e-4159-a983-fd5ca367efd8`, ambos da release técnica `2a91711`, também passaram.
 
 ## Segurança e secrets
 

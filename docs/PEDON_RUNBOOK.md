@@ -1,7 +1,7 @@
 # PED-ON — Runbook
 
 > Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 10. Backend, frontend,
-> testes, CI e deploy Cloudflare da release funcional `9a62b79` aprovados; fechamento documental em
+> testes, CI e deploy Cloudflare da release técnica `2a91711` aprovados; fechamento documental em
 > andamento.
 
 ## 1. Pré-requisitos
@@ -65,8 +65,8 @@ atual estão verificados:
 - 17 migrations no release esperado; confirmar Local == Remote após aplicar a migration 17.
 
 Na reauditoria de 2026-08-11, format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit,
-alinhamento de migrations e db lint passaram. CI e deploy Cloudflare devem ser declarados concluídos
-somente após a versão completa ter uma SHA publicada e as verificações externas correspondentes.
+alinhamento de migrations e db lint passaram. No hardening técnico de 2026-08-12, CI e deploy
+Cloudflare foram declarados concluídos: SHA `2a91711`, run `31598675826` e deployment `ceaf4832`.
 
 ## 4. Variáveis e secrets
 
@@ -372,13 +372,15 @@ manuais de release por dependerem de ambiente implantado.
 | Output            | `apps/web/dist`                            |
 | URL estável       | `https://ped-on.pages.dev`                 |
 
-Release funcional verificada:
+Release técnica verificada:
 
-- source `9a62b7918e6bfc26b5335e67fb5b62221a201f2e`;
-- run CI `31556667041`, com Quality gates e E2E smoke tests aprovados;
-- deployment `75cefe86-d513-48f3-ab7d-c483100d3127`;
-- URL imutável `https://75cefe86.ped-on.pages.dev` e domínio estável aprovados;
-- fallback SPA 200 nas rotas públicas e administrativas do Prompt 10;
+- source `2a91711bc83b54841b4b4beee8beca930b9ea986`;
+- run CI `31598675826`, com Quality gates, Backend release gates e E2E smoke tests aprovados;
+- deployment `ceaf4832-bc0e-4159-a983-fd5ca367efd8`;
+- URL imutável `https://ceaf4832.ped-on.pages.dev` e domínio estável aprovados;
+- fallback SPA 200 nas rotas públicas e administrativas do Prompt 10 (HTTP PASS);
+- PWA PASS; stable e immutable serviram o mesmo asset;
+- smoke com Service Worker ativo confirmou ausência de runtime cache para APIs mutáveis do Clube;
 - manifest, service worker e assets aprovados;
 - RPCs públicas v2 presentes no bundle, sem nomes de secret, `service_role` ou runtime cache privado.
 

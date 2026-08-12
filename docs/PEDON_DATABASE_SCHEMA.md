@@ -27,7 +27,7 @@
 | 16    | `20260812030000_prompt10_release_hardening.sql`                    | replay autenticado por recovery secret, FKs relacionais e métricas corretas               |
 | 17    | `20260812090000_prompt10_final_integrity_hardening.sql`            | BigInt como texto decimal, stock único por redemption e consumo auditável                 |
 
-Checkpoint oficial de 2026-08-11: `supabase migration list` apresenta Local == Remote para as 15
+Checkpoint oficial de 2026-08-12: `supabase migration list` apresenta Local == Remote para as 17
 versões; `supabase db lint --linked` passou sem erros.
 
 ## 2. Convenções
@@ -936,8 +936,8 @@ Checkpoint do Prompt 10 (`READY_FOR_REAUDIT`):
   `verify_jwt` ativo;
 - DB isolado **22/22**, **32/32**, **80/80**, **123/123**, **121/121**, **318/318**, **148/148** e
   **254/254**; Edge unit **15/15** e db lint local sem erros;
-- CI `31556667041` e Cloudflare deployment `75cefe86-d513-48f3-ab7d-c483100d3127`, source
-  `9a62b79`, aprovados.
+- CI `31598675826` (Quality gates, Backend release gates e E2E smoke tests) e Cloudflare deployment
+  `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, source `2a91711`, aprovados.
 
 Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 17 migrations:
 
