@@ -6,8 +6,8 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 3B, Prompt 09: Clientes e Clube Ped-On, `COMPLETED`. Backend, frontend, reauditoria, CI e deploy
-Cloudflare da versão completa foram verificados na release `2013e8d`.
+Fase 3C, Prompt 10: Recompensas, resgate atômico e vouchers do Clube Ped-On, `IN_PROGRESS`.
+Checkpoint `BACKEND_CORE_COMPLETED` versionado em `0d4dfd5`; frontend do Prompt 10 ainda não iniciado.
 
 O produto atual inclui:
 
@@ -23,8 +23,9 @@ O produto atual inclui:
 - PWA hospedada em Cloudflare Pages e CI no GitHub Actions.
 
 O CPF e o telefone completos não são persistidos. A Edge Function `loyalty-cpf` usa fingerprints
-HMAC tenant-bound, aplica rate limit persistente e emite token opaco de 2 horas. Recompensas,
-resgates e vouchers estão deferidos para o Prompt 10, que está `NOT STARTED`.
+HMAC tenant-bound, aplica rate limit persistente e emite token opaco de 2 horas. O backend de
+recompensas, resgates e vouchers está implementado; as interfaces públicas, administrativas e staff
+permanecem pendentes.
 
 ## Objetivo do MVP
 
@@ -193,5 +194,5 @@ passaram na reauditoria local de 2026-08-11. O run CI `31524498264` e o deployme
 - `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 
-Próximo passo oficial: Prompt 10, ainda `NOT STARTED`. Recompensas, resgates e vouchers continuam
-deferidos até uma instrução explícita para iniciar essa etapa.
+Próximo passo oficial: frontend público do Prompt 10. O prompt permanece `IN_PROGRESS`, no checkpoint
+`BACKEND_CORE_COMPLETED`, até frontend, testes, CI e produção serem verificados.

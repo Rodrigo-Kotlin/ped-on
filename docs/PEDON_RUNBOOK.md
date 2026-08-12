@@ -367,9 +367,10 @@ Release verificada:
 | Manager/operator recebe `PED11` no Clube | comportamento esperado; administração é owner-only                         |
 | Dados antigos após troca de login        | confirmar `queryClient.clear()` em mudança de user ID                      |
 | Migration ausente                        | `supabase migration list`; revisar antes de `db push --linked`             |
-| DB test falha por contagem               | confirmar execução sequencial das sete suítes                              |
+| DB test falha por contagem               | confirmar execução sequencial das oito suítes                              |
 
 ## 13. Próximo passo
 
-Prompt 09 está `COMPLETED`, checkpoint `RELEASE_VERIFIED`. Prompt 10 está `NOT STARTED` e deve ser
-iniciado somente após instrução explícita; recompensas, resgates e vouchers permanecem deferidos.
+Prompt 10 está `IN_PROGRESS`, checkpoint `BACKEND_CORE_COMPLETED`. Backend versionado em `0d4dfd5`,
+CI `31552880755` aprovado e 15 migrations Local == Remote. O frontend permanece `NOT STARTED`; não
+marcar `COMPLETED` ou `RELEASE_VERIFIED` antes dos gates e da produção do Prompt 10.

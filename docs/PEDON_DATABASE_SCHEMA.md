@@ -1,8 +1,8 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On no checkpoint de release hardening
-> do Prompt 09.
-> Fonte autoritativa: as 14 migrations versionadas em `supabase/migrations/`, aplicadas no
+> Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On no checkpoint
+> `BACKEND_CORE_COMPLETED` do Prompt 10.
+> Fonte autoritativa: as 15 migrations versionadas em `supabase/migrations/`, aplicadas no
 > projeto `ped-on` (ref `zmuxkztnilnzjyyojbbr`).
 
 ## 1. Estado das migrations
@@ -23,8 +23,9 @@
 | 12    | `20260811080000_loyalty_earn_refunded_guard.sql`                  | impede earn de pedido já reembolsado                                                    |
 | 13    | `20260811130000_prompt09_release_hardening.sql`                   | identidade CPF + telefone, consentimento, rate limit, extrato e recuperação de checkout |
 | 14    | `20260811170000_prompt09_reaudit_hardening.sql`                   | ACL legado, consentimento append-only, TTL e cleanup incremental                         |
+| 15    | `20260811200418_loyalty_rewards_redemptions_vouchers.sql`         | rewards, resgate atômico, estoque auditável e vouchers                                   |
 
-Checkpoint oficial de 2026-08-11: `supabase migration list` apresenta Local == Remote para as 14
+Checkpoint oficial de 2026-08-11: `supabase migration list` apresenta Local == Remote para as 15
 versões; `supabase db lint --linked` passou sem erros.
 
 ## 2. Convenções
@@ -863,7 +864,6 @@ Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo de 14 mig
 
 ## 13. Ainda não implementado
 
-Recompensas, resgates e vouchers permanecem deferidos: Prompt 10 está `NOT STARTED`. Imagens,
-gateway, pagamento online e logística avançada também não fazem parte deste schema. O Prompt 09
-continua `IN_PROGRESS` apenas pelos gates finais de reauditoria/qualidade/deploy do frontend; backend
-e frontend funcional estão implementados no checkpoint `READY_FOR_REAUDIT`.
+O backend de recompensas, resgates e vouchers está implementado no checkpoint
+`BACKEND_CORE_COMPLETED`; o frontend do Prompt 10 ainda não foi iniciado. Imagens, gateway,
+pagamento online e logística avançada também não fazem parte deste schema.
