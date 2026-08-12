@@ -216,7 +216,10 @@ async function run() {
         '23503',
         'vínculo com unidade de outra organização falha (FK unit_org)',
       );
-      const count = await admin.query('select count(*)::int as n from public.membership_units');
+      const count = await admin.query(
+        'select count(*)::int as n from public.membership_units where organization_id = $1',
+        [orgA],
+      );
       ok(error !== null && count.rows[0].n === 2, 'nenhum vínculo inválido foi inserido');
     }
 

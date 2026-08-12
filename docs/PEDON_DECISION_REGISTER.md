@@ -932,6 +932,21 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
 - **Justificativa:** remove bypass de telefone/consentimento, preserva evidência histórica e limita
   retenção/cardinalidade sem introduzir PII em claro.
 
+## Decisões Aprovadas (Prompt 10 — Recompensas, resgates e vouchers)
+
+### DEC-108 — Reward management não suporta DELETE
+
+- **Status:** APROVADA
+- **Data:** 2026-08-11
+- **Decisão:** o conjunto de operações é denominado **Reward management**: Create / Read / Update /
+  Activate-Deactivate / Stock Adjustment. **DELETE: `NOT SUPPORTED BY DESIGN`**. A remoção operacional
+  ocorre exclusivamente por **SOFT DEACTIVATION:** `set_loyalty_reward_active(false)`. Não existe RPC
+  `delete_loyalty_reward`, acesso direto de browser, policy RLS de DELETE nem ação de exclusão na UI.
+  Uma reward desativada permanece no banco e pode ser reativada com a mesma identidade. A
+  desativação bloqueia novos resgates, mas não invalida vouchers já emitidos.
+- **Justificativa:** preservar integridade referencial, redemptions históricos, vouchers emitidos,
+  stock events, auditoria e todo o histórico operacional do programa de fidelidade.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.
