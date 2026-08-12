@@ -1,6 +1,6 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint `FRONTEND_IMPLEMENTED` do Prompt 10. Backend, frontend,
+> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 10. Backend, frontend,
 > testes, CI e deploy Cloudflare da release funcional `9a62b79` aprovados; fechamento documental em
 > andamento.
 
@@ -52,16 +52,17 @@ pnpm test:e2e
 gitleaks detect --source . --redact --log-level warn
 ```
 
-Também executar os testes DB/Edge da Seção 6, conferir as 15 migrations e o db lint. No checkpoint
+ Também executar os testes DB/Edge da Seção 6, conferir as 17 migrations e o db lint. No checkpoint
 atual estão verificados:
 
-- frontend unit/component 216/216;
-- E2E mocked 176/176 em 360/768/1024/1440; suíte Prompt 10 28/28;
-- DB: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, menu 121/121, pedidos 318/318 e
-  loyalty 148/148 e rewards/vouchers 215/215;
+- frontend unit/component 233/233;
+- E2E mocked 192/192 em 360/768/1024/1440; suíte Prompt 10 44/44, incluindo BigInt,
+  recovery secret, erro determinístico e service worker ativo;
+- DB isolado: RLS 22/22, RBAC 32/32, operacional 80/80, catálogo 123/123, menu 121/121,
+  pedidos 318/318, loyalty 148/148 e rewards/vouchers 254/254;
 - Edge unit 15/15 e remote smoke 36/36;
 - `supabase db lint --linked` PASS;
-- 15 migrations Local == Remote.
+- 17 migrations no release esperado; confirmar Local == Remote após aplicar a migration 17.
 
 Na reauditoria de 2026-08-11, format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit,
 alinhamento de migrations e db lint passaram. CI e deploy Cloudflare devem ser declarados concluídos
@@ -122,6 +123,8 @@ $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
 13. `20260811130000_prompt09_release_hardening.sql`
 14. `20260811170000_prompt09_reaudit_hardening.sql`
 15. `20260811200418_loyalty_rewards_redemptions_vouchers.sql`
+16. `20260812030000_prompt10_release_hardening.sql`
+17. `20260812090000_prompt10_final_integrity_hardening.sql`
 
 ### 5.2 Fluxo linked não destrutivo
 
@@ -162,13 +165,13 @@ node supabase/tests/loyalty_rewards_integrity.test.mjs
 | Script                                       |   Checkpoint |
 | -------------------------------------------- | -----------: |
 | `rls_integrity.test.mjs`                     |   22/22 PASS |
-| `rbac_units_integrity.test.mjs`              |   31/31 PASS |
+| `rbac_units_integrity.test.mjs`              |   32/32 PASS |
 | `unit_operational_config_integrity.test.mjs` |   80/80 PASS |
 | `catalog_integrity.test.mjs`                 | 123/123 PASS |
 | `menu_publication_integrity.test.mjs`        | 121/121 PASS |
 | `orders_integrity.test.mjs`                  | 318/318 PASS |
 | `loyalty_integrity.test.mjs`                 | 148/148 PASS |
-| `loyalty_rewards_integrity.test.mjs`         | 215/215 PASS |
+| `loyalty_rewards_integrity.test.mjs`         | 254/254 PASS |
 
 A execução sequencial evita interferência na contagem global herdada de `membership_units`. Cada
 script cria fixtures sintéticas e faz cleanup. Nunca limpar registros reais ao recuperar uma
@@ -357,6 +360,12 @@ continua autorizado a exibi-las.
 | Repositório       | `https://github.com/Rodrigo-Kotlin/ped-on` |
 | Branch            | `main`                                     |
 | Workflow          | `.github/workflows/ci.yml`, nome `CI`      |
+
+Jobs obrigatórias atuais: `Quality gates`, `E2E smoke tests` e `Backend release gates`. Backend
+reconstrói o Supabase local exclusivamente pelas migrations versionadas, valida alinhamento local,
+executa `supabase db lint --local --level error`, as oito suítes DB sequenciais e Edge unit. O job
+não usa service role, senha ou banco remoto. Edge smoke remoto e Cloudflare smoke permanecem gates
+manuais de release por dependerem de ambiente implantado.
 | Pages project     | `ped-on`                                   |
 | Production branch | `main`                                     |
 | Build             | `pnpm build`                               |
@@ -400,7 +409,6 @@ Release funcional verificada:
 
 ## 13. Próximo passo
 
-Prompt 10 está `IN_PROGRESS`, checkpoint `FRONTEND_IMPLEMENTED`. Backend `0d4dfd5`, release
-funcional `9a62b79`, CI `31556667041`, Cloudflare `75cefe86-d513-48f3-ab7d-c483100d3127` e 15
-migrations Local == Remote estão aprovados. Concluir e versionar a documentação e validar sua CI
+Prompt 10 está `IN_PROGRESS`, checkpoint `READY_FOR_REAUDIT`. A decisão final pertence à auditoria
+independente. Confirmar no relatório final o SHA, CI, Cloudflare e 17 migrations Local == Remote.
 antes de marcar `COMPLETED` ou `RELEASE_VERIFIED`.

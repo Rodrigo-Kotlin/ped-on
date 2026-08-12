@@ -1,6 +1,6 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL no checkpoint `FRONTEND_IMPLEMENTED` do Prompt 10. O
+> Modelo de segurança Supabase/PostgreSQL no checkpoint `READY_FOR_REAUDIT` do Prompt 10. O
 > frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS nega por padrão e o
 > Clube usa superfícies públicas minimizadas e RPCs internas restritas ao backend.
 
@@ -241,6 +241,11 @@ unidade, valida o payload completo e aplica regras server-authoritative para
   tenant não são expostos.
 - Resgate usa custo e estoque bloqueados no servidor. Débito da conta, ledger `redeem`, redemption,
   stock event, voucher e consumo do token formam uma única transação.
+- Replay público exige slug, idempotency key e recovery secret correto. Request igual com secret
+  ausente ou divergente não revela o voucher bearer.
+- FKs compostas ligam voucher, stock event e ledger à mesma redemption/reward/membership. Um índice
+  único limita stock event de redemption a um por redemption, e o evento consumed deve corresponder
+  à unidade/ator persistidos no voucher.
 - Replay idempotente precede validações correntes. Recovery requer slug, UUID e segredo aleatório de
   64 hex; nenhum dos contratos retorna membership, customer, redemption ou voucher ID.
 - O browser não persiste o token do Clube. A tentativa pendente persiste somente slug, UUID,
@@ -345,13 +350,13 @@ organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup au
 | Script                                       | Resultado oficial | Cobertura principal                                                                       |
 | -------------------------------------------- | ----------------: | ----------------------------------------------------------------------------------------- |
 | `rls_integrity.test.mjs`                     |             22/22 | identidade, onboarding, isolamento e escrita direta                                       |
-| `rbac_units_integrity.test.mjs`              |             31/31 | owner/manager/operator, vínculos, FKs e concorrência                                      |
+| `rbac_units_integrity.test.mjs`              |             32/32 | owner/manager/operator, ACL, vínculos, FKs e concorrência                                 |
 | `unit_operational_config_integrity.test.mjs` |             80/80 | grants, RBAC, validações, aceite e atomicidade                                            |
 | `catalog_integrity.test.mjs`                 |           123/123 | RLS/ACL, matriz RBAC, IDOR, FKs, flags, preço e locks                                     |
 | `menu_publication_integrity.test.mjs`        |           121/121 | publicação, imutabilidade, slug, overlay, API pública e isolamento                        |
 | `orders_integrity.test.mjs`                  |           318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência       |
 | `loyalty_integrity.test.mjs`                 |           148/148 | identidade v2, consent auditável, ACL legado, TTL, rate limit, recovery e ledger           |
-| `loyalty_rewards_integrity.test.mjs`         |           215/215 | rewards, resgate, estoque, vouchers, RBAC, concorrência e ausência de DELETE               |
+| `loyalty_rewards_integrity.test.mjs`         |           254/254 | rewards, replay secret, FKs, estoque, vouchers e concorrência real                         |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das quatro tabelas, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,

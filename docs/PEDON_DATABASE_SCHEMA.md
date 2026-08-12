@@ -1,8 +1,8 @@
 # PED-ON — Database Schema
 
 > Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On no checkpoint
-> `FRONTEND_IMPLEMENTED` do Prompt 10.
-> Fonte autoritativa: as 15 migrations versionadas em `supabase/migrations/`, aplicadas no
+> `READY_FOR_REAUDIT` do Prompt 10.
+> Fonte autoritativa: as 17 migrations versionadas em `supabase/migrations/`, reconstruídas no
 > projeto `ped-on` (ref `zmuxkztnilnzjyyojbbr`).
 
 ## 1. Estado das migrations
@@ -24,6 +24,8 @@
 | 13    | `20260811130000_prompt09_release_hardening.sql`                   | identidade CPF + telefone, consentimento, rate limit, extrato e recuperação de checkout |
 | 14    | `20260811170000_prompt09_reaudit_hardening.sql`                   | ACL legado, consentimento append-only, TTL e cleanup incremental                         |
 | 15    | `20260811200418_loyalty_rewards_redemptions_vouchers.sql`         | rewards, resgate atômico, estoque auditável e vouchers                                   |
+| 16    | `20260812030000_prompt10_release_hardening.sql`                    | replay autenticado por recovery secret, FKs relacionais e métricas corretas               |
+| 17    | `20260812090000_prompt10_final_integrity_hardening.sql`            | BigInt como texto decimal, stock único por redemption e consumo auditável                 |
 
 Checkpoint oficial de 2026-08-11: `supabase migration list` apresenta Local == Remote para as 15
 versões; `supabase db lint --linked` passou sem erros.
@@ -697,7 +699,7 @@ mais recentes do extrato, ordenadas por `created_at DESC, id DESC`. Cada entrada
 | `get_public_loyalty_account(text)`                                             | `anon`/`authenticated`          | token repetível válido; dados mascarados, saldo, até 50 entradas de extrato e até 20 vouchers `issued`                                                                                                           |
 | `get_loyalty_program_admin(uuid)`                                              | owner                           | programa + `stats.members_count`                                                                                                                                                                                |
 | `set_loyalty_program_enabled(uuid,boolean)`                                    | owner                           | ativa/desativa o programa (cria a linha no primeiro enable)                                                                                                                                                     |
-| `get_loyalty_members_admin(uuid,integer,uuid)`                                 | owner                           | lista paginada (`limit` 1..200) com `cpf_last2`, nome, saldo, `recovery_points`, `total_earned`/`total_reversed` calculados e `member_since`                                                                    |
+| `get_loyalty_members_admin(uuid,integer,uuid)`                                 | owner                           | lista paginada (`limit` 1..200) com pontos em texto decimal e totais `earn`/`redeem`/`reversal` independentes                                                                                                 |
 | `create_public_order_v2(text,uuid,jsonb,text)`                                 | `anon`/`authenticated`          | checkout idempotente com attempt hash                                                                                                                                                                           |
 | `get_public_order_by_attempt(text,uuid,text)`                                  | `anon`/`authenticated`          | recovery minimizado ou `found=false`                                                                                                                                                                            |
 | `_loyalty_earn_order(orders)`                                                  | interno (revogado de navegador) | earn idempotente: membership presente, `payment_status <> 'refunded'` (guard de hardening), programa habilitado, `points = floor(subtotal * points_per_real) > 0`; paga `recovery_points` antes de compor saldo |
@@ -799,7 +801,14 @@ booleana e revisão opaca; nunca revela estoque exato ou organização. Programa
 
 O custo vem da reward bloqueada, nunca do browser. O código retornado é formatado como
 `ABCD-EF12-3456-7890`. `get_public_redemption_by_attempt(text,uuid,text)` recupera a mesma resposta
-por slug, idempotency UUID e segredo de 64 hex, ou retorna `found=false`, sem PII ou IDs internos.
+por slug, idempotency UUID e segredo de 64 hex correto, ou retorna `found=false`, sem PII ou IDs
+internos. Replay de resgate exige `public_slug`, `idempotency_key` e `recovery_secret` correto; secret
+ausente ou divergente nunca retorna o bearer voucher. O lock é organization-wide por organização +
+idempotency key.
+
+Todos os `bigint` autoritativos de pontos cruzam JSON como texto decimal. Isso inclui saldo,
+recovery, custos, deltas de ledger e métricas. O cliente valida a string e usa `BigInt`; valores
+monetários `numeric(12,2)` permanecem strings decimais monetárias.
 
 ### 10.3 Administração e operação
 
@@ -913,23 +922,24 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
-Checkpoint do Prompt 10 (`FRONTEND_IMPLEMENTED`):
+Checkpoint do Prompt 10 (`READY_FOR_REAUDIT`):
 
-- migration `20260811200418_loyalty_rewards_redemptions_vouchers.sql` aplicada oficialmente;
-  **15 migrations Local == Remote**;
+- migrations do Prompt 10 versionadas até `20260812090000_prompt10_final_integrity_hardening.sql`;
+  **17 migrations no release esperado**;
 - `supabase db lint --linked`: sem erros;
 - loyalty `loyalty_integrity.test.mjs` **148/148 PASS** cobrindo identidade CPF + telefone,
   consentimento, token repetível/consumido, disable explícito, rate limit opaco, extrato público,
   checkout v2/recovery, ledger, owner-only e ACL/RLS;
-- rewards/vouchers `loyalty_rewards_integrity.test.mjs` **215/215 PASS** cobrindo ACL/RLS, RBAC,
+- rewards/vouchers `loyalty_rewards_integrity.test.mjs` **254/254 PASS** cobrindo ACL/RLS, RBAC,
   idempotência, concorrência, saldo/estoque, recovery, vouchers e ausência de DELETE;
 - Edge unit **15/15 PASS** e remote smoke **36/36 PASS** contra `loyalty-cpf` deployada com
   `verify_jwt` ativo;
-- frontend **216/216**, E2E **176/176** e suíte Prompt 10 **28/28** nos quatro viewports;
+- DB isolado **22/22**, **32/32**, **80/80**, **123/123**, **121/121**, **318/318**, **148/148** e
+  **254/254**; Edge unit **15/15** e db lint local sem erros;
 - CI `31556667041` e Cloudflare deployment `75cefe86-d513-48f3-ab7d-c483100d3127`, source
   `9a62b79`, aprovados.
 
-Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 15 migrations:
+Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 17 migrations:
 
 - migrations `20260810144145_orders_checkout.sql` e
   `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente naquele checkpoint;

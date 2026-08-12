@@ -947,6 +947,19 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
 - **Justificativa:** preservar integridade referencial, redemptions históricos, vouchers emitidos,
   stock events, auditoria e todo o histórico operacional do programa de fidelidade.
 
+### DEC-109 — Pontos públicos usam texto decimal e CI de backend é isolada
+
+- **Status:** APROVADA
+- **Data:** 2026-08-12
+- **Decisão:** todo `bigint` autoritativo de pontos cruza JSON como texto decimal validado e é operado
+  no browser com `BigInt`. O CI obrigatório reconstrói migrations e executa DB lint, oito suítes DB e
+  Edge unit contra Supabase local descartável, sem credenciais do projeto oficial. Uma operação de
+  redemption que já adquiriu seus locks antes de disable/revogação pode concluir; operações que
+  validam o estado depois do disable são rejeitadas. Nenhum dos casos pode cruzar tenant ou produzir
+  artefatos parcialmente relacionados.
+- **Justificativa:** preservar precisão acima de `Number.MAX_SAFE_INTEGER`, tornar o release
+  reproduzível pelo Git e documentar uma semântica concorrente segura sem lock global excessivo.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

@@ -7,7 +7,7 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 ## Estado atual
 
 Fase 3C, Prompt 10: Recompensas, resgate atômico e vouchers do Clube Ped-On, `IN_PROGRESS`.
-Checkpoint `FRONTEND_IMPLEMENTED` na release `9a62b79`: backend, frontend, testes, CI e deploy de
+Checkpoint `READY_FOR_REAUDIT`: hardening de banco, frontend, testes e CI preparado para reauditoria
 produção verificados; fechamento documental em andamento.
 
 O produto atual inclui:
@@ -61,7 +61,7 @@ ped-on/
 │       └── src/                   # app, componentes, domínio web e páginas
 ├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # 15 migrations versionadas até Prompt 10
+│   ├── migrations/                # 17 migrations versionadas até o hardening do Prompt 10
 │   ├── tests/                     # oito suítes DB e smoke remoto da Edge
 │   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
 │   └── seed.example.sql           # seed de exemplo, sem dados reais
@@ -130,7 +130,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O projeto oficial possui 15 migrations Local == Remote:
+O release esperado possui 17 migrations ordenadas e reproduzíveis:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -147,6 +147,8 @@ O projeto oficial possui 15 migrations Local == Remote:
 13. `20260811130000_prompt09_release_hardening.sql`
 14. `20260811170000_prompt09_reaudit_hardening.sql`
 15. `20260811200418_loyalty_rewards_redemptions_vouchers.sql`
+16. `20260812030000_prompt10_release_hardening.sql`
+17. `20260812090000_prompt10_final_integrity_hardening.sql`
 
 Fluxo linked não destrutivo:
 
@@ -162,10 +164,10 @@ aplicada e não usar `supabase db reset` como substituto desse fluxo.
 
 ## Testes verificados
 
-- frontend unit/component: 216/216;
-- E2E mocked: 176/176 em 360/768/1024/1440; suíte dedicada do Prompt 10: 28/28;
-- banco: RLS 22/22, RBAC 31/31, operacional 80/80, catálogo 123/123, menu 121/121,
-  pedidos 318/318, loyalty 148/148 e rewards/vouchers 215/215;
+- frontend unit/component: 233/233;
+- E2E mocked: 192/192 em 360/768/1024/1440; suíte dedicada do Prompt 10: 44/44, mais smoke com SW ativo;
+- banco isolado: RLS 22/22, RBAC 32/32, operacional 80/80, catálogo 123/123, menu 121/121,
+  pedidos 318/318, loyalty 148/148 e rewards/vouchers 254/254;
 - Edge unit: 15/15;
 - Edge remote smoke: 36/36;
 - `supabase db lint --linked`: PASS;
@@ -200,6 +202,6 @@ passaram na verificação de 2026-08-11. O run CI `31556667041` e o deployment C
 - `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 
-Próximo passo oficial: concluir e versionar o fechamento documental. O Prompt 10 permanece
-`IN_PROGRESS`, no checkpoint `FRONTEND_IMPLEMENTED`, até essa verificação final; não declarar
+Próximo passo oficial: reauditoria independente. O Prompt 10 permanece `IN_PROGRESS`, no checkpoint
+`READY_FOR_REAUDIT`, até a decisão externa; não declarar
 `COMPLETED` ou `RELEASE_VERIFIED` antes dela.
