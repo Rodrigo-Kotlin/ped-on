@@ -10,6 +10,7 @@ vi.mock('../lib/supabase', () =>
 );
 
 import type { PublicMenuData, PublicMenuResult } from '../lib/menu/menu';
+import type { PublicRewardsResult } from '../lib/loyalty/public-rewards';
 import { resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
 import { ClubePage } from './ClubePage';
 
@@ -51,6 +52,15 @@ const foundPayload = {
   },
 };
 
+const publicReward = {
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Café grátis',
+  description: 'Um café da casa',
+  points_cost: '80',
+  available: true,
+  revision: '2026-08-11T12:00:00.123456Z',
+};
+
 function edgeResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -58,15 +68,29 @@ function edgeResponse(status: number, body: unknown): Response {
   });
 }
 
-function renderClube(result: PublicMenuResult, initialEntry = '/clube/abc') {
+function renderClube(
+  result: PublicMenuResult,
+  initialEntry = '/clube/abc',
+  rewardsResult: PublicRewardsResult = { found: true, loyalty_enabled: true, rewards: [] },
+  otherRpc?: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{
+    data: unknown;
+    error: unknown;
+  }>,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  supabaseMock.rpc.mockImplementation((fn: string) => {
+  supabaseMock.rpc.mockImplementation((fn: string, args: Record<string, unknown>) => {
     if (fn === 'get_public_menu') {
       return Promise.resolve({ data: result, error: null });
     }
-    return Promise.resolve({ data: null, error: null });
+    if (fn === 'get_public_loyalty_rewards') {
+      return Promise.resolve({ data: rewardsResult, error: null });
+    }
+    return otherRpc?.(fn, args) ?? Promise.resolve({ data: null, error: null });
   });
 
   function Wrapper({ children }: { children: ReactNode }) {
@@ -145,6 +169,216 @@ describe('ClubePage', () => {
     expect(await screen.findByRole('heading', { name: 'Clube Ped-On' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Consultar meus pontos/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Entrar no Clube/ })).toBeInTheDocument();
+  });
+
+  it('mostra o catálogo antes da identificação usando uma chave pública por slug', async () => {
+    renderClube(foundMenu, '/clube/abc', {
+      found: true,
+      loyalty_enabled: true,
+      rewards: [publicReward],
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Café grátis' })).toBeInTheDocument();
+    expect(screen.getByText('80 pontos')).toBeInTheDocument();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('get_public_loyalty_rewards', {
+      p_public_slug: 'abc',
+    });
+  });
+
+  it('pede a consulta e reutiliza o formulário CPF e telefone ao tentar trocar sem conta', async () => {
+    const user = userEvent.setup();
+    renderClube(foundMenu, '/clube/abc', {
+      found: true,
+      loyalty_enabled: true,
+      rewards: [publicReward],
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Trocar por 80 pontos' }));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Consulte seus pontos para realizar a troca.',
+    );
+    expect(screen.getByRole('region', { name: 'Consultar meus pontos' })).toBeInTheDocument();
+    expect(screen.getByLabelText('CPF')).toBeInTheDocument();
+    expect(screen.getByLabelText('Telefone com DDD')).toBeInTheDocument();
+  });
+
+  it('bloqueia todas as recompensas disponíveis enquanto há pontos em recuperação', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(
+      edgeResponse(200, { ...foundPayload, account: { points_balance: 120, recovery_points: 5 } }),
+    );
+    renderClube(foundMenu, '/clube/abc', {
+      found: true,
+      loyalty_enabled: true,
+      rewards: [
+        publicReward,
+        {
+          ...publicReward,
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'Almoço',
+          points_cost: '150',
+        },
+        {
+          ...publicReward,
+          id: '33333333-3333-4333-8333-333333333333',
+          name: 'Brinde',
+          available: false,
+        },
+      ],
+    });
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+
+    expect(await screen.findByText('Em recuperação')).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('button', { name: 'Troca bloqueada durante a recuperação' }),
+    ).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Indisponível' })).toBeDisabled();
+  });
+
+  it('mostra recompensa suficiente e calcula exatamente os pontos faltantes', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(edgeResponse(200, foundPayload));
+    renderClube(foundMenu, '/clube/abc', {
+      found: true,
+      loyalty_enabled: true,
+      rewards: [
+        publicReward,
+        {
+          ...publicReward,
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'Almoço',
+          points_cost: '150',
+        },
+      ],
+    });
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+
+    expect(await screen.findByRole('button', { name: 'Trocar por 80 pontos' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Faltam 30 pontos' })).toBeDisabled();
+  });
+
+  it('confirma em diálogo acessível, restaura foco e exibe o voucher após o resgate', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(edgeResponse(200, foundPayload));
+    const redemption = {
+      found: true,
+      redemption: {
+        reward_name: 'Café grátis',
+        points_cost: '80',
+        created_at: '2026-08-11T13:00:00Z',
+      },
+      voucher: {
+        code: 'ABCD-EF12-3456-7890',
+        status: 'issued',
+        issued_at: '2026-08-11T13:00:00Z',
+      },
+    };
+    renderClube(
+      foundMenu,
+      '/clube/abc',
+      { found: true, loyalty_enabled: true, rewards: [publicReward] },
+      (fn) =>
+        Promise.resolve(
+          fn === 'redeem_public_loyalty_reward'
+            ? { data: redemption, error: null }
+            : { data: null, error: null },
+        ),
+    );
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+
+    const swapButton = await screen.findByRole('button', { name: 'Trocar por 80 pontos' });
+    await user.click(swapButton);
+    const dialog = screen.getByRole('dialog', { name: 'Confirmar troca' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(within(dialog).getByText('Saldo atual')).toBeInTheDocument();
+    expect(within(dialog).getByText('Saldo após troca')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('A troca gera um voucher e não pode ser cancelada no Core MVP.'),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(swapButton).toHaveFocus();
+
+    await user.click(swapButton);
+    await user.click(screen.getByRole('button', { name: 'Confirmar troca' }));
+
+    expect(await screen.findByText('Recompensa resgatada!')).toBeInTheDocument();
+    expect(screen.getByText('ABCD-EF12-3456-7890')).toBeInTheDocument();
+    expect(screen.getByText('Resgate de recompensa')).toBeInTheDocument();
+    expect(screen.getByText('-80 pontos')).toBeInTheDocument();
+    const redeemCall = supabaseMock.rpc.mock.calls.find(
+      (call: unknown[]) => call[0] === 'redeem_public_loyalty_reward',
+    );
+    expect(redeemCall?.[1]).toMatchObject({
+      p_public_slug: 'abc',
+      p_reward_id: publicReward.id,
+      p_reward_revision: publicReward.revision,
+      p_access_token: 'a'.repeat(64),
+    });
+    expect(redeemCall?.[1]).not.toHaveProperty('p_points_cost');
+    expect(String((redeemCall?.[1] as Record<string, unknown>).p_idempotency_key)).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
+    expect(String((redeemCall?.[1] as Record<string, unknown>).p_recovery_secret)).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+    expect(localStorage.getItem('pedon:pending-redemption:abc')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Atualizar saldo' })).toBeDisabled();
+  });
+
+  it('recupera uma troca pendente ao carregar e limpa somente após encontrar o voucher', async () => {
+    localStorage.setItem(
+      'pedon:pending-redemption:abc',
+      JSON.stringify({
+        public_slug: 'abc',
+        idempotency_key: '22222222-2222-4222-8222-222222222222',
+        recovery_secret: 'b'.repeat(64),
+        reward_id: publicReward.id,
+        created_at: new Date().toISOString(),
+      }),
+    );
+    renderClube(foundMenu, '/clube/abc', undefined, (fn) =>
+      Promise.resolve(
+        fn === 'get_public_redemption_by_attempt'
+          ? {
+              data: {
+                found: true,
+                redemption: {
+                  reward_name: 'Café grátis',
+                  points_cost: '80',
+                  created_at: '2026-08-11T13:00:00Z',
+                },
+                voucher: {
+                  code: 'ABCD-EF12-3456-7890',
+                  status: 'issued',
+                  issued_at: '2026-08-11T13:00:00Z',
+                },
+              },
+              error: null,
+            }
+          : { data: null, error: null },
+      ),
+    );
+
+    expect(
+      await screen.findByText('Troca recuperada com sucesso. Seu voucher está pronto.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('ABCD-EF12-3456-7890')).toBeInTheDocument();
+    expect(localStorage.getItem('pedon:pending-redemption:abc')).toBeNull();
   });
 
   it('consulta o CPF e exibe o saldo do cliente', async () => {
@@ -374,6 +608,46 @@ describe('ClubePage', () => {
     expect(screen.getByText('-20 pontos')).toBeInTheDocument();
     expect(screen.getByText('Saldo disponível: -20 pontos')).toBeInTheDocument();
     expect(screen.queryByText(/Valor elegível:/)).not.toBeInTheDocument();
+  });
+
+  it('renderiza resgate com pontos negativos sem Pedido #null e mostra vouchers ativos', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(
+      edgeResponse(200, {
+        ...foundPayload,
+        statement: [
+          {
+            entry_type: 'redeem',
+            gross_points: 80,
+            points_delta: -80,
+            recovery_delta: 0,
+            eligible_amount: null,
+            order_number: null,
+            created_at: '2026-08-11T13:00:00Z',
+          },
+        ],
+        vouchers: [
+          {
+            code: 'ABCD-EF12-3456-7890',
+            reward_name: 'Café grátis',
+            points_cost: '80',
+            issued_at: '2026-08-11T13:00:00Z',
+          },
+        ],
+      }),
+    );
+    renderClube(foundMenu);
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+
+    expect(await screen.findByText('Resgate de recompensa')).toBeInTheDocument();
+    expect(screen.getByText('-80 pontos')).toBeInTheDocument();
+    expect(screen.queryByText(/Pedido #null/)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Meus vouchers' })).toBeInTheDocument();
+    expect(screen.getByText('ABCD-EF12-3456-7890')).toBeInTheDocument();
   });
 
   it('explica pontos enviados e compensados na recuperação', async () => {

@@ -9,6 +9,7 @@ import {
   normalizeCpf,
   normalizePhone,
   randomTokenHex,
+  sanitizeAccountVouchers,
   type HandlerDependencies,
   type RpcClient,
 } from './index.ts';
@@ -113,6 +114,29 @@ Deno.test('HMAC accepts a hexadecimal key and generated token is 64 hex characte
   assert(/^[a-f0-9]{64}$/.test(randomTokenHex()));
 });
 
+Deno.test('account vouchers forward only public fields and discard invalid entries', () => {
+  assertEquals(
+    sanitizeAccountVouchers([
+      {
+        code: 'ABCD-EF12-3456-7890',
+        reward_name: 'Café',
+        points_cost: '50',
+        issued_at: '2026-08-11T12:00:00Z',
+        membership_id: 'private',
+      },
+      { code: 'invalid' },
+    ]),
+    [
+      {
+        code: 'ABCD-EF12-3456-7890',
+        reward_name: 'Café',
+        points_cost: '50',
+        issued_at: '2026-08-11T12:00:00Z',
+      },
+    ],
+  );
+});
+
 Deno.test('invalid JSON is rejected', async () => {
   const mock = mockDependencies([]);
   const response = await createHandler(mock.dependencies)(post('{'));
@@ -200,6 +224,15 @@ Deno.test('enroll sends the server consent version and uses the lower rate limit
         customer: { name: 'Cliente Teste', cpf_last2: '25' },
         account: { points_balance: 0, recovery_points: 0, updated_at: '2026-08-11T12:00:00Z' },
         statement: [],
+        vouchers: [
+          {
+            code: 'ABCD-EF12-3456-7890',
+            reward_name: 'Café',
+            points_cost: '50',
+            issued_at: '2026-08-11T12:00:00Z',
+            private_value: 'not-forwarded',
+          },
+        ],
       },
       error: null,
     },
@@ -211,7 +244,19 @@ Deno.test('enroll sends the server consent version and uses the lower rate limit
   assertEquals(mock.calls[1].args.p_max_attempts, 5);
   assertEquals(mock.calls[2].args.p_consent_version, CONSENT_VERSION);
   assertEquals(mock.calls[3].name, 'get_public_loyalty_account');
-  assertEquals(((await responseJson(response)) as { statement: unknown[] }).statement, []);
+  const responseBody = (await responseJson(response)) as {
+    statement: unknown[];
+    vouchers: unknown[];
+  };
+  assertEquals(responseBody.statement, []);
+  assertEquals(responseBody.vouchers, [
+    {
+      code: 'ABCD-EF12-3456-7890',
+      reward_name: 'Café',
+      points_cost: '50',
+      issued_at: '2026-08-11T12:00:00Z',
+    },
+  ]);
 });
 
 async function mismatchResponse(phone: string): Promise<{

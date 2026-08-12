@@ -76,6 +76,9 @@ export function AppShell() {
             <NavLink to="/app/catalogo" className={navLinkClass}>
               Catálogo
             </NavLink>
+            <NavLink to="/app/vouchers" className={navLinkClass}>
+              Vouchers
+            </NavLink>
           </>
         )}
         {(role === 'owner' || role === 'manager') && (

@@ -1,5 +1,5 @@
 import { renderWithProviders } from '@pedon/test-utils';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -59,6 +59,28 @@ const membersPage = {
   ],
 };
 
+const reward = {
+  id: 'reward-1',
+  organization_id: 'org-1',
+  name: 'Café grátis',
+  description: 'Um café coado',
+  points_cost: '9007199254740993',
+  stock_quantity: '9007199254740995',
+  is_active: true,
+  sort_order: 1,
+  created_at: '2026-08-11T10:00:00Z',
+  updated_at: '2026-08-11T10:00:00Z',
+  revision: '2026-08-11T10:00:00.000000Z',
+};
+
+const rewardsPage = {
+  organization_id: 'org-1',
+  count: 1,
+  has_more: false,
+  next_cursor: null,
+  rewards: [reward],
+};
+
 function mockRpc(overrides: Record<string, unknown> = {}) {
   let enabled = programData.program.enabled;
   supabaseMock.rpc.mockImplementation((fn: string) => {
@@ -73,6 +95,9 @@ function mockRpc(overrides: Record<string, unknown> = {}) {
     }
     if (fn === 'get_loyalty_members_admin') {
       return Promise.resolve({ data: membersPage, error: null });
+    }
+    if (fn === 'get_loyalty_rewards_admin') {
+      return Promise.resolve({ data: rewardsPage, error: null });
     }
     if (fn === 'set_loyalty_program_enabled') {
       enabled = Boolean(overrides.enabled ?? false);
@@ -124,6 +149,139 @@ describe('ClubeAdminPage', () => {
     expect(screen.getByText('2 membros exibidos')).toBeInTheDocument();
   });
 
+  it('lista recompensas ativas com custo e estoque bigint exatos', async () => {
+    mockRpc();
+    renderClubeAdmin();
+
+    expect(await screen.findByRole('heading', { name: 'Recompensas' })).toBeInTheDocument();
+    expect(screen.getByText('Café grátis')).toBeInTheDocument();
+    expect(screen.getByText('9007199254740993 pontos')).toBeInTheDocument();
+    expect(screen.getByText('9007199254740995 unidades')).toBeInTheDocument();
+    expect(screen.getByText('Ativa')).toBeInTheDocument();
+  });
+
+  it('cria recompensa com custo e estoque em strings decimais', async () => {
+    const user = userEvent.setup();
+    mockRpc();
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_admin_context')
+        return Promise.resolve({ data: adminContext, error: null });
+      if (fn === 'get_loyalty_program_admin')
+        return Promise.resolve({ data: programData, error: null });
+      if (fn === 'get_loyalty_members_admin')
+        return Promise.resolve({ data: membersPage, error: null });
+      if (fn === 'get_loyalty_rewards_admin')
+        return Promise.resolve({ data: rewardsPage, error: null });
+      if (fn === 'create_loyalty_reward') return Promise.resolve({ data: reward, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    renderClubeAdmin();
+
+    const form = await screen.findByRole('form', { name: 'Criar recompensa' });
+    await user.type(within(form).getByLabelText('Nome'), 'Suco grátis');
+    await user.type(within(form).getByLabelText('Custo em pontos'), '250');
+    await user.clear(within(form).getByLabelText('Estoque inicial'));
+    await user.type(within(form).getByLabelText('Estoque inicial'), '12');
+    await user.click(within(form).getByRole('button', { name: 'Criar recompensa' }));
+
+    await waitFor(() => {
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('create_loyalty_reward', {
+        p_organization_id: 'org-1',
+        p_payload: {
+          name: 'Suco grátis',
+          description: null,
+          points_cost: '250',
+          initial_stock: '12',
+        },
+      });
+    });
+  });
+
+  it('ajusta estoque somente após confirmação explícita com valores atual e novo', async () => {
+    const user = userEvent.setup();
+    mockRpc();
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_admin_context')
+        return Promise.resolve({ data: adminContext, error: null });
+      if (fn === 'get_loyalty_program_admin')
+        return Promise.resolve({ data: programData, error: null });
+      if (fn === 'get_loyalty_members_admin')
+        return Promise.resolve({ data: membersPage, error: null });
+      if (fn === 'get_loyalty_rewards_admin')
+        return Promise.resolve({ data: rewardsPage, error: null });
+      if (fn === 'set_loyalty_reward_stock') return Promise.resolve({ data: reward, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderClubeAdmin();
+
+    await user.click(await screen.findByRole('button', { name: 'Ajustar estoque' }));
+    expect(screen.getByText(/Estoque atual:/)).toHaveTextContent('9007199254740995');
+    const stockInput = screen.getByLabelText('Novo estoque');
+    await user.clear(stockInput);
+    await user.type(stockInput, '9007199254740997');
+    await user.click(screen.getByRole('button', { name: 'Confirmar novo estoque' }));
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Estoque atual: 9007199254740995'),
+    );
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Novo estoque: 9007199254740997'));
+    await waitFor(() => {
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('set_loyalty_reward_stock', {
+        p_reward_id: 'reward-1',
+        p_stock: '9007199254740997',
+      });
+    });
+  });
+
+  it('mantém recompensa inativa listada e permite reativá-la com confirmação', async () => {
+    const user = userEvent.setup();
+    const inactiveReward = { ...reward, is_active: false };
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_admin_context')
+        return Promise.resolve({ data: adminContext, error: null });
+      if (fn === 'get_loyalty_program_admin')
+        return Promise.resolve({ data: programData, error: null });
+      if (fn === 'get_loyalty_members_admin')
+        return Promise.resolve({ data: membersPage, error: null });
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({
+          data: { ...rewardsPage, rewards: [inactiveReward] },
+          error: null,
+        });
+      }
+      if (fn === 'set_loyalty_reward_active') {
+        return Promise.resolve({ data: { ...inactiveReward, is_active: true }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderClubeAdmin();
+
+    expect(await screen.findByText('Inativa')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ativar recompensa' }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Confirmar ativar'));
+    await waitFor(() => {
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('set_loyalty_reward_active', {
+        p_reward_id: 'reward-1',
+        p_active: true,
+      });
+    });
+  });
+
+  it('não oferece exclusão nem chama RPC de delete', async () => {
+    mockRpc();
+    renderClubeAdmin();
+
+    await screen.findByRole('heading', { name: 'Recompensas' });
+    expect(screen.queryByText(/Excluir/i)).not.toBeInTheDocument();
+    expect(supabaseMock.rpc).not.toHaveBeenCalledWith('delete_loyalty_reward', expect.anything());
+    expect(supabaseMock.rpc.mock.calls.some(([name]) => name === 'delete_loyalty_reward')).toBe(
+      false,
+    );
+  });
+
   it('avisa que o Clube está desativado e oferece ativação', async () => {
     mockRpc();
     supabaseMock.rpc.mockImplementation((fn: string) => {
@@ -138,6 +296,9 @@ describe('ClubeAdminPage', () => {
       }
       if (fn === 'get_loyalty_members_admin') {
         return Promise.resolve({ data: membersPage, error: null });
+      }
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({ data: rewardsPage, error: null });
       }
       return Promise.resolve({ data: null, error: null });
     });
@@ -189,6 +350,9 @@ describe('ClubeAdminPage', () => {
       }
       if (fn === 'get_loyalty_members_admin') {
         return Promise.resolve({ data: membersPage, error: null });
+      }
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({ data: rewardsPage, error: null });
       }
       if (fn === 'set_loyalty_program_enabled') {
         enabled = true;
@@ -248,6 +412,9 @@ describe('ClubeAdminPage', () => {
           error: null,
         });
       }
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({ data: rewardsPage, error: null });
+      }
       return Promise.resolve({ data: null, error: null });
     });
     renderClubeAdmin();
@@ -293,6 +460,9 @@ describe('ClubeAdminPage', () => {
           error: null,
         });
       }
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({ data: rewardsPage, error: null });
+      }
       return Promise.resolve({ data: null, error: null });
     });
     renderClubeAdmin();
@@ -319,6 +489,9 @@ describe('ClubeAdminPage', () => {
       if (fn === 'get_loyalty_members_admin') {
         return Promise.resolve({ data: membersPage, error: null });
       }
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({ data: rewardsPage, error: null });
+      }
       if (fn === 'set_loyalty_program_enabled') {
         return Promise.resolve({ data: null, error: { code: 'PED53', message: 'DB' } });
       }
@@ -344,6 +517,9 @@ describe('ClubeAdminPage', () => {
       }
       if (fn === 'get_loyalty_members_admin') {
         return Promise.resolve({ data: membersPage, error: null });
+      }
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({ data: rewardsPage, error: null });
       }
       return Promise.resolve({ data: null, error: null });
     });
@@ -374,6 +550,9 @@ describe('ClubeAdminPage', () => {
           },
           error: null,
         });
+      }
+      if (fn === 'get_loyalty_rewards_admin') {
+        return Promise.resolve({ data: rewardsPage, error: null });
       }
       return Promise.resolve({ data: null, error: null });
     });

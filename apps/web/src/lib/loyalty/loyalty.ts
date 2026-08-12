@@ -21,12 +21,12 @@ export type LoyaltyResolveInput =
     };
 
 export interface LoyaltyStatementEntry {
-  entry_type: 'earn' | 'reversal';
+  entry_type: 'earn' | 'reversal' | 'redeem';
   gross_points: number;
   points_delta: number;
   recovery_delta: number;
   eligible_amount: string | null;
-  order_number: number;
+  order_number: number | null;
   created_at: string;
 }
 
@@ -37,11 +37,52 @@ export interface LoyaltyResolveFound {
   membership_id: string;
   customer: { name: string | null; cpf_last2: string };
   account: { points_balance: number; recovery_points: number };
-  statement?: LoyaltyStatementEntry[];
+  statement?: LoyaltyStatementEntry[] | undefined;
+  vouchers?: LoyaltyVoucher[] | undefined;
   token: { access_token: string; expires_at: string };
 }
 
 export type LoyaltyResolveResult = LoyaltyResolveFound | { found: false };
+
+export interface LoyaltyVoucher {
+  code: string;
+  reward_name: string;
+  points_cost: string;
+  issued_at: string;
+}
+
+const loyaltyStatementEntrySchema = z.object({
+  entry_type: z.enum(['earn', 'reversal', 'redeem']),
+  gross_points: z.number(),
+  points_delta: z.number(),
+  recovery_delta: z.number(),
+  eligible_amount: z.string().nullable(),
+  order_number: z.number().int().nullable(),
+  created_at: z.string(),
+});
+
+const loyaltyVoucherSchema = z.object({
+  code: z.string(),
+  reward_name: z.string(),
+  points_cost: z.string().regex(/^\d+$/),
+  issued_at: z.string(),
+});
+
+const loyaltyResolveResultSchema = z.discriminatedUnion('found', [
+  z.object({ found: z.literal(false) }),
+  z.object({
+    found: z.literal(true),
+    membership_id: z.string().uuid(),
+    customer: z.object({ name: z.string().nullable(), cpf_last2: z.string().regex(/^\d{2}$/) }),
+    account: z.object({ points_balance: z.number(), recovery_points: z.number() }),
+    statement: z.array(loyaltyStatementEntrySchema).optional(),
+    vouchers: z.array(loyaltyVoucherSchema).optional(),
+    token: z.object({
+      access_token: z.string().regex(/^[a-f0-9]{64}$/),
+      expires_at: z.string(),
+    }),
+  }),
+]);
 
 export type LoyaltyEdgeErrorCode =
   | 'INVALID_MODE'
@@ -174,6 +215,7 @@ export async function resolveLoyaltyIdentity(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
   } catch {
     throw new LoyaltyError(LOYALTY_NETWORK_ERROR_MESSAGE, null, true);
@@ -191,14 +233,9 @@ export async function resolveLoyaltyIdentity(
     throw new LoyaltyError(mapEdgeError(code), code);
   }
 
-  const result = payload as LoyaltyResolveResult;
-  if (result?.found === true) {
-    const token = result.token?.access_token;
-    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) {
-      throw new LoyaltyError(mapEdgeError('UPSTREAM_ERROR'), 'UPSTREAM_ERROR');
-    }
-  }
-  return result;
+  const result = loyaltyResolveResultSchema.safeParse(payload);
+  if (!result.success) throw new LoyaltyError(mapEdgeError('UPSTREAM_ERROR'), 'UPSTREAM_ERROR');
+  return result.data;
 }
 
 export function isLoyaltyToken(value: unknown): value is string {
@@ -215,9 +252,26 @@ export interface PublicLoyaltyAccountFound {
   customer: { name: string | null; cpf_last2: string };
   account: { points_balance: number; recovery_points: number; updated_at: string };
   statement: LoyaltyStatementEntry[];
+  vouchers: LoyaltyVoucher[];
 }
 
 export type PublicLoyaltyAccountResult = PublicLoyaltyAccountFound | { found: false };
+
+const publicLoyaltyAccountResultSchema = z.discriminatedUnion('found', [
+  z.object({ found: z.literal(false) }),
+  z.object({
+    found: z.literal(true),
+    organization: z.object({ name: z.string() }),
+    customer: z.object({ name: z.string().nullable(), cpf_last2: z.string().regex(/^\d{2}$/) }),
+    account: z.object({
+      points_balance: z.number(),
+      recovery_points: z.number(),
+      updated_at: z.string(),
+    }),
+    statement: z.array(loyaltyStatementEntrySchema),
+    vouchers: z.array(loyaltyVoucherSchema).default([]),
+  }),
+]);
 
 export async function fetchPublicLoyaltyAccount(
   accessToken: string,
@@ -229,7 +283,9 @@ export async function fetchPublicLoyaltyAccount(
     if (error) {
       throw error;
     }
-    return (data as PublicLoyaltyAccountResult | null) ?? { found: false };
+    const parsed = publicLoyaltyAccountResultSchema.safeParse(data ?? { found: false });
+    if (!parsed.success) throw new Error('Invalid loyalty account response');
+    return parsed.data;
   } catch {
     throw new LoyaltyError(
       'Não foi possível atualizar o saldo. Verifique sua conexão e tente novamente.',

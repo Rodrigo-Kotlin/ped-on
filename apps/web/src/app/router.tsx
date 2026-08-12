@@ -20,6 +20,7 @@ import { PedidosPage } from '../pages/PedidosPage';
 import { PublicMenuPage } from '../pages/PublicMenuPage';
 import { TrackingPage } from '../pages/TrackingPage';
 import { SignupPage } from '../pages/SignupPage';
+import { VouchersPage } from '../pages/VouchersPage';
 import { App } from './App';
 
 export const appRoutes: RouteObject[] = [
@@ -76,6 +77,7 @@ export const appRoutes: RouteObject[] = [
           { index: true, element: <AppPage /> },
           { path: 'pedidos', element: <PedidosPage /> },
           { path: 'catalogo', element: <CatalogoPage /> },
+          { path: 'vouchers', element: <VouchersPage /> },
           {
             path: 'cardapio',
             element: (

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router';
 import type { SubmitHandler, UseFormRegisterReturn } from 'react-hook-form';
@@ -17,7 +17,26 @@ import {
   maskCpf,
   resolveLoyaltyIdentity,
 } from '../lib/loyalty/loyalty';
-import type { LoyaltyResolveFound, LoyaltyStatementEntry } from '../lib/loyalty/loyalty';
+import type {
+  LoyaltyResolveFound,
+  LoyaltyStatementEntry,
+  LoyaltyVoucher,
+} from '../lib/loyalty/loyalty';
+import {
+  createRecoverySecret,
+  parseRewardPoints,
+  publicLoyaltyRewardsKey,
+  publicLoyaltyRewardsQueryOptions,
+  PublicRewardError,
+  recoverPublicRedemption,
+  redeemPublicLoyaltyReward,
+} from '../lib/loyalty/public-rewards';
+import type { PublicRedemption, PublicReward } from '../lib/loyalty/public-rewards';
+import {
+  clearPendingRedemption,
+  loadPendingRedemption,
+  savePendingRedemption,
+} from '../lib/loyalty/pending-redemption';
 
 type LookupValues = { cpf: string; phone: string };
 type EnrollValues = { cpf: string; phone: string; name: string; consent: boolean };
@@ -92,7 +111,7 @@ function ClubPhoneInput({
   );
 }
 
-function formatPoints(value: number): string {
+function formatPoints(value: number | bigint): string {
   return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value);
 }
 
@@ -103,23 +122,29 @@ function formatSignedPoints(value: number): string {
 
 function StatementEntry({ entry }: { entry: LoyaltyStatementEntry }) {
   const reversal = entry.entry_type === 'reversal';
+  const redemption = entry.entry_type === 'redeem';
+  const negative = reversal || redemption;
   return (
     <li className="py-4 first:pt-0 last:pb-0">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-semibold text-pedon-navy">
-            {reversal ? 'Estorno de pontos' : 'Pontos recebidos'}
+            {redemption
+              ? 'Resgate de recompensa'
+              : reversal
+                ? 'Estorno de pontos'
+                : 'Pontos recebidos'}
           </p>
           <p className="mt-1 text-xs text-pedon-text/65">
-            Pedido #{entry.order_number} ·{' '}
+            {entry.order_number !== null ? `Pedido #${entry.order_number} · ` : ''}
             {new Intl.DateTimeFormat('pt-BR', {
               dateStyle: 'short',
               timeStyle: 'short',
             }).format(new Date(entry.created_at))}
           </p>
         </div>
-        <p className={`shrink-0 font-bold ${reversal ? 'text-red-700' : 'text-green-700'}`}>
-          {reversal ? '-' : '+'}
+        <p className={`shrink-0 font-bold ${negative ? 'text-red-700' : 'text-green-700'}`}>
+          {negative ? '-' : '+'}
           {formatPoints(Math.abs(entry.gross_points))} pontos
         </p>
       </div>
@@ -142,20 +167,246 @@ function StatementEntry({ entry }: { entry: LoyaltyStatementEntry }) {
   );
 }
 
+function VoucherView({
+  voucher,
+  rewardName,
+  message,
+}: {
+  voucher: { code: string; issued_at: string };
+  rewardName: string;
+  message?: string;
+}) {
+  return (
+    <div className="rounded-lg border-2 border-dashed border-pedon-orange/60 bg-orange-50 p-4">
+      {message !== undefined && <p className="font-semibold text-green-800">{message}</p>}
+      <p className="mt-2 text-sm font-medium text-pedon-text/70">{rewardName}</p>
+      <p className="mt-1 break-all font-mono text-xl font-bold tracking-wider text-pedon-navy">
+        {voucher.code}
+      </p>
+      <p className="mt-2 text-xs text-pedon-text/65">
+        Apresente este código à equipe do estabelecimento para receber sua recompensa.
+      </p>
+    </div>
+  );
+}
+
+function ConfirmationDialog({
+  reward,
+  balance,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  reward: PublicReward;
+  balance: number;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !busy) {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable === undefined || focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [busy, onCancel]);
+
+  const cost = parseRewardPoints(reward.points_cost);
+  const remaining = BigInt(Math.trunc(balance)) - cost;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-pedon-navy/55 p-4 sm:items-center">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reward-confirm-title"
+        aria-describedby="reward-confirm-description"
+        className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+      >
+        <h2 id="reward-confirm-title" className="text-xl font-bold text-pedon-navy">
+          Confirmar troca
+        </h2>
+        <p id="reward-confirm-description" className="mt-3 text-pedon-text">
+          Trocar {formatPoints(cost)} pontos por <strong>{reward.name}</strong>?
+        </p>
+        <dl className="mt-4 space-y-2 rounded-md bg-pedon-surface p-3 text-sm">
+          <div className="flex justify-between gap-3">
+            <dt>Saldo atual</dt>
+            <dd className="font-semibold">{formatPoints(balance)} pontos</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt>Custo</dt>
+            <dd className="font-semibold">{formatPoints(cost)} pontos</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt>Saldo após troca</dt>
+            <dd className="font-semibold">{formatPoints(remaining)} pontos</dd>
+          </div>
+        </dl>
+        <p className="mt-3 text-sm font-medium text-amber-900">
+          A troca gera um voucher e não pode ser cancelada no Core MVP.
+        </p>
+        <div className="mt-5 flex gap-3">
+          <button
+            ref={cancelRef}
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="min-h-11 flex-1 rounded-md border border-pedon-navy/25 px-4 font-semibold text-pedon-navy disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+            className="min-h-11 flex-1 rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? 'Trocando…' : 'Confirmar troca'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RewardsCatalog({
+  rewards,
+  balance,
+  recovery,
+  identified,
+  loading,
+  error,
+  onSelect,
+}: {
+  rewards: PublicReward[];
+  balance: number | null;
+  recovery: number;
+  identified: boolean;
+  loading: boolean;
+  error: string | null;
+  onSelect: (reward: PublicReward, opener: HTMLButtonElement) => void;
+}) {
+  return (
+    <section aria-labelledby="club-rewards-title" className="mt-6">
+      <div className="mb-3">
+        <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">
+          Recompensas
+        </p>
+        <h2 id="club-rewards-title" className="text-xl font-bold text-pedon-navy">
+          Troque seus pontos
+        </h2>
+      </div>
+      {loading && (
+        <p role="status" className="text-sm text-pedon-text/65">
+          Carregando recompensas…
+        </p>
+      )}
+      {error !== null && (
+        <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {!loading && error === null && rewards.length === 0 && (
+        <p className="rounded-lg border border-pedon-navy/10 bg-white p-4 text-sm text-pedon-text/70">
+          Nenhuma recompensa disponível no momento.
+        </p>
+      )}
+      <ul className="grid gap-3 sm:grid-cols-2">
+        {rewards.map((reward) => {
+          const cost = parseRewardPoints(reward.points_cost);
+          const missing = balance === null ? 0n : cost - BigInt(Math.trunc(balance));
+          const sufficient = balance !== null && missing <= 0n;
+          const buttonText = !reward.available
+            ? 'Indisponível'
+            : !identified
+              ? `Trocar por ${formatPoints(cost)} pontos`
+              : recovery > 0
+                ? 'Troca bloqueada durante a recuperação'
+                : sufficient
+                  ? `Trocar por ${formatPoints(cost)} pontos`
+                  : `Faltam ${formatPoints(missing)} pontos`;
+          return (
+            <li
+              key={reward.id}
+              className="flex flex-col rounded-lg border border-pedon-navy/15 bg-white p-4 shadow-sm"
+            >
+              <h3 className="font-bold text-pedon-navy">{reward.name}</h3>
+              {reward.description !== null && (
+                <p className="mt-1 grow text-sm text-pedon-text/70">{reward.description}</p>
+              )}
+              <p className="mt-3 font-semibold text-pedon-orange">{formatPoints(cost)} pontos</p>
+              <button
+                type="button"
+                disabled={!reward.available || (identified && (recovery > 0 || !sufficient))}
+                onClick={(event) => onSelect(reward, event.currentTarget)}
+                className="mt-3 min-h-11 rounded-md bg-pedon-navy px-3 font-semibold text-white disabled:bg-pedon-navy/35"
+              >
+                {buttonText}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function LoyaltyAccountView({
   publicSlug,
   account,
   onReset,
+  rewards,
+  rewardsLoading,
+  rewardsError,
+  onRefetchRewards,
+  onConsumeAccessToken,
+  onUpdateAccount,
 }: {
   publicSlug: string;
   account: LoyaltyResolveFound;
   onReset: () => void;
+  rewards: PublicReward[];
+  rewardsLoading: boolean;
+  rewardsError: string | null;
+  onRefetchRewards: () => Promise<unknown>;
+  onConsumeAccessToken: () => void;
+  onUpdateAccount: (account: LoyaltyResolveFound) => void;
 }) {
   const [balance, setBalance] = useState(account.account.points_balance);
   const [recovery, setRecovery] = useState(account.account.recovery_points);
   const [statement, setStatement] = useState(
     (account.statement ?? []).slice(0, LOYALTY_STATEMENT_MAX_ITEMS),
   );
+  const [vouchers, setVouchers] = useState<LoyaltyVoucher[]>(account.vouchers ?? []);
+  const [accessToken, setAccessToken] = useState<string | null>(account.token.access_token);
+  const [selectedReward, setSelectedReward] = useState<PublicReward | null>(null);
+  const [redeeming, setRedeeming] = useState(false);
+  const [redemptionError, setRedemptionError] = useState<string | null>(null);
+  const [redemption, setRedemption] = useState<PublicRedemption | null>(null);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
@@ -164,17 +415,26 @@ function LoyaltyAccountView({
   const greeting = customerName ? customerName : null;
 
   async function refresh() {
-    if (!isLoyaltyToken(account.token.access_token)) return;
+    if (!isLoyaltyToken(accessToken)) return;
     setRefreshing(true);
     setRefreshError(null);
     try {
-      const result = await fetchPublicLoyaltyAccount(account.token.access_token);
+      const result = await fetchPublicLoyaltyAccount(accessToken);
       if (result.found === true) {
         setBalance(result.account.points_balance);
         setRecovery(result.account.recovery_points);
         setStatement(result.statement.slice(0, LOYALTY_STATEMENT_MAX_ITEMS));
+        setVouchers(result.vouchers ?? []);
+        onUpdateAccount({
+          ...account,
+          customer: result.customer,
+          account: result.account,
+          statement: result.statement,
+          vouchers: result.vouchers,
+        });
       } else {
         setExpired(true);
+        setAccessToken(null);
       }
     } catch (error) {
       setRefreshError(
@@ -184,6 +444,76 @@ function LoyaltyAccountView({
       );
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  function closeDialog() {
+    openerRef.current?.focus();
+    setSelectedReward(null);
+  }
+
+  async function redeem() {
+    if (selectedReward === null || !isLoyaltyToken(accessToken)) return;
+    const reward = selectedReward;
+    const idempotencyKey = crypto.randomUUID();
+    const recoverySecret = createRecoverySecret();
+    savePendingRedemption({
+      public_slug: publicSlug,
+      idempotency_key: idempotencyKey,
+      recovery_secret: recoverySecret,
+      reward_id: reward.id,
+      created_at: new Date().toISOString(),
+    });
+    setRedeeming(true);
+    setRedemptionError(null);
+    try {
+      const result = await redeemPublicLoyaltyReward({
+        publicSlug,
+        idempotencyKey,
+        recoverySecret,
+        rewardId: reward.id,
+        rewardRevision: reward.revision,
+        accessToken,
+      });
+      setAccessToken(null);
+      onConsumeAccessToken();
+      clearPendingRedemption(publicSlug);
+      const redeemedPoints = Number(parseRewardPoints(result.redemption.points_cost));
+      setBalance((current) => current - redeemedPoints);
+      setStatement((current) =>
+        [
+          {
+            entry_type: 'redeem',
+            gross_points: redeemedPoints,
+            points_delta: -redeemedPoints,
+            recovery_delta: 0,
+            eligible_amount: null,
+            order_number: null,
+            created_at: result.redemption.created_at,
+          } satisfies LoyaltyStatementEntry,
+          ...current,
+        ].slice(0, LOYALTY_STATEMENT_MAX_ITEMS),
+      );
+      setRedemption(result);
+      closeDialog();
+      void onRefetchRewards();
+    } catch (error) {
+      const rewardError = error instanceof PublicRewardError ? error : null;
+      if (rewardError !== null && rewardError.code !== null) clearPendingRedemption(publicSlug);
+      if (rewardError === null || rewardError.code === null) {
+        setAccessToken(null);
+        onConsumeAccessToken();
+      }
+      setRedemptionError(
+        rewardError?.message ?? 'Não foi possível concluir a troca. Verifique sua conexão.',
+      );
+      if (rewardError?.code === 'PED56' || rewardError?.code === 'PED57') {
+        await onRefetchRewards();
+      }
+      if (rewardError?.code === 'PED58' && isLoyaltyToken(accessToken)) await refresh();
+      closeDialog();
+    } finally {
+      setRedeeming(false);
     }
   }
 
@@ -219,6 +549,55 @@ function LoyaltyAccountView({
         <p className="mt-3 text-xs text-pedon-text/65">
           Seus pontos aparecem aqui assim que seus pedidos forem concluídos.
         </p>
+
+        {redemptionError !== null && (
+          <p role="alert" className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+            {redemptionError}
+          </p>
+        )}
+        {redemption !== null && (
+          <div className="mt-5">
+            <VoucherView
+              voucher={redemption.voucher}
+              rewardName={redemption.redemption.reward_name}
+              message="Recompensa resgatada!"
+            />
+          </div>
+        )}
+
+        <RewardsCatalog
+          rewards={rewards}
+          balance={balance}
+          recovery={recovery}
+          identified
+          loading={rewardsLoading}
+          error={rewardsError}
+          onSelect={(reward, opener) => {
+            openerRef.current = opener;
+            setRedemptionError(null);
+            setSelectedReward(reward);
+          }}
+        />
+
+        <section
+          aria-labelledby="active-vouchers-title"
+          className="mt-6 border-t border-pedon-navy/10 pt-5"
+        >
+          <h3 id="active-vouchers-title" className="font-bold text-pedon-navy">
+            Meus vouchers
+          </h3>
+          {vouchers.length === 0 ? (
+            <p className="mt-3 text-sm text-pedon-text/70">Nenhum voucher ativo no momento.</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {vouchers.map((voucher) => (
+                <li key={`${voucher.code}-${voucher.issued_at}`}>
+                  <VoucherView voucher={voucher} rewardName={voucher.reward_name} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section
           aria-labelledby="club-statement-title"
@@ -256,7 +635,7 @@ function LoyaltyAccountView({
           <button
             type="button"
             onClick={() => void refresh()}
-            disabled={refreshing}
+            disabled={refreshing || !isLoyaltyToken(accessToken)}
             className="min-h-11 rounded-md border border-pedon-navy/25 px-4 font-semibold text-pedon-navy disabled:opacity-50"
           >
             {refreshing ? 'Atualizando…' : 'Atualizar saldo'}
@@ -276,6 +655,15 @@ function LoyaltyAccountView({
           </Link>
         </div>
       </section>
+      {selectedReward !== null && (
+        <ConfirmationDialog
+          reward={selectedReward}
+          balance={balance}
+          busy={redeeming}
+          onCancel={closeDialog}
+          onConfirm={() => void redeem()}
+        />
+      )}
     </div>
   );
 }
@@ -287,7 +675,7 @@ function ClubActions({
   publicSlug: string;
   onIdentified: (result: LoyaltyResolveFound) => void;
 }) {
-  const [action, setAction] = useState<'idle' | 'lookup' | 'enroll'>('idle');
+  const [action, setAction] = useState<'lookup' | 'enroll'>('lookup');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
@@ -380,7 +768,7 @@ function ClubActions({
       <div className="grid gap-4 sm:grid-cols-2">
         <button
           type="button"
-          onClick={() => setAction(action === 'lookup' ? 'idle' : 'lookup')}
+          onClick={() => setAction('lookup')}
           aria-expanded={action === 'lookup'}
           aria-controls="club-lookup-panel"
           className="rounded-lg border border-pedon-navy/15 bg-white p-5 text-left shadow-sm transition hover:border-pedon-orange"
@@ -392,7 +780,7 @@ function ClubActions({
         </button>
         <button
           type="button"
-          onClick={() => setAction(action === 'enroll' ? 'idle' : 'enroll')}
+          onClick={() => setAction('enroll')}
           aria-expanded={action === 'enroll'}
           aria-controls="club-enroll-panel"
           className="rounded-lg border border-pedon-navy/15 bg-white p-5 text-left shadow-sm transition hover:border-pedon-orange"
@@ -557,7 +945,37 @@ function ClubMissing() {
 export function ClubePage() {
   const { publicSlug = '' } = useParams<{ publicSlug: string }>();
   const menuQuery = useQuery(publicMenuQueryOptions(publicSlug));
+  const rewardsQuery = useQuery(publicLoyaltyRewardsQueryOptions(publicSlug));
+  const queryClient = useQueryClient();
   const [account, setAccount] = useState<LoyaltyResolveFound | null>(null);
+  const [identificationMessage, setIdentificationMessage] = useState<string | null>(null);
+  const [recoveredRedemption, setRecoveredRedemption] = useState<PublicRedemption | null>(null);
+
+  useEffect(() => {
+    if (publicSlug === '') return;
+    const pending = loadPendingRedemption(publicSlug);
+    if (pending === null) return;
+    let active = true;
+    void (async () => {
+      try {
+        const result = await recoverPublicRedemption({
+          publicSlug,
+          idempotencyKey: pending.idempotency_key,
+          recoverySecret: pending.recovery_secret,
+        });
+        if (!active) return;
+        if (result.found) {
+          clearPendingRedemption(publicSlug);
+          setRecoveredRedemption(result);
+        }
+      } catch {
+        // Keep the attempt for another load until its 24-hour expiry.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [publicSlug]);
 
   const menu: PublicMenuData | null = menuQuery.data?.found === true ? menuQuery.data : null;
 
@@ -600,13 +1018,58 @@ export function ClubePage() {
         </div>
       </header>
 
+      {recoveredRedemption !== null && (
+        <div className="mx-auto w-full max-w-lg px-4 pt-6">
+          <VoucherView
+            voucher={recoveredRedemption.voucher}
+            rewardName={recoveredRedemption.redemption.reward_name}
+            message="Troca recuperada com sucesso. Seu voucher está pronto."
+          />
+        </div>
+      )}
+
       {account === null ? (
-        <ClubActions publicSlug={publicSlug} onIdentified={setAccount} />
+        <div className="mx-auto w-full max-w-lg px-4 py-6">
+          {identificationMessage !== null && (
+            <p role="status" className="mb-4 rounded-md bg-orange-50 p-3 text-sm text-pedon-text">
+              {identificationMessage}
+            </p>
+          )}
+          <RewardsCatalog
+            rewards={rewardsQuery.data?.found === true ? rewardsQuery.data.rewards : []}
+            balance={null}
+            recovery={0}
+            identified={false}
+            loading={rewardsQuery.isLoading}
+            error={rewardsQuery.isError ? rewardsQuery.error.message : null}
+            onSelect={() => {
+              setIdentificationMessage('Consulte seus pontos para realizar a troca.');
+            }}
+          />
+          <ClubActions publicSlug={publicSlug} onIdentified={setAccount} />
+        </div>
       ) : (
         <LoyaltyAccountView
           publicSlug={publicSlug}
           account={account}
           onReset={() => setAccount(null)}
+          rewards={rewardsQuery.data?.found === true ? rewardsQuery.data.rewards : []}
+          rewardsLoading={rewardsQuery.isLoading}
+          rewardsError={rewardsQuery.isError ? rewardsQuery.error.message : null}
+          onRefetchRewards={() =>
+            queryClient.refetchQueries({
+              queryKey: publicLoyaltyRewardsKey(publicSlug),
+              exact: true,
+            })
+          }
+          onConsumeAccessToken={() =>
+            setAccount((current) =>
+              current === null
+                ? null
+                : { ...current, token: { ...current.token, access_token: '' } },
+            )
+          }
+          onUpdateAccount={setAccount}
         />
       )}
     </div>

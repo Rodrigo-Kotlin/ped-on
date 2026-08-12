@@ -32,6 +32,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+export function sanitizeAccountVouchers(value: unknown): Record<string, string>[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((voucher) => {
+    if (
+      !isRecord(voucher) ||
+      typeof voucher.code !== 'string' ||
+      typeof voucher.reward_name !== 'string' ||
+      typeof voucher.points_cost !== 'string' ||
+      typeof voucher.issued_at !== 'string'
+    ) {
+      return [];
+    }
+    return [
+      {
+        code: voucher.code,
+        reward_name: voucher.reward_name,
+        points_cost: voucher.points_cost,
+        issued_at: voucher.issued_at,
+      },
+    ];
+  });
+}
+
 export function json(
   body: unknown,
   status = 200,
@@ -357,6 +380,7 @@ export function createHandler(
       customer: accountValue.customer,
       account: accountValue.account,
       statement: Array.isArray(accountValue.statement) ? accountValue.statement : [],
+      vouchers: sanitizeAccountVouchers(accountValue.vouchers),
       token: {
         access_token: accessToken,
         expires_at: token && typeof token.expires_at === 'string' ? token.expires_at : expiresAt,

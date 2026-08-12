@@ -119,6 +119,7 @@ describe('resolveLoyaltyIdentity', () => {
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe(EDGE_URL);
     expect(init?.method).toBe('POST');
+    expect(init?.cache).toBe('no-store');
     const headers = init?.headers as Record<string, string>;
     expect(headers.apikey).toBe(PUBLISHABLE_KEY);
     expect(headers.Authorization).toBe(`Bearer ${PUBLISHABLE_KEY}`);
@@ -242,6 +243,35 @@ describe('fetchPublicLoyaltyAccount', () => {
     );
     expect(error).toBeInstanceOf(LoyaltyError);
     expect((error as LoyaltyError).message).toContain('atualizar o saldo');
+  });
+
+  it('valida a resposta pública da conta e preserva vouchers ativos', async () => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: {
+        found: true,
+        organization: { name: 'Cantina' },
+        customer: { name: null, cpf_last2: '25' },
+        account: { points_balance: 70, recovery_points: 0, updated_at: '2026-08-11T13:00:00Z' },
+        statement: [],
+        vouchers: [
+          {
+            code: 'ABCD-EF12-3456-7890',
+            reward_name: 'Café grátis',
+            points_cost: '80',
+            issued_at: '2026-08-11T12:00:00Z',
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const result = await fetchPublicLoyaltyAccount('b'.repeat(64));
+    expect(result.found && result.vouchers[0]?.code).toBe('ABCD-EF12-3456-7890');
+  });
+
+  it('rejeita resposta pública da conta fora do contrato', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: { found: true, account: {} }, error: null });
+    await expect(fetchPublicLoyaltyAccount('b'.repeat(64))).rejects.toBeInstanceOf(LoyaltyError);
   });
 });
 
