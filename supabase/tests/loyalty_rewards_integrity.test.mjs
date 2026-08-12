@@ -1,28 +1,13 @@
 import pg from 'pg';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { databaseConfig } from './db-test-config.mjs';
 
 // Prompt 10: recompensas, resgates e vouchers. Cobre os cenarios numerados
 // 1..118 da spec (secoes 113-129). Altera fixtures operacionais e roda
 // isolada das demais regressoes de banco.
 const { Client } = pg;
 
-let dbPassword = process.env.SUPABASE_DB_PASSWORD;
-if (!dbPassword) {
-  const envText = await readFile(fileURLToPath(new URL('../../.env', import.meta.url)), 'utf8');
-  dbPassword = envText
-    .split(/\r?\n/)
-    .find((line) => line.startsWith('SUPABASE_DB_PASSWORD='))
-    ?.slice('SUPABASE_DB_PASSWORD='.length);
-}
-if (!dbPassword) {
-  console.error('SUPABASE_DB_PASSWORD nao encontrada em ambiente nem em .env.');
-  process.exit(2);
-}
-
-const password = encodeURIComponent(dbPassword);
-const DIRECT_URL = `postgresql://postgres:${password}@db.zmuxkztnilnzjyyojbbr.supabase.co:5432/postgres`;
+const { connectionString: DIRECT_URL, ssl: DB_SSL } = await databaseConfig();
 
 let passed = 0;
 let failed = 0;
@@ -70,7 +55,7 @@ function inTwoHours() {
 async function adminClient() {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   return client;
@@ -79,7 +64,7 @@ async function adminClient() {
 async function sessionFor(userId) {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   await client.query('set role authenticated');
@@ -91,7 +76,7 @@ async function sessionFor(userId) {
 async function anonClient() {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   await client.query('set role anon');
@@ -522,8 +507,10 @@ async function run() {
   let orgB;
   let unitA1;
   let unitA2;
+  let unitA3;
   let unitB1;
   let slugA1;
+  let slugA3;
   let slugB1;
   let menuA1;
   let menuB1;
@@ -616,6 +603,15 @@ async function run() {
       )
     ).rows[0].id;
 
+    unitA3 = (
+      await admin.query(
+        `insert into public.units (organization_id, name)
+         values ($1, 'Unidade Concorrencia Rewards')
+         returning id`,
+        [orgA],
+      )
+    ).rows[0].id;
+
     await admin.query(
       `insert into public.organization_members (organization_id, user_id, role)
        values ($1, $2, 'manager')`,
@@ -650,6 +646,11 @@ async function run() {
     slugA1 = (await publish(ownerAS, unitA1)).public_slug;
     menuA1 = await publicMenu(anon, slugA1);
 
+    const categoryA3 = await createCategory(ownerAS, unitA3, 'Rewards Concorrencia');
+    await createProduct(ownerAS, unitA3, categoryA3.id, 'Produto Concorrencia', '1.00');
+    await saveConfig(ownerAS, unitA3, operationalConfig());
+    slugA3 = (await publish(ownerAS, unitA3)).public_slug;
+
     const categoryB1 = await createCategory(ownerBS, unitB1, 'Rewards B1');
     await createProduct(ownerBS, unitB1, categoryB1.id, 'Produto B1', '6.00');
     await saveConfig(ownerBS, unitB1, operationalConfig());
@@ -659,6 +660,7 @@ async function run() {
     ok(menuA1.found === true && menuA1.operation.can_order_now === true, '0.1 menu A publicado');
     ok(productByName(menuA1, 'Produto 20') !== null, '0.2 item de earn encontrado');
     ok(menuB1.found === true, '0.3 menu B publicado');
+    ok(slugA3 !== slugA1, '0.3a segundo slug da org A publicado');
 
     const enableA = await ownerAS.query(
       'select public.set_loyalty_program_enabled($1, true) as out',
@@ -774,13 +776,23 @@ async function run() {
     ok(codeUnique.count === 1, '10. voucher_code unique global');
 
     scenario(2, 'ACL - browser nao acessa tabelas nem RPCs restritas (114)');
+    for (const table of tables) {
+      await expectDenied(anon, `select * from public.${table}`, [], `11. anon nao le ${table}`);
+      await expectDenied(ownerAS, `select * from public.${table}`, [], `12. auth nao le ${table}`);
+      await expectDenied(
+        ownerAS,
+        `delete from public.${table}`,
+        [],
+        `12a. auth nao deleta ${table}`,
+      );
+    }
     await expectDenied(
       anon,
       `insert into public.loyalty_rewards
        (organization_id, name, points_cost, stock_quantity, sort_order)
        values ($1, 'X', 1, 1, 1)`,
       [orgA],
-      '11. anon nao escreve rewards',
+      '12b. anon nao escreve rewards',
     );
     await expectDenied(
       ownerAS,
@@ -788,7 +800,7 @@ async function run() {
        (organization_id, name, points_cost, stock_quantity, sort_order)
        values ($1, 'X', 1, 1, 1)`,
       [orgA],
-      '12. auth nao escreve rewards',
+      '12c. auth nao escreve rewards',
     );
     await expectDenied(
       ownerAS,
@@ -1015,6 +1027,39 @@ async function run() {
       'PED11',
       '27. manager nao ajusta estoque',
     );
+    for (const [client, role] of [
+      [managerAS, 'manager'],
+      [operatorAS, 'operator'],
+    ]) {
+      await expectError(
+        client,
+        'select public.get_loyalty_rewards_admin($1, $2, $3) as out',
+        [orgA, 50, null],
+        'PED11',
+        `27a. ${role} nao lista rewards admin`,
+      );
+      await expectError(
+        client,
+        'select public.update_loyalty_reward($1, $2::jsonb) as out',
+        [rMain.id, JSON.stringify({ description: `${role} denied` })],
+        'PED11',
+        `27b. ${role} nao atualiza reward`,
+      );
+      await expectError(
+        client,
+        'select public.set_loyalty_reward_active($1, $2) as out',
+        [rMain.id, false],
+        'PED11',
+        `27c. ${role} nao ativa/desativa reward`,
+      );
+      await expectError(
+        client,
+        'select public.set_loyalty_reward_stock($1, $2) as out',
+        [rMain.id, 1],
+        'PED11',
+        `27d. ${role} nao ajusta estoque`,
+      );
+    }
     await expectError(
       ownerBS,
       'select public.create_loyalty_reward($1, $2::jsonb) as out',
@@ -1207,6 +1252,85 @@ async function run() {
       JSON.stringify(basicEventsArr) === JSON.stringify(['issued']),
       '56. evento issued registrado',
     );
+    const integrityRedemptions = await admin.query(
+      `insert into public.loyalty_redemptions (
+         organization_id, membership_id, reward_id, idempotency_key,
+         request_hash, recovery_hash, reward_name_snapshot, points_cost, reward_revision
+       ) values
+         ($1, $2, $3, $4, $5, $6, 'Integridade Voucher', 1, $7),
+         ($1, $2, $3, $8, $9, $10, 'Integridade Ledger', 1, $7)
+       returning id`,
+      [
+        orgA,
+        maria,
+        rMain.id,
+        randomUUID(),
+        sha256(`integrity-voucher-request:${randomUUID()}`),
+        sha256(`integrity-voucher-recovery:${randomUUID()}`),
+        await currentRevision(admin, rMain.id),
+        randomUUID(),
+        sha256(`integrity-ledger-request:${randomUUID()}`),
+        sha256(`integrity-ledger-recovery:${randomUUID()}`),
+      ],
+    );
+    await expectError(
+      admin,
+      `insert into public.loyalty_vouchers (
+         organization_id, redemption_id, membership_id, reward_id, voucher_code
+       ) values ($1, $2, $3, $4, $5)`,
+      [
+        orgA,
+        integrityRedemptions.rows[0].id,
+        bruno,
+        rMain.id,
+        randomBytes(8).toString('hex').toUpperCase(),
+      ],
+      '23503',
+      '56a. voucher nao pode divergir da membership da redemption',
+    );
+    await expectError(
+      admin,
+      `insert into public.loyalty_vouchers (
+         organization_id, redemption_id, membership_id, reward_id, voucher_code
+       ) values ($1, $2, $3, $4, $5)`,
+      [
+        orgA,
+        integrityRedemptions.rows[0].id,
+        maria,
+        rConsume.id,
+        randomBytes(8).toString('hex').toUpperCase(),
+      ],
+      '23503',
+      '56aa. voucher nao pode divergir da reward da redemption',
+    );
+    await expectError(
+      admin,
+      `insert into public.loyalty_reward_stock_events (
+         organization_id, reward_id, redemption_id, delta, balance_after, event_type
+       ) values ($1, $2, $3, -1, 0, 'redemption')`,
+      [orgA, rConsume.id, integrityRedemptions.rows[0].id],
+      '23503',
+      '56b. stock event nao pode divergir da reward da redemption',
+    );
+    await expectError(
+      admin,
+      `insert into public.loyalty_ledger (
+         organization_id, membership_id, entry_type, amount, points_delta,
+         recovery_delta, redemption_id
+       ) values ($1, $2, 'redeem', -1, -1, 0, $3)`,
+      [orgA, bruno, integrityRedemptions.rows[1].id],
+      '23503',
+      '56c. ledger redeem nao pode divergir da membership da redemption',
+    );
+    await expectError(
+      admin,
+      `insert into public.loyalty_reward_stock_events (
+         organization_id, reward_id, redemption_id, delta, balance_after, event_type
+       ) values ($1, $2, $3, -1, 0, 'redemption')`,
+      [orgA, rMain.id, redemptionBasic.id],
+      '23505',
+      '56d. uma redemption nao pode gerar segundo stock event',
+    );
     ok((await tokenCount(admin, tokenBasic)) === 0, '57. token consumido (deletado)');
     const afterBasicPub = await publicLoyaltyAccount(anon, tokenBasic);
     ok(afterBasicPub.found === false, '57a. token consumido nao consulta mais (P47)');
@@ -1217,6 +1341,24 @@ async function run() {
         stockAfterBasic === stockBeforeBasic - 1 &&
         balanceAfterBasic === balanceBeforeBasic - 30,
       '58. tudo na mesma transacao (artefatos consistentes)',
+    );
+    const programAfterRedeem = (
+      await ownerAS.query('select public.get_loyalty_program_admin($1) as out', [orgA])
+    ).rows[0].out;
+    const membersAfterRedeem = (
+      await ownerAS.query('select public.get_loyalty_members_admin($1, $2, $3) as out', [
+        orgA,
+        200,
+        null,
+      ])
+    ).rows[0].out;
+    const mariaAfterRedeem = membersAfterRedeem.members.find((member) => member.id === maria);
+    ok(
+      BigInt(programAfterRedeem.stats.total_redeemed) >= 30n &&
+        programAfterRedeem.stats.total_reversed === '0' &&
+        BigInt(mariaAfterRedeem.total_redeemed) >= 30n &&
+        mariaAfterRedeem.total_reversed === '0',
+      '58aa. redeem nao e contabilizado como reversal administrativo',
     );
     const redemptionRecovered = await recoverRedemption(anon, slugA1, keyBasic, secretBasic);
     ok(redemptionRecovered.found === true, '58a. recovery RPC encontra tentativa');
@@ -1231,11 +1373,18 @@ async function run() {
       '58c. snapshot do resgate preserva nome/custo',
     );
     const wrongSecret = await recoverRedemption(anon, slugA1, keyBasic, recoverySecret());
+    const missingSecret = await recoverRedemption(anon, slugA1, keyBasic, null);
     const wrongKey = await recoverRedemption(anon, slugA1, randomUUID(), secretBasic);
     const wrongSlug = await recoverRedemption(anon, slugB1, keyBasic, secretBasic);
     ok(
-      wrongSecret.found === false && wrongKey.found === false && wrongSlug.found === false,
-      '58d. recovery com secret/chave/slug divergente e uniformemente desconhecido',
+      wrongSecret.found === false &&
+        missingSecret.found === false &&
+        wrongKey.found === false &&
+        wrongSlug.found === false &&
+        !JSON.stringify([wrongSecret, missingSecret, wrongKey, wrongSlug]).includes(
+          redemptionRecovered.voucher.code,
+        ),
+      '58d. recovery sem secret ou com secret/chave/slug divergente nao revela voucher',
     );
     const redeemStatement =
       afterBasicPub.found === false
@@ -1243,12 +1392,12 @@ async function run() {
         : null;
     if (redeemStatement) {
       const redeemEntry = redeemStatement.statement.find(
-        (entry) => entry.entry_type === 'redeem' && entry.points_delta === -30,
+        (entry) => entry.entry_type === 'redeem' && entry.points_delta === '-30',
       );
       ok(
         redeemEntry !== undefined &&
-          redeemEntry.gross_points === 30 &&
-          redeemEntry.recovery_delta === 0 &&
+          redeemEntry.gross_points === '30' &&
+          redeemEntry.recovery_delta === '0' &&
           redeemEntry.eligible_amount === null &&
           redeemEntry.order_number === null,
         '58e. extrato publico exibe redeem com deltas exatos',
@@ -1406,6 +1555,7 @@ async function run() {
       tokenIdem,
       secretIdem,
     );
+    const stockAfterFirstIdem = (await rewardRow(admin, rMain.id)).stock_quantity;
     ok(replay.found === true, '66. mesma key/mesma request -> replay ok');
     ok(replay.voucher.code === first.voucher.code, '67. mesmo voucher retornado');
     ok(
@@ -1417,15 +1567,21 @@ async function run() {
       '68. sem segundo ledger',
     );
     ok(
-      (await rewardRow(admin, rMain.id)).stock_quantity ===
-        (await rewardRow(admin, rMain.id)).stock_quantity &&
+      (await rewardRow(admin, rMain.id)).stock_quantity === stockAfterFirstIdem &&
         (await stockEvents(admin, rMain.id)).length === stockEventsIdemCount &&
-        stockBeforeIdem - (await rewardRow(admin, rMain.id)).stock_quantity === 1,
+        stockAfterFirstIdem === stockBeforeIdem - 1,
       '69. sem segundo decremento de estoque',
     );
     ok(
       (await voucherEventsFor(admin, voucherIdem.id)).length === voucherEventsIdemCount,
       '70. sem segundo evento de voucher',
+    );
+    await expectError(
+      anon,
+      'select public.redeem_public_loyalty_reward($1, $2, $3, $4, $5, $6) as out',
+      [slugA1, keyIdem, rMain.id, idemRevision, tokenIdem, recoverySecret()],
+      'PED59',
+      '70a. replay com recovery secret divergente nao revela voucher',
     );
     const conflictRevision = await currentRevision(admin, rConsume.id);
     await expectError(
@@ -1521,6 +1677,51 @@ async function run() {
       '76. replay apos mudanca de custo',
     );
 
+    const multiSlugKey = randomUUID();
+    const multiSlugToken = await freshToken(admin, orgA, maria);
+    const multiSlugSecret = recoverySecret();
+    const multiSlugRevision = await currentRevision(admin, rConsume.id);
+    const multiSlugResults = await Promise.allSettled([
+      redeem(
+        anon,
+        slugA1,
+        multiSlugKey,
+        rConsume.id,
+        multiSlugRevision,
+        multiSlugToken,
+        multiSlugSecret,
+      ),
+      redeem(
+        anonB,
+        slugA3,
+        multiSlugKey,
+        rConsume.id,
+        multiSlugRevision,
+        multiSlugToken,
+        multiSlugSecret,
+      ),
+    ]);
+    ok(
+      multiSlugResults.every((result) => result.status === 'fulfilled') &&
+        multiSlugResults[0].value.voucher.code === multiSlugResults[1].value.voucher.code,
+      '76a. mesma key em dois slugs da org serializa e retorna o mesmo voucher',
+    );
+    const multiSlugRedemption = await redemptionByKey(admin, orgA, multiSlugKey);
+    ok(
+      (await count(
+        admin,
+        'select count(*)::integer as count from public.loyalty_ledger where redemption_id = $1',
+        [multiSlugRedemption.id],
+      )) === 1 &&
+        (
+          await voucherEventsFor(
+            admin,
+            (await voucherForRedemption(admin, multiSlugRedemption.id)).id,
+          )
+        ).length === 1,
+      '76b. concorrencia multi-slug nao duplica ledger, voucher ou evento',
+    );
+
     scenario(9, 'CONCURRENCY BALANCE - saldo nao negativo (121)');
     await admin.query(
       'update public.loyalty_accounts set points_balance = 100 where membership_id = $1',
@@ -1566,9 +1767,11 @@ async function run() {
     const keyStk2 = randomUUID();
     const tokenStk1 = await freshToken(admin, orgA, maria);
     const tokenStk2 = await freshToken(admin, orgA, bruno);
+    const secretStk1 = recoverySecret();
+    const secretStk2 = recoverySecret();
     const stkResults = await Promise.allSettled([
-      redeem(anon, slugA1, keyStk1, rStock1.id, stkRev, tokenStk1, recoverySecret()),
-      redeem(anonB, slugA1, keyStk2, rStock1.id, stkRev, tokenStk2, recoverySecret()),
+      redeem(anon, slugA1, keyStk1, rStock1.id, stkRev, tokenStk1, secretStk1),
+      redeem(anonB, slugA1, keyStk2, rStock1.id, stkRev, tokenStk2, secretStk2),
     ]);
     const stkSuccesses = stkResults.filter((result) => result.status === 'fulfilled');
     const stkRejections = stkResults.filter((result) => result.status === 'rejected');
@@ -1581,7 +1784,29 @@ async function run() {
     const stkRedemptionEvents = (await stockEvents(admin, rStock1.id)).filter(
       (event) => event.event_type === 'redemption',
     );
-    ok(stkRedemptionEvents.length === 1, '83. um stock redemption event');
+    ok(
+      stkRedemptionEvents.length === 1 &&
+        Number(stkRedemptionEvents[0].delta) === -1 &&
+        Number(stkRedemptionEvents[0].balance_after) === 0,
+      '83. um stock redemption event com delta e saldo finais exatos',
+    );
+    const stkMutationCounts = await admin.query(
+      `select
+         count(distinct r.id)::integer as redemptions,
+         count(distinct v.id)::integer as vouchers,
+         count(distinct l.id)::integer as ledgers
+       from public.loyalty_redemptions as r
+       left join public.loyalty_vouchers as v on v.redemption_id = r.id
+       left join public.loyalty_ledger as l on l.redemption_id = r.id
+       where r.idempotency_key = any($1::uuid[])`,
+      [[keyStk1, keyStk2]],
+    );
+    ok(
+      stkMutationCounts.rows[0].redemptions === 1 &&
+        stkMutationCounts.rows[0].vouchers === 1 &&
+        stkMutationCounts.rows[0].ledgers === 1,
+      '83a. last stock cria uma redemption, um voucher e um ledger',
+    );
     const brunoVoucher = stkSuccesses[0].value;
     const brunoVoucherCode = brunoVoucher.voucher.code.replaceAll('-', '');
 
@@ -1590,9 +1815,12 @@ async function run() {
     const sameToken = await freshToken(admin, orgA, maria);
     const keySame1 = randomUUID();
     const keySame2 = randomUUID();
+    const sameSecret1 = recoverySecret();
+    const sameSecret2 = recoverySecret();
+    const sameStockBefore = (await rewardRow(admin, rConsume.id)).stock_quantity;
     const sameResults = await Promise.allSettled([
-      redeem(anon, slugA1, keySame1, rConsume.id, sameRev, sameToken, recoverySecret()),
-      redeem(anonB, slugA1, keySame2, rConsume.id, sameRev, sameToken, recoverySecret()),
+      redeem(anon, slugA1, keySame1, rConsume.id, sameRev, sameToken, sameSecret1),
+      redeem(anonB, slugA1, keySame2, rConsume.id, sameRev, sameToken, sameSecret2),
     ]);
     const sameSuccesses = sameResults.filter((result) => result.status === 'fulfilled');
     const sameRejections = sameResults.filter((result) => result.status === 'rejected');
@@ -1602,6 +1830,24 @@ async function run() {
       '84a. a outra recebe PED52 (token consumido)',
     );
     ok((await tokenCount(admin, sameToken)) === 0, '84b. token deletado ao final');
+    const sameMutationCounts = await admin.query(
+      `select
+         count(distinct r.id)::integer as redemptions,
+         count(distinct v.id)::integer as vouchers,
+         count(distinct l.id)::integer as ledgers,
+         count(distinct se.id)::integer as stock_events
+       from public.loyalty_redemptions as r
+       left join public.loyalty_vouchers as v on v.redemption_id = r.id
+       left join public.loyalty_ledger as l on l.redemption_id = r.id
+       left join public.loyalty_reward_stock_events as se on se.redemption_id = r.id
+       where r.idempotency_key = any($1::uuid[])`,
+      [[keySame1, keySame2]],
+    );
+    ok(
+      Object.values(sameMutationCounts.rows[0]).every((value) => value === 1) &&
+        (await rewardRow(admin, rConsume.id)).stock_quantity === sameStockBefore - 1,
+      '84c. same token produz uma unica mutacao completa',
+    );
 
     scenario(12, 'RECOVERY - recovery_points, estorno pos-resgate (124)');
     await admin.query(
@@ -1777,6 +2023,27 @@ async function run() {
     const unknown = await staffLookup(ownerAS, unitA1, 'F'.repeat(16));
     ok(unknown.found === false, '98. codigo desconhecido -> found=false');
     ok(staffVoucher.status === 'issued', '98a. consulta nao muta voucher');
+    await expectError(
+      staffUS,
+      'select public.consume_loyalty_voucher($1, $2) as out',
+      [unitA1, vStaffCode],
+      'PED11',
+      '98b. staff sem vinculo nao consome',
+    );
+    await expectError(
+      ownerBS,
+      'select public.consume_loyalty_voucher($1, $2) as out',
+      [unitB1, vStaffCode],
+      'PED60',
+      '98c. cross-tenant nao consome',
+    );
+    await expectError(
+      ownerAS,
+      'select public.consume_loyalty_voucher($1, $2) as out',
+      [unitA2, vStaffCode],
+      'PED11',
+      '98d. unidade inativa nao consome',
+    );
 
     scenario(15, 'CONSUMPTION - ciclo de vida do voucher (127)');
     const consumeBeforeStock = (await rewardRow(admin, rConsume.id)).stock_quantity;
@@ -1785,23 +2052,38 @@ async function run() {
       'select count(*)::integer as count from public.loyalty_ledger where membership_id = $1',
       [maria],
     );
-    const consumed = await staffConsume(ownerAS, unitA1, vConsCode);
-    ok(consumed.found === true && consumed.status === 'consumed', '99. issued -> consumed');
+    const concurrentConsumes = await Promise.allSettled([
+      staffConsume(ownerAS, unitA1, vConsCode),
+      staffConsume(managerAS, unitA1, vConsCode),
+    ]);
+    const consumeSuccesses = concurrentConsumes.filter((result) => result.status === 'fulfilled');
+    const consumeRejections = concurrentConsumes.filter((result) => result.status === 'rejected');
+    const consumed = consumeSuccesses[0].value;
+    ok(
+      consumeSuccesses.length === 1 && consumed.found === true && consumed.status === 'consumed',
+      '99. exatamente um consumo concorrente issued -> consumed',
+    );
+    ok(
+      consumeRejections.length === 1 && consumeRejections[0].reason?.code === 'PED61',
+      '99a. consumo concorrente perdedor recebe PED61',
+    );
     ok(consumed.consumed_at !== null, '100. consumed_at definido');
     const consumedRow = await voucherByCode(admin, vConsCode);
     ok(consumedRow.consumed_unit_id === unitA1, '101. consumed_unit registrada');
-    ok(consumedRow.consumed_by_user_id === ownerA.id, '102. consumed_by_user registrado');
+    ok(
+      consumedRow.consumed_by_user_id === ownerA.id ||
+        consumedRow.consumed_by_user_id === managerA.id,
+      '102. consumed_by_user registra exatamente o vencedor concorrente',
+    );
     const consumeEvents = await voucherEventsFor(admin, consumedRow.id);
     ok(
       JSON.stringify(consumeEvents) === JSON.stringify(['issued', 'consumed']),
       '103. evento consumed anexado',
     );
-    await expectError(
-      ownerAS,
-      'select public.consume_loyalty_voucher($1, $2) as out',
-      [unitA1, vConsCode],
-      'PED61',
-      '104. segundo consumo bloqueado',
+    ok(
+      JSON.stringify(await voucherEventsFor(admin, consumedRow.id)) ===
+        JSON.stringify(['issued', 'consumed']),
+      '104. consumo concorrente nao cria outro evento',
     );
     const inactiveConsume = await staffConsume(ownerAS, unitA1, vInactiveCode);
     ok(

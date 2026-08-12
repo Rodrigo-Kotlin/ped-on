@@ -1,25 +1,10 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { databaseConfig } from './db-test-config.mjs';
 
 const { Client } = pg;
 
-let dbPassword = process.env.SUPABASE_DB_PASSWORD;
-if (!dbPassword) {
-  const envText = await readFile(fileURLToPath(new URL('../../.env', import.meta.url)), 'utf8');
-  dbPassword = envText
-    .split(/\r?\n/)
-    .find((line) => line.startsWith('SUPABASE_DB_PASSWORD='))
-    ?.slice('SUPABASE_DB_PASSWORD='.length);
-}
-if (!dbPassword) {
-  console.error('SUPABASE_DB_PASSWORD não encontrada em ambiente nem em .env.');
-  process.exit(2);
-}
-
-const password = encodeURIComponent(dbPassword);
-const DIRECT_URL = `postgresql://postgres:${password}@db.zmuxkztnilnzjyyojbbr.supabase.co:5432/postgres`;
+const { connectionString: DIRECT_URL, ssl: DB_SSL } = await databaseConfig();
 
 let passed = 0;
 let failed = 0;
@@ -37,13 +22,13 @@ function ok(condition, label) {
 }
 
 async function adminClient() {
-  const c = new Client({ connectionString: DIRECT_URL, ssl: { rejectUnauthorized: false } });
+  const c = new Client({ connectionString: DIRECT_URL, ssl: DB_SSL });
   await c.connect();
   return c;
 }
 
 async function sessionFor(userId) {
-  const c = new Client({ connectionString: DIRECT_URL, ssl: { rejectUnauthorized: false } });
+  const c = new Client({ connectionString: DIRECT_URL, ssl: DB_SSL });
   await c.connect();
   await c.query('set role authenticated');
   await c.query(`set request.jwt.claims = '{"sub": "${userId}", "role": "authenticated"}'`);
@@ -52,14 +37,14 @@ async function sessionFor(userId) {
 }
 
 async function anonClient() {
-  const c = new Client({ connectionString: DIRECT_URL, ssl: { rejectUnauthorized: false } });
+  const c = new Client({ connectionString: DIRECT_URL, ssl: DB_SSL });
   await c.connect();
   await c.query('set role anon');
   return c;
 }
 
 async function authedNoSubClient() {
-  const c = new Client({ connectionString: DIRECT_URL, ssl: { rejectUnauthorized: false } });
+  const c = new Client({ connectionString: DIRECT_URL, ssl: DB_SSL });
   await c.connect();
   await c.query('set role authenticated');
   await c.query(`set request.jwt.claims = '{"role": "authenticated"}'`);
@@ -240,24 +225,22 @@ async function run() {
     }
 
     {
-      console.log(
-        'Cenário 2 — anon executa a RPC mas é rejeitado com PED10 (padrão do projeto, como create_unit)',
-      );
+      console.log('Cenário 2 — anon não possui EXECUTE nas RPCs operacionais');
       const anon = await anonClient();
       openClients.push(anon);
       await expectError(
         anon,
         'select public.get_unit_operational_config($1)',
         [unitA1],
-        'PED10',
-        'anon é rejeitado com PED10 (auth.uid() null)',
+        '42501',
+        'anon é rejeitado no get por ACL',
       );
       await expectError(
         anon,
         'select public.save_unit_operational_config($1, $2)',
         [unitA1, defaultConfig()],
-        'PED10',
-        'anon é rejeitado no save com PED10',
+        '42501',
+        'anon é rejeitado no save por ACL',
       );
     }
 

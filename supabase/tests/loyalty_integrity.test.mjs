@@ -1,27 +1,12 @@
 import pg from 'pg';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { databaseConfig } from './db-test-config.mjs';
 
 // Esta suite altera fixtures operacionais e deve rodar isoladamente das
 // demais regressoes de banco.
 const { Client } = pg;
 
-let dbPassword = process.env.SUPABASE_DB_PASSWORD;
-if (!dbPassword) {
-  const envText = await readFile(fileURLToPath(new URL('../../.env', import.meta.url)), 'utf8');
-  dbPassword = envText
-    .split(/\r?\n/)
-    .find((line) => line.startsWith('SUPABASE_DB_PASSWORD='))
-    ?.slice('SUPABASE_DB_PASSWORD='.length);
-}
-if (!dbPassword) {
-  console.error('SUPABASE_DB_PASSWORD nao encontrada em ambiente nem em .env.');
-  process.exit(2);
-}
-
-const password = encodeURIComponent(dbPassword);
-const DIRECT_URL = `postgresql://postgres:${password}@db.zmuxkztnilnzjyyojbbr.supabase.co:5432/postgres`;
+const { connectionString: DIRECT_URL, ssl: DB_SSL } = await databaseConfig();
 
 let passed = 0;
 let failed = 0;
@@ -69,7 +54,7 @@ function inTwoHours() {
 async function adminClient() {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   return client;
@@ -78,7 +63,7 @@ async function adminClient() {
 async function sessionFor(userId) {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   await client.query('set role authenticated');
@@ -90,7 +75,7 @@ async function sessionFor(userId) {
 async function anonClient() {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   await client.query('set role anon');
@@ -867,7 +852,10 @@ async function run() {
       pubA.customer.name === 'Maria Clube' && pubA.customer.cpf_last2 === '35',
       '3.3 cliente mascarado',
     );
-    ok(pubA.account.points_balance === 0 && pubA.account.recovery_points === 0, '3.4 saldo zero');
+    ok(
+      pubA.account.points_balance === '0' && pubA.account.recovery_points === '0',
+      '3.4 saldo zero como texto decimal exato',
+    );
     ok(Array.isArray(pubA.statement) && pubA.statement.length === 0, '3.9 extrato inicial vazio');
     const pubARepeat = await publicLoyaltyAccount(anon, tokenA);
     ok(
@@ -1303,14 +1291,18 @@ async function run() {
         'points_balance',
         'recovery_points',
         'total_earned',
+        'total_redeemed',
         'total_reversed',
         'member_since',
       ]),
       '8.6 shape do membro no admin',
     );
     ok(maria.name === 'Maria Clube' && maria.cpf_last2 === '35', '8.7 nome e mascara cpf visiveis');
-    ok(maria.points_balance === 8, '8.8 saldo exibido no admin');
-    ok(maria.total_earned === 40 && maria.total_reversed === 32, '8.9 totais de earn/reverse');
+    ok(maria.points_balance === '8', '8.8 saldo exibido no admin como texto decimal');
+    ok(
+      maria.total_earned === '40' && maria.total_redeemed === '0' && maria.total_reversed === '32',
+      '8.9 totais distintos de earn/redeem/reverse',
+    );
     await expectError(
       managerAS,
       'select public.get_loyalty_members_admin($1, $2, $3) as out',
@@ -1529,16 +1521,16 @@ async function run() {
         entry.order_number === earnOrder.creation.order_number && entry.entry_type === 'reversal',
     );
     ok(
-      earnStatement.gross_points === 32 &&
-        earnStatement.points_delta === 32 &&
-        earnStatement.recovery_delta === 0 &&
+      earnStatement.gross_points === '32' &&
+        earnStatement.points_delta === '32' &&
+        earnStatement.recovery_delta === '0' &&
         Number(earnStatement.eligible_amount) === 32.4,
       '11.1 earn informa bruto, saldo, recovery e valor elegivel exatos',
     );
     ok(
-      reversalStatement.gross_points === 32 &&
-        reversalStatement.points_delta === -32 &&
-        reversalStatement.recovery_delta === 0 &&
+      reversalStatement.gross_points === '32' &&
+        reversalStatement.points_delta === '-32' &&
+        reversalStatement.recovery_delta === '0' &&
         Number(reversalStatement.eligible_amount) === 32.4,
       '11.2 reversal informa deltas exatos e pontos brutos absolutos',
     );
@@ -1570,9 +1562,9 @@ async function run() {
       (entry) => entry.order_number === recoveryOrder.creation.order_number,
     );
     ok(
-      recoveryStatement.gross_points === 8 &&
-        recoveryStatement.points_delta === 3 &&
-        recoveryStatement.recovery_delta === -5 &&
+      recoveryStatement.gross_points === '8' &&
+        recoveryStatement.points_delta === '3' &&
+        recoveryStatement.recovery_delta === '-5' &&
         Number(recoveryStatement.eligible_amount) === 8.1,
       '11.4 earn com recovery separa quitacao de divida e saldo',
     );

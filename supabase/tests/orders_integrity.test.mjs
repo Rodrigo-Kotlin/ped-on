@@ -1,27 +1,12 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { databaseConfig } from './db-test-config.mjs';
 
 // Esta suite altera fixtures operacionais e deve rodar isoladamente das
 // demais regressoes de banco.
 const { Client } = pg;
 
-let dbPassword = process.env.SUPABASE_DB_PASSWORD;
-if (!dbPassword) {
-  const envText = await readFile(fileURLToPath(new URL('../../.env', import.meta.url)), 'utf8');
-  dbPassword = envText
-    .split(/\r?\n/)
-    .find((line) => line.startsWith('SUPABASE_DB_PASSWORD='))
-    ?.slice('SUPABASE_DB_PASSWORD='.length);
-}
-if (!dbPassword) {
-  console.error('SUPABASE_DB_PASSWORD nao encontrada em ambiente nem em .env.');
-  process.exit(2);
-}
-
-const password = encodeURIComponent(dbPassword);
-const DIRECT_URL = `postgresql://postgres:${password}@db.zmuxkztnilnzjyyojbbr.supabase.co:5432/postgres`;
+const { connectionString: DIRECT_URL, ssl: DB_SSL } = await databaseConfig();
 
 let passed = 0;
 let failed = 0;
@@ -61,7 +46,7 @@ function isTrackingToken(value) {
 async function adminClient() {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   return client;
@@ -70,7 +55,7 @@ async function adminClient() {
 async function sessionFor(userId) {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   await client.query('set role authenticated');
@@ -82,7 +67,7 @@ async function sessionFor(userId) {
 async function anonClient() {
   const client = new Client({
     connectionString: DIRECT_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: DB_SSL,
   });
   await client.connect();
   await client.query('set role anon');
