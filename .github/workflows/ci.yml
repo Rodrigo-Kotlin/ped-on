@@ -134,9 +134,9 @@ jobs:
           set -euo pipefail
           test -f supabase/migrations/20260812030000_prompt10_release_hardening.sql
           test -f supabase/migrations/20260812090000_prompt10_final_integrity_hardening.sql
-          versions=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -d_ -f1)
+          versions=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | cut -d_ -f1)
           test "$(printf '%s\n' "$versions" | wc -l)" -eq "$(printf '%s\n' "$versions" | sort -u | wc -l)"
-          test "$(printf '%s\n' "$versions")" = "$(printf '%s\n' "$versions" | sort)"
+          test "$(printf '%s\n' "$versions" | grep -Ec '^[0-9]{14}$')" -eq "$(printf '%s\n' "$versions" | wc -l)"
 
       - name: Rebuild database from migrations
         run: >-
