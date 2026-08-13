@@ -1564,6 +1564,21 @@ begin
     'payment_method', v_order.payment_method,
     'customer_name', v_order.customer_name,
     'customer_phone', v_order.customer_phone,
+    'loyalty',
+      case when v_order.loyalty_membership_id is null then null
+           else jsonb_build_object(
+             'linked', true,
+             'cpf_masked', (
+               select '***.***.***-' || c.cpf_last2
+               from public.loyalty_memberships as m
+               join public.customers as c
+                 on c.id = m.customer_id
+                and c.organization_id = m.organization_id
+               where m.id = v_order.loyalty_membership_id
+                 and m.organization_id = v_order.organization_id
+             )
+           )
+      end,
     'delivery_address',
       case when v_order.service_mode = 'pickup' then null
            else jsonb_build_object(
@@ -1738,6 +1753,8 @@ declare
   v_estimated_minutes integer;
   v_order_number bigint;
   v_tracking_token text;
+  v_loyalty_token_hash text;
+  v_loyalty_membership_id uuid;
   v_inserted boolean := false;
   v_inserted_item_count integer;
   v_constraint_name text;
@@ -1890,10 +1907,53 @@ begin
     where k.key not in (
       'menu_version_id', 'operation_revision', 'service_mode',
       'payment_method', 'customer', 'delivery_address', 'items',
-      'notes', 'cash_change_for'
+      'notes', 'cash_change_for', 'loyalty_token'
     )
   ) then
     raise exception 'INVALID_CART' using errcode = 'PED37';
+  end if;
+
+  -- Clube Ped-On: token efemero opcional. O consumo unico acontece
+  -- nesta mesma transacao (DELETE), entao qualquer falha posterior
+  -- devolve o token ao cliente; concorrentes ficam bloqueados pelo
+  -- FOR UPDATE e observam o token ja consumido.
+  if p_payload ? 'loyalty_token'
+     and jsonb_typeof(p_payload -> 'loyalty_token') <> 'null'
+  then
+    if jsonb_typeof(p_payload -> 'loyalty_token') <> 'string'
+       or (p_payload ->> 'loyalty_token') !~ '^[a-f0-9]{64}$'
+    then
+      raise exception 'INVALID_LOYALTY_TOKEN' using errcode = 'PED52';
+    end if;
+
+    v_loyalty_token_hash := encode(
+      extensions.digest(p_payload ->> 'loyalty_token', 'sha256'),
+      'hex'
+    );
+
+    if not exists (
+      select 1
+      from public.loyalty_programs as lp
+      where lp.organization_id = v_publication.organization_id
+        and lp.enabled
+    ) then
+      raise exception 'LOYALTY_UNAVAILABLE' using errcode = 'PED51';
+    end if;
+
+    select lat.membership_id into v_loyalty_membership_id
+    from public.loyalty_access_tokens as lat
+    where lat.organization_id = v_publication.organization_id
+      and lat.token_hash = v_loyalty_token_hash
+      and lat.expires_at > clock_timestamp()
+    for update of lat;
+
+    if v_loyalty_membership_id is null then
+      raise exception 'INVALID_LOYALTY_TOKEN' using errcode = 'PED52';
+    end if;
+
+    delete from public.loyalty_access_tokens
+    where organization_id = v_publication.organization_id
+      and token_hash = v_loyalty_token_hash;
   end if;
 
   if jsonb_typeof(p_payload -> 'service_mode') is distinct from 'string' then
@@ -2456,7 +2516,7 @@ begin
         organization_id, unit_id, menu_version_id, menu_version_number,
         order_number, idempotency_key, request_hash, tracking_token,
         status, payment_status, service_mode, payment_method,
-        customer_name, customer_phone,
+        customer_name, customer_phone, loyalty_membership_id,
         delivery_street, delivery_number, delivery_complement,
         delivery_neighborhood, delivery_city, delivery_state,
         delivery_postal_code, delivery_reference,
@@ -2467,7 +2527,7 @@ begin
         v_menu_version_id, v_menu_version_number,
         v_order_number, p_idempotency_key, v_request_hash, v_tracking_token,
         'new', 'pending', v_service_mode, v_payment_method,
-        v_customer_name, v_customer_phone,
+        v_customer_name, v_customer_phone, v_loyalty_membership_id,
         v_delivery_street, v_delivery_number, v_delivery_complement,
         v_delivery_neighborhood, v_delivery_city, v_delivery_state,
         v_delivery_postal_code, v_delivery_reference,
