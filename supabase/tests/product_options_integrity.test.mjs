@@ -881,22 +881,16 @@ async function run() {
     const fritasMenu = productByName(currentMenu, 'Fritas');
     ok(fritasMenu.option_groups.length === 1, '3.3 grupo inativo excluido do snapshot');
     ok(
-      groupByName(fritasMenu, 'Extras Fritas') !== null &&
-        groupByName(fritasMenu, 'Fritas Desativado') === null,
-      `3.4 grupo desativado nao aparece (grupos: ${(fritasMenu.option_groups ?? [])
-        .map((entry) => entry.name)
-        .join(', ')})`,
+      groupByName(fritasMenu, 'Extras Fritas') !== undefined &&
+        groupByName(fritasMenu, 'Fritas Desativado') === undefined,
+      '3.4 grupo desativado nao aparece',
     );
     const temporarioMenu = productByName(currentMenu, 'Temporario');
     ok(temporarioMenu.option_groups.length === 1, '3.5 grupo sem opcao ativa excluido');
     ok(
-      optionByName(groupByName(temporarioMenu, 'Extras'), 'Extra A') !== null &&
-        optionByName(groupByName(temporarioMenu, 'Extras'), 'Extra B') === null,
-      `3.6 opcao desativada nao aparece (extras: ${(
-        groupByName(temporarioMenu, 'Extras')?.options ?? []
-      )
-        .map((entry) => entry.name)
-        .join(', ')})`,
+      optionByName(groupByName(temporarioMenu, 'Extras'), 'Extra A') !== undefined &&
+        optionByName(groupByName(temporarioMenu, 'Extras'), 'Extra B') === undefined,
+      '3.6 opcao desativada nao aparece',
     );
 
     const snapshotGroups = await ownerAS.query(
