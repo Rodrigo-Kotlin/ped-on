@@ -42,7 +42,7 @@ export function DiagnosticoPage() {
           </div>
           <div className="flex flex-wrap justify-between gap-3">
             <dt className="text-pedon-text/70">Revisão (commit)</dt>
-            <dd className="font-mono">{buildMetadata.sha}</dd>
+            <dd className="min-w-0 break-all font-mono">{buildMetadata.sha}</dd>
           </div>
           <div className="flex flex-wrap justify-between gap-3">
             <dt className="text-pedon-text/70">Build gerado em</dt>
