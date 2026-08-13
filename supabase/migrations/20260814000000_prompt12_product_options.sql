@@ -1497,7 +1497,6 @@ begin
               'unit_price', oi.unit_price::text,
               'quantity', oi.quantity,
               'line_total', oi.line_total::text,
-              'note', oi.note,
               'options', (
                 select coalesce(
                   jsonb_agg(
