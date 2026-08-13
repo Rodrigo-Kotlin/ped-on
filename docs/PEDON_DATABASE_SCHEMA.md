@@ -1,7 +1,7 @@
 # PED-ON — Database Schema
 
 > Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On no checkpoint
-> `READY_FOR_REAUDIT` do Prompt 10.
+> `RELEASE_VERIFIED` do Prompt 10.
 > Fonte autoritativa: as 17 migrations versionadas em `supabase/migrations/`, reconstruídas no
 > projeto `ped-on` (ref `zmuxkztnilnzjyyojbbr`).
 
@@ -922,7 +922,7 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
-Checkpoint do Prompt 10 (`READY_FOR_REAUDIT`):
+Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 
 - migrations do Prompt 10 versionadas até `20260812090000_prompt10_final_integrity_hardening.sql`;
   **17 migrations no release esperado**;

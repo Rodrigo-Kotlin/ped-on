@@ -6,9 +6,9 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 3C, Prompt 10: Recompensas, resgate atômico e vouchers do Clube Ped-On, `IN_PROGRESS`.
-Checkpoint `READY_FOR_REAUDIT`: hardening de banco, frontend, testes, CI e deploy verificados;
-fechamento documental em andamento.
+Fase 3C, Prompt 10: Recompensas, resgate atômico e vouchers do Clube Ped-On, `COMPLETED`.
+Checkpoint `RELEASE_VERIFIED`: reauditoria independente concluída com
+`GO_WITH_NON_BLOCKING_FINDINGS`; encerramento documental oficial.
 
 O produto atual inclui:
 
@@ -202,6 +202,5 @@ passaram no hardening técnico de 2026-08-12. O run CI `31598675826` e o deploym
 - `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 
-Próximo passo oficial: reauditoria independente. O Prompt 10 permanece `IN_PROGRESS`, no checkpoint
-`READY_FOR_REAUDIT`, até a decisão externa; não declarar
-`COMPLETED` ou `RELEASE_VERIFIED` antes dela.
+Prompt 10 encerrado oficialmente como `COMPLETED` / `RELEASE_VERIFIED` após reauditoria independente
+concluída com GO. Próxima etapa: `A DEFINIR APÓS O ENCERRAMENTO DO PROMPT 10`.

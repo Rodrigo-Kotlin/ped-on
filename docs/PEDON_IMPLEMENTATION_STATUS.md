@@ -12,8 +12,8 @@
 | MODELO                 | Main-First monitorado                                                                                                                                                                                                                                                                      |
 | FASE ATUAL             | Fase 3C — Recompensas e Vouchers                                                                                                                                                                                                                                                           |
 | PROMPT ATUAL           | Prompt 10 — Recompensas, resgate atômico e vouchers do Clube Ped-On                                                                                                                                                                                                                        |
-| STATUS                 | `IN_PROGRESS`                                                                                                                                                                                                                                                                              |
-| CHECKPOINT             | `READY_FOR_REAUDIT` — hardening final implementado e sujeito à reauditoria independente                                                                                                                                                                                                   |
+| STATUS                 | `COMPLETED`                                                                                                                                                                                                                                                                              |
+| CHECKPOINT             | `RELEASE_VERIFIED` — reauditoria independente concluída com GO e encerramento oficial do Prompt 10                                                                                                                                                                                                   |
 | HEAD INICIAL DO PROMPT | `429e2fe` — docs: close Prompt 09 status record                                                                                                                                                                                                                                            |
 | BACKEND                | `IMPLEMENTED` — 17 migrations reconstruídas do zero localmente até `20260812090000_prompt10_final_integrity_hardening`; replay exige recovery secret, BigInt sai como texto decimal e relações privilegiadas têm FKs/uniques                                                                  |
 | FRONTEND               | `IMPLEMENTED` — catálogo público, resgate/recovery, vouchers do membro e extrato `redeem`; Reward management owner-only sem DELETE; `/app/vouchers` para staff com acesso à unidade                                                                                                          |
@@ -23,10 +23,10 @@
 | TESTES VERIFICADOS     | Frontend 233/233; E2E 192/192 e Prompt 10 44/44; banco isolado: RLS 22/22, RBAC 32/32, operacional 80/80, catálogo 123/123, menu 121/121, pedidos 318/318, loyalty 148/148, rewards/vouchers 254/254; Edge unit 15/15; db lint local sem erros                                             |
 | PWA                    | Nenhum cache de API/dados privados/tokens; recoveries de pedido e redemption persistem somente identificadores/segredos aleatórios, slug, timestamp e, no resgate, reward ID                                                                                                                                   |
 | CLOUDFLARE             | Deployment técnico de produção `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, source `2a91711bc83b54841b4b4beee8beca930b9ea986`, verificado em `ped-on.pages.dev` e `ceaf4832.ped-on.pages.dev`; rotas HTTP e PWA PASS, stable e immutable serviram o mesmo asset, smoke com Service Worker ativo confirmou ausência de runtime cache para APIs mutáveis do Clube |
-| GITHUB ACTIONS         | Run `31598675826`, SHA `2a91711bc83b54841b4b4beee8beca930b9ea986`, SUCCESS em Quality gates, Backend release gates e E2E smoke tests                                                                                                                                                  |
-| PENDÊNCIAS             | Heranças não bloqueantes: ícones PWA definitivos, atualização das actions que ainda recebem aviso de Node.js 20, TypeScript 7.x, gestão de `membership_units` via UI e otimização do bundle                                                                                              |
-| NEXT_STEP              | Executar reauditoria independente READ_ONLY do Prompt 10 sobre o checkpoint `READY_FOR_REAUDIT`; somente após GO da reauditoria poderá ocorrer o encerramento documental como `COMPLETED` / `RELEASE_VERIFIED`                                                                            |
-| PROMPT 10              | `IN_PROGRESS` — checkpoint `READY_FOR_REAUDIT`; não marcar `COMPLETED` ou `RELEASE_VERIFIED` antes da reauditoria independente                                                                                                                                                              |
+| GITHUB ACTIONS         | Run `31598675826`, SHA `2a91711bc83b54841b4b4beee8beca930b9ea986`, SUCCESS em Quality gates, Backend release gates e E2E smoke tests; run docs/re-audit `31607829475`, SHA `453af6557964620de8565d884ece6123b46266ba`, SUCCESS                                                                                                                                                  |
+| PENDÊNCIAS             | Heranças não bloqueantes: ícones PWA definitivos, atualização das actions que ainda recebem aviso de Node.js 20, TypeScript 7.x, gestão de `membership_units` via UI, otimização do bundle e dívida registrada na reauditoria (bundle ~809 kB, política futura de retenção/FKs históricas para `auth.users`, reconciliação global de stock procedural, semântica documentada de disable concorrente, recovery `found=false` mantém pending até 24h, pequenos gaps de evidência de SW, entradas obsoletas de `.gitleaksignore`, `verify_jwt` dependente do default cloud, precache cosmético duplicado)                                                                                              |
+| NEXT_STEP              | A DEFINIR APÓS O ENCERRAMENTO DO PROMPT 10 — o roadmap documentado termina no voucher do Clube; nenhuma etapa formal seguinte existe ainda e nenhum Prompt 11 será iniciado                                                                            |
+| PROMPT 10              | `COMPLETED` — checkpoint `RELEASE_VERIFIED`; reauditoria independente concluída com `GO_WITH_NON_BLOCKING_FINDINGS`                                                                                                                                                              |
 
 ---
 
@@ -53,6 +53,16 @@
 - `/app/vouchers` normaliza o código em memória e não o coloca na URL, Local Storage ou Session
   Storage; owner, manager e operator ainda dependem de `can_access_unit` no PostgreSQL.
 
+## Reauditoria independente — resultado oficial
+
+- Independent final reaudit: `GO_WITH_NON_BLOCKING_FINDINGS`.
+- CRITICAL: 0; HIGH: 0; MEDIUM BLOCKING: 0.
+- Bloqueadores originais: B1 Migration versioned, B2 Replay protected, B3 DB tests isolated,
+  B4 Backend CI gates e B5 Release convergence — todos `RESOLVED`.
+- Base verificada: technical release `2a91711bc83b54841b4b4beee8beca930b9ea986`, technical CI
+  `31598675826`, deployment `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, docs `453af6557964620de8565d884ece6123b46266ba`.
+- Dívida não bloqueante preservada na linha `PENDÊNCIAS`; nenhum item foi corrigido nesta execução.
+
 ## Histórico de execução
 
 | Etapa                             | Prompt                                                  | Status                          | Commit                                     | Data       |
@@ -67,4 +77,4 @@
 | Fase 2C — Cardápio                | Prompt 07 — Versionamento e publicação imutável         | COMPLETED                       | `87a796b`, `ee509b7`, `3e2bfdd`, `a1640ad` | 2026-08-10 |
 | Fase 3A — Pedidos                 | Prompt 08 — Carrinho, checkout e Central de Pedidos     | COMPLETED                       | `41b9da2`, `b801468`, `7fe07df`            | 2026-08-10 |
 | Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED                       | `2013e8d`                                  | 2026-08-11 |
-| Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | IN_PROGRESS — READY_FOR_REAUDIT | hardening final validado; reauditoria pendente   | 2026-08-12 |
+| Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; encerramento oficial (`2a91711`, `453af65`) | 2026-08-12 |

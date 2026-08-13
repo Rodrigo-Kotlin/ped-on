@@ -1,8 +1,8 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 10. Backend, frontend,
-> testes, CI e deploy Cloudflare da release técnica `2a91711` aprovados; fechamento documental em
-> andamento.
+> Guia operacional do Ped-On no checkpoint `RELEASE_VERIFIED` do Prompt 10. Backend, frontend,
+> testes, CI e deploy Cloudflare da release técnica `2a91711` aprovados; fechamento documental
+> concluído após reauditoria independente com GO.
 
 ## 1. Pré-requisitos
 
@@ -411,6 +411,6 @@ Release técnica verificada:
 
 ## 13. Próximo passo
 
-Prompt 10 está `IN_PROGRESS`, checkpoint `READY_FOR_REAUDIT`. A decisão final pertence à auditoria
-independente. Confirmar no relatório final o SHA, CI, Cloudflare e 17 migrations Local == Remote.
-antes de marcar `COMPLETED` ou `RELEASE_VERIFIED`.
+Prompt 10 encerrado oficialmente como `COMPLETED` / `RELEASE_VERIFIED`. Reauditoria independente
+concluída com `GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL/HIGH/MEDIUM BLOCKING = 0; B1 a B5 RESOLVED).
+Próxima etapa: `A DEFINIR APÓS O ENCERRAMENTO DO PROMPT 10`.
