@@ -1,8 +1,8 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 11, `IN_PROGRESS / PRE_CI`. O
-> frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS nega por padrão e o
-> Clube usa superfícies públicas minimizadas e RPCs internas restritas ao backend.
+> Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 11, checkpoint
+> `READY_FOR_REAUDIT`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
+> nega por padrão e o Clube usa superfícies públicas minimizadas e RPCs internas restritas.
 
 ## 1. Princípios
 
@@ -367,7 +367,7 @@ oficial não substitui esse ambiente destrutivo:
 | `orders_integrity.test.mjs`                  |           318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência       |
 | `loyalty_integrity.test.mjs`                 |           148/148 | identidade v2, consent auditável, ACL legado, TTL, rate limit, recovery e ledger           |
 | `loyalty_rewards_integrity.test.mjs`         |           254/254 | rewards, replay secret, FKs, estoque, vouchers e concorrência real                         |
-| `pilot_readiness_team_integrity.test.mjs`    |        PENDING CI | readiness, grants, owner-only, IDOR, vínculos e configuração segura das RPCs               |
+| `pilot_readiness_team_integrity.test.mjs`    |             84/84 | readiness, grants, owner-only, IDOR, vínculos e configuração segura das RPCs               |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das quatro tabelas, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
@@ -378,9 +378,12 @@ payload estrito, dinheiro exato, replay durável, tracking minimizado, máquinas
 autorização de refund e publicação Realtime sem PII. Clube valida grants zero, HMACs, mismatch
 uniforme, consentimento, token repetível/consumido, disable explícito, rate limit sem PII, statement
 máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
-concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108. Edge
-unit 15/15 e remote smoke 36/36 passaram historicamente. Para a árvore do Prompt 11:
-`LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PENDING`.
+concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108.
+
+O CI `31712486989` aprovou fresh rebuild das 19 migrations, alinhamento, DB lint, as nove suítes
+sequenciais com 1182/1182 checks e Edge unit 15/15. O remote smoke 36/36 permanece evidência
+histórica do Prompt 10. `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
+`CI ISOLATED DB REBUILD: PASS`.
 
 Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
 `membership_units` durante um cenário e é frágil se outra suíte inserir vínculos em paralelo.

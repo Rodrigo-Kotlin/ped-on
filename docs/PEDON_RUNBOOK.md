@@ -1,8 +1,8 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint `RELEASE_VERIFIED` do Prompt 10. Backend, frontend,
-> testes, CI e deploy Cloudflare da release técnica `2a91711` aprovados; fechamento documental
-> concluído após reauditoria independente com GO.
+> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 11. HEAD técnico
+> `925f7d94adea4c0c2cef9a1017270269960817aa`, CI `31712486989` e deployment Cloudflare
+> `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` aprovados.
 
 ## 1. Pré-requisitos
 
@@ -60,9 +60,9 @@ desenvolvimento. O GitHub Actions é o ambiente oficial e descartável para fres
 das 19 migrations, nove suítes DB, DB lint e Edge unit.
 
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
-- `CI ISOLATED DB REBUILD: PENDING` até o primeiro run do SHA completo do Prompt 11;
-- migration 18 já aplicada remotamente e semanticamente alinhada; não reaplicar;
-- run `31661244246` é anterior à árvore do Prompt 11 e não vale como gate atual.
+- `CI ISOLATED DB REBUILD: PASS` no run `31712486989`, com fresh rebuild das 19 migrations;
+- migrations 18 e 19 aplicadas remotamente; migration list em 19/19;
+- dry-run linked confirma que o remoto está up to date.
 
 ## 4. Variáveis e secrets
 
@@ -139,7 +139,8 @@ Regras:
 - criar e revisar migration versionada antes de alterar o banco;
 - nunca editar/apagar migration já aplicada;
 - nunca aplicar SQL silencioso pelo Dashboard;
-- confirmar Git/filesystem == 19 e remote == 18 antes do push controlado da migration 19;
+- confirmar Git/filesystem e remote em 19/19; o dry-run linked deve informar que o remoto está up to
+  date;
 - não usar `supabase db reset` no projeto oficial.
 
 ## 6. Testes DB e Edge
@@ -171,11 +172,13 @@ node supabase/tests/pilot_readiness_team_integrity.test.mjs
 | `orders_integrity.test.mjs`                  | 318/318 PASS |
 | `loyalty_integrity.test.mjs`                 | 148/148 PASS |
 | `loyalty_rewards_integrity.test.mjs`         | 254/254 PASS |
-| `pilot_readiness_team_integrity.test.mjs`    |   PENDING CI |
+| `pilot_readiness_team_integrity.test.mjs`    |   84/84 PASS |
 
 A execução sequencial evita interferência na contagem global herdada de `membership_units`. Cada
 script cria fixtures sintéticas e faz cleanup. Nunca limpar registros reais ao recuperar uma
 execução interrompida.
+
+Baseline oficial do CI `31712486989`: nove suítes, 1182/1182 checks.
 
 ### 6.1 Edge unit
 
@@ -201,9 +204,10 @@ Smoke contra a função deployada:
 node supabase/tests/loyalty_edge_smoke.mjs
 ```
 
-Checkpoint: 36/36 PASS, incluindo request sem JWT rejeitada, CPF + telefone, consentimento,
-resposta uniforme de identidade, rate limit 429/`Retry-After`, saldo/extrato, vouchers públicos e
-programa desabilitado. O smoke cria fixtures e executa cleanup.
+Checkpoint remoto histórico do Prompt 10: 36/36 PASS, incluindo request sem JWT rejeitada, CPF +
+telefone, consentimento, resposta uniforme de identidade, rate limit 429/`Retry-After`,
+saldo/extrato, vouchers públicos e programa desabilitado. O smoke cria fixtures e executa cleanup.
+Para o Prompt 11, o CI `31712486989` aprovou Edge unit 15/15.
 
 ## 7. Contratos operacionais do Clube
 
@@ -379,6 +383,20 @@ manuais de release por dependerem de ambiente implantado.
 | Output            | `apps/web/dist`                            |
 | URL estável       | `https://ped-on.pages.dev`                 |
 
+Release candidata do Prompt 11 — `READY_FOR_REAUDIT`:
+
+- source técnico `925f7d94adea4c0c2cef9a1017270269960817aa`;
+- CI `31712486989`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
+- backend: fresh rebuild isolado das 19 migrations, alinhamento, DB lint, nove suítes com 1182/1182
+  checks e Edge unit 15/15;
+- E2E smoke tests: 236/236;
+- Cloudflare check/deployment `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` aprovado;
+- URL imutável `https://82dedad7.ped-on.pages.dev` e URL estável `https://ped-on.pages.dev`;
+- fallback SPA aprovado em 18/18 rotas imutáveis e 4/4 rotas estáveis, com o SHA técnico confirmado
+  no bundle lazy de diagnóstico;
+- Supabase em 19/19, dry-run linked informa remote up to date e lint linked não encontrou erros;
+- rebuild local não executado por design.
+
 Release técnica histórica do Prompt 10, não utilizável como evidência do Prompt 11:
 
 - source `2a91711bc83b54841b4b4beee8beca930b9ea986`;
@@ -418,7 +436,7 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 
 ## 13. Próximo passo
 
-Prompt 11 permanece `IN_PROGRESS / PRE_CI`. Próximo passo: commit/push, primeiro CI oficial com
-fresh rebuild das 19 migrations, aplicação remota controlada da migration 19 após o CI, validação
-Cloudflare do mesmo SHA e reconciliação documental.
+Prompt 11 está em `READY_FOR_REAUDIT`. Próximo passo: reauditoria independente sobre o HEAD técnico
+`925f7d94adea4c0c2cef9a1017270269960817aa` e suas evidências convergentes.
+
 Prompt 12: `NOT STARTED`.

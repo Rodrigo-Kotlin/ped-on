@@ -25,8 +25,9 @@ primeiros restaurantes reais.
 
 ## Prompt 11 — Pilot Readiness, Observabilidade e Product Hardening
 
-Estado: `IN_PROGRESS / PRE_CI`. O projeto ainda não atingiu `PILOT_READY` nem
-`READY_FOR_REAUDIT`; fresh rebuild, DB tests/lint e deploy da árvore atual estão pendentes no CI.
+Estado: `READY_FOR_REAUDIT`. O HEAD técnico
+`925f7d94adea4c0c2cef9a1017270269960817aa` possui CI, backend isolado, E2E, Supabase e Cloudflare
+convergentes. Este checkpoint não declara automaticamente `PILOT_READY`.
 
 Objetivos:
 
@@ -46,6 +47,8 @@ Critério futuro: `PILOT_READY`. O `ready=true` calculado para uma organização
 de release do projeto.
 
 ## Prompt 12 — Produtos, Variações e Adicionais
+
+Estado: `NOT STARTED`.
 
 Objetivos:
 

@@ -1,8 +1,8 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa da Fase 4A — Pilot Ready, Prompt 11, status `IN_PROGRESS / PRE_CI`.
-> Fonte autoritativa: 19 migrations versionadas em `supabase/migrations/`. Migration 18 está aplicada
-> e alinhada remotamente; migration 19 é reconciliação pendente do fresh rebuild isolado no CI.
+> Referência cumulativa da Fase 4A — Pilot Ready, Prompt 11, checkpoint `READY_FOR_REAUDIT`.
+> Fonte autoritativa: 19 migrations versionadas; migration list local/remota em 19/19 e dry-run
+> linked confirmando que o remoto está up to date.
 
 ## 1. Estado das migrations
 
@@ -28,9 +28,9 @@
 | 18    | `20260812120000_prompt11_pilot_readiness_team.sql`                  | readiness derivada, listagem de equipe e gestão owner-only dos vínculos por unidade        |
 | 19    | `20260813120000_prompt11_readiness_unit_coherence.sql`              | exige uma mesma unidade com todos os pré-requisitos de piloto                               |
 
-Estado pré-CI de 2026-08-13: Git/filesystem apresentam 19 versões e remote 18; a única pendência é a
-migration 19 nova, que não será aplicada antes do rebuild oficial. `LOCAL DB REBUILD: NOT RUN — BY
-DESIGN / NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PENDING`.
+Estado reconciliado de 2026-08-13: Git/filesystem e remoto apresentam 19/19 migrations. A migration
+19 foi aplicada e o dry-run linked informa remote up to date. `LOCAL DB REBUILD: NOT RUN — BY
+DESIGN / NO LOCAL DOCKER`; fresh rebuild isolado aprovado no CI `31712486989`.
 
 ## 2. Convenções
 
@@ -934,15 +934,19 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
-Estado Prompt 11 pré-CI:
+Checkpoint Prompt 11 — `READY_FOR_REAUDIT`:
 
-- 19 migrations em Git/filesystem, 18 remote e migration 18 semanticamente alinhada;
-- migration 18 não foi reaplicada; migration 19 foi criada somente após encontrar falso positivo
-  real de readiness com pré-requisitos distribuídos entre unidades;
-- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
-- `CI ISOLATED DB REBUILD: PENDING`;
-- nona suíte `pilot_readiness_team_integrity.test.mjs` versionada; baseline esperado 1182 checks;
-- resultados históricos abaixo permanecem evidência do Prompt 10, não da árvore atual.
+- HEAD técnico `925f7d94adea4c0c2cef9a1017270269960817aa`;
+- CI `31712486989`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
+- fresh rebuild isolado das 19 migrations, alinhamento e DB lint aprovados;
+- nove suítes DB aprovadas com baseline 1182/1182 checks;
+- `pilot_readiness_team_integrity.test.mjs`: 84/84;
+- Edge unit: 15/15; E2E smoke tests: 236/236;
+- migration list local/remota: 19/19; dry-run linked: remote up to date; lint linked sem erros;
+- Cloudflare check/deployment `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` aprovado;
+- URLs aprovadas: `https://82dedad7.ped-on.pages.dev` e `https://ped-on.pages.dev`, com fallback
+  SPA e SHA técnico confirmados;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
 Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 
