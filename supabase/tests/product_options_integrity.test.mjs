@@ -603,11 +603,10 @@ async function run() {
     await saveConfig(ownerAS, unitA1, operationalConfig());
 
     scenario(1, 'regras de criacao de grupo e RBAC do catalogo');
-    await expectError(
+    await expectDenied(
       anon,
       'select public.create_catalog_product_option_group($1, $2, $3, $4, $5, $6, $7)',
       [unitA1, configurable.id, 'Anon', 'addon', 'multiple', 0, 1],
-      'PED10',
       '1.0 anon sem criar grupo',
     );
     await expectError(
@@ -884,14 +883,20 @@ async function run() {
     ok(
       groupByName(fritasMenu, 'Extras Fritas') !== null &&
         groupByName(fritasMenu, 'Fritas Desativado') === null,
-      '3.4 grupo desativado nao aparece',
+      `3.4 grupo desativado nao aparece (grupos: ${(fritasMenu.option_groups ?? [])
+        .map((entry) => entry.name)
+        .join(', ')})`,
     );
     const temporarioMenu = productByName(currentMenu, 'Temporario');
     ok(temporarioMenu.option_groups.length === 1, '3.5 grupo sem opcao ativa excluido');
     ok(
       optionByName(groupByName(temporarioMenu, 'Extras'), 'Extra A') !== null &&
         optionByName(groupByName(temporarioMenu, 'Extras'), 'Extra B') === null,
-      '3.6 opcao desativada nao aparece',
+      `3.6 opcao desativada nao aparece (extras: ${(
+        groupByName(temporarioMenu, 'Extras')?.options ?? []
+      )
+        .map((entry) => entry.name)
+        .join(', ')})`,
     );
 
     const snapshotGroups = await ownerAS.query(

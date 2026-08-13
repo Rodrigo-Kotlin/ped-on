@@ -1722,7 +1722,7 @@ declare
   v_available boolean;
   v_missing integer;
   v_wrong_product integer;
-  v_unavailable_flag uuid;
+  v_unavailable_flag integer;
   v_sel_count integer;
   v_delta_sum numeric := 0;
   v_final_unit_price numeric := 0;
@@ -2315,25 +2315,7 @@ begin
         raise exception 'OPTION_NOT_FOUND' using errcode = 'PED74';
       end if;
 
-      -- Regras min/max por grupo.
-      select count(*) into v_sel_count
-      from (
-        select (entry.value ->> 'menu_group_id')::uuid as menu_group_id, count(*) as c
-        from jsonb_array_elements(v_sel_options) as entry(value)
-        group by (entry.value ->> 'menu_group_id')::uuid
-      ) as x
-      join (
-        select distinct
-          (entry.value ->> 'menu_group_id')::uuid as menu_group_id,
-          (entry.value ->> 'group_min')::integer as group_min
-        from jsonb_array_elements(v_sel_options) as entry(value)
-      ) as g on g.menu_group_id = x.menu_group_id
-      where x.c < g.group_min;
-
-      if v_sel_count > 0 then
-        raise exception 'SELECTION_REQUIRED' using errcode = 'PED76';
-      end if;
-
+      -- Regras max por grupo: somente grupos presentes na selecao.
       select count(*) into v_sel_count
       from (
         select (entry.value ->> 'menu_group_id')::uuid as menu_group_id, count(*) as c
@@ -2356,6 +2338,26 @@ begin
       from jsonb_array_elements(v_sel_options) as entry(value);
     else
       v_delta_sum := 0;
+    end if;
+
+    -- Requisito de minimo: TODOS os grupos obrigatorios do produto
+    -- (min_select > 0) precisam de selecao suficiente, inclusive os
+    -- grupos sem nenhuma opcao selecionada.
+    select count(*) into v_sel_count
+    from public.menu_version_option_groups as g
+    where g.organization_id = v_publication.organization_id
+      and g.unit_id = v_publication.unit_id
+      and g.menu_version_id = v_menu_version_id
+      and g.menu_product_id = v_menu_item_id
+      and g.min_select > 0
+      and (
+        select count(*)
+        from jsonb_array_elements(v_sel_options) as entry(value)
+        where (entry.value ->> 'menu_group_id')::uuid = g.id
+      ) < g.min_select;
+
+    if v_sel_count > 0 then
+      raise exception 'SELECTION_REQUIRED' using errcode = 'PED76';
     end if;
 
     v_final_unit_price := v_menu_item.price + v_delta_sum;
