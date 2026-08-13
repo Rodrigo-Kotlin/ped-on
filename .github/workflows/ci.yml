@@ -20,15 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 9.15.9
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
@@ -51,11 +53,14 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Audit PWA precache
+        run: pnpm audit:precache
+
       - name: Secret scan (gitleaks)
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o gitleaks.tar.gz
           tar -xzf gitleaks.tar.gz
-          ./gitleaks detect --source . --redact --log-level warn
+          ./gitleaks git --redact --log-level warn .
 
   e2e:
     name: E2E smoke tests
@@ -63,15 +68,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 9.15.9
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
@@ -90,7 +95,7 @@ jobs:
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: apps/web/playwright-report
@@ -102,15 +107,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 9.15.9
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
@@ -121,7 +126,7 @@ jobs:
           deno-version: v2.x
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
 
@@ -134,9 +139,12 @@ jobs:
           set -euo pipefail
           test -f supabase/migrations/20260812030000_prompt10_release_hardening.sql
           test -f supabase/migrations/20260812090000_prompt10_final_integrity_hardening.sql
+          test -f supabase/migrations/20260812120000_prompt11_pilot_readiness_team.sql
+          test -f supabase/migrations/20260813120000_prompt11_readiness_unit_coherence.sql
           versions=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | cut -d_ -f1)
           test "$(printf '%s\n' "$versions" | wc -l)" -eq "$(printf '%s\n' "$versions" | sort -u | wc -l)"
           test "$(printf '%s\n' "$versions" | grep -Ec '^[0-9]{14}$')" -eq "$(printf '%s\n' "$versions" | wc -l)"
+          test "$(printf '%s\n' "$versions" | wc -l)" -eq 19
 
       - name: Rebuild database from migrations
         run: >-
@@ -150,10 +158,10 @@ jobs:
           set -euo pipefail
           output=$(supabase migration list --local)
           printf '%s\n' "$output"
-          test "$(printf '%s\n' "$output" | grep -c '20260812090000.*20260812090000')" -eq 1
+          test "$(printf '%s\n' "$output" | grep -c '20260813120000.*20260813120000')" -eq 1
 
       - name: Database lint
-        run: supabase db lint --local --level error
+        run: supabase db lint --local --level error --fail-on error
 
       - name: Database integration suites
         run: pnpm test:db

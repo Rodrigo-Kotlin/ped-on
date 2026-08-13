@@ -1,6 +1,6 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL no checkpoint `RELEASE_VERIFIED` do Prompt 10. O
+> Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 11, `IN_PROGRESS / PRE_CI`. O
 > frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS nega por padrão e o
 > Clube usa superfícies públicas minimizadas e RPCs internas restritas ao backend.
 
@@ -102,6 +102,10 @@ role sem escopo.
 | Ativar/desativar o Clube                                     |   Sim |               Não |                Não |
 | Gerenciar rewards e estoque                                  |   Sim |               Não |                Não |
 | Consultar/consumir voucher na unidade                        |   Sim |               Sim |                Sim |
+| Consultar readiness da organização                            |   Sim |               Sim |                Não |
+| Listar equipe e vínculos                                      |   Sim |               Não |                Não |
+| Atribuir/remover acesso por unidade                           |   Sim |               Não |                Não |
+| Acessar `/app/equipe` e `/app/diagnostico`                    |   Sim |               Não |                Não |
 
 `is_active` é estrutural; `is_available` é operacional. Desativar categoria não altera produtos e
 desativar produto não altera disponibilidade. Operator não acessa nenhuma RPC estrutural nem a
@@ -156,6 +160,11 @@ minimizados. As cinco RPCs de Reward management têm `EXECUTE` apenas para `auth
 `is_org_owner`; não existe RPC de DELETE. `get_loyalty_voucher_staff` e
 `consume_loyalty_voucher` também exigem `authenticated` e validam `can_access_unit` em unidade ativa.
 
+As RPCs `get_org_pilot_readiness`, `get_org_members_admin`, `assign_unit_to_member` e
+`remove_unit_from_member` têm `EXECUTE` somente para `authenticated` entre os papéis de navegador;
+`PUBLIC`/`anon` estão revogados. Todas validam tenant/role no servidor, usam `SECURITY DEFINER` e
+`search_path=''`. Atribuição rejeita membro externo, unidade de outro tenant, inexistente ou inativa.
+
 `PUBLIC` e `anon` foram explicitamente revogados das funções administrativas. O helper
 `_validate_catalog_price(text)` não possui `EXECUTE` para `PUBLIC`, `anon` ou `authenticated`.
 
@@ -171,7 +180,8 @@ cliente.
 - `complete_onboarding(text)` cria organização, owner e unidade em uma transação serializada.
 - `create_unit`, `update_unit` e `set_unit_active` são exclusivas de owner; a última unidade ativa é
   protegida por advisory lock por organização.
-- Gestão de `membership_units` continua sem UI/policy de escrita e permanece administrativa.
+- Gestão de `membership_units` possui UI owner-only em `/app/equipe` e RPCs dedicadas; continua sem
+  policy/grant de escrita direta para o navegador.
 
 ### 6.2 Configuração operacional
 
@@ -344,8 +354,8 @@ payload/nome/estoque inválidos. O contrato completo está no schema, Seção 10
 
 ## 9. Testes executados
 
-Os oito scripts DB em `supabase/tests/` usam conexão direta ao PostgreSQL oficial, criam usuários e
-organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup automático:
+As nove suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
+oficial não substitui esse ambiente destrutivo:
 
 | Script                                       | Resultado oficial | Cobertura principal                                                                       |
 | -------------------------------------------- | ----------------: | ----------------------------------------------------------------------------------------- |
@@ -357,6 +367,7 @@ organizações sintéticos, simulam `authenticated`/`anon` e executam cleanup au
 | `orders_integrity.test.mjs`                  |           318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência       |
 | `loyalty_integrity.test.mjs`                 |           148/148 | identidade v2, consent auditável, ACL legado, TTL, rate limit, recovery e ledger           |
 | `loyalty_rewards_integrity.test.mjs`         |           254/254 | rewards, replay secret, FKs, estoque, vouchers e concorrência real                         |
+| `pilot_readiness_team_integrity.test.mjs`    |        PENDING CI | readiness, grants, owner-only, IDOR, vínculos e configuração segura das RPCs               |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das quatro tabelas, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
@@ -368,8 +379,8 @@ autorização de refund e publicação Realtime sem PII. Clube valida grants zer
 uniforme, consentimento, token repetível/consumido, disable explícito, rate limit sem PII, statement
 máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
 concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108. Edge
-unit 15/15 e remote smoke 36/36 também passaram;
-`supabase db lint --linked` passou sem erros.
+unit 15/15 e remote smoke 36/36 passaram historicamente. Para a árvore do Prompt 11:
+`LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PENDING`.
 
 Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
 `membership_units` durante um cenário e é frágil se outra suíte inserir vínculos em paralelo.
@@ -381,7 +392,6 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial dos oito testes DB e
-  `supabase db lint --linked`.
+- Alterações de autorização exigem execução sequencial das nove suítes DB e DB lint no CI isolado.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.

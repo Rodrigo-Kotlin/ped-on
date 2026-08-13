@@ -26,6 +26,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 | ------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Desenvolvimento web | `pnpm dev`                                                                                                 |
 | Build PWA           | `pnpm build`                                                                                               |
+| Auditar precache    | `pnpm audit:precache`                                                                                      |
 | Preview local       | `pnpm --filter @pedon/web preview`                                                                         |
 | Formatar            | `pnpm format`                                                                                              |
 | Verificar formato   | `pnpm format:check`                                                                                        |
@@ -38,9 +39,9 @@ pnpm --filter @pedon/web exec playwright install chromium
 O build de produção fica em `apps/web/dist`. O PWA cacheia apenas assets estáticos; não há
 `runtimeCaching` de API, dados privados, tokens ou respostas do Clube.
 
-## 3. Gates do Prompt 10
+## 3. Gates do Prompt 11
 
-Gates locais obrigatórios antes de encerrar o Prompt 10:
+Gates locais leves obrigatórios:
 
 ```bash
 pnpm format:check
@@ -48,25 +49,20 @@ pnpm lint
 pnpm typecheck
 pnpm test:run
 pnpm build
+pnpm audit:precache
 pnpm test:e2e
-gitleaks detect --source . --redact --log-level warn
+pnpm test:edge
+gitleaks git --redact --log-level warn .
 ```
 
- Também executar os testes DB/Edge da Seção 6, conferir as 17 migrations e o db lint. No checkpoint
-atual estão verificados:
+Não executar Docker, `supabase start`, `supabase db reset` nem stack Supabase local na máquina de
+desenvolvimento. O GitHub Actions é o ambiente oficial e descartável para fresh rebuild, aplicação
+das 19 migrations, nove suítes DB, DB lint e Edge unit.
 
-- frontend unit/component 233/233;
-- E2E mocked 192/192 em 360/768/1024/1440; suíte Prompt 10 44/44, incluindo BigInt,
-  recovery secret, erro determinístico e service worker ativo;
-- DB isolado: RLS 22/22, RBAC 32/32, operacional 80/80, catálogo 123/123, menu 121/121,
-  pedidos 318/318, loyalty 148/148 e rewards/vouchers 254/254;
-- Edge unit 15/15 e remote smoke 36/36;
-- `supabase db lint --linked` PASS;
-- 17 migrations no release esperado; confirmar Local == Remote após aplicar a migration 17.
-
-Na reauditoria de 2026-08-11, format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit,
-alinhamento de migrations e db lint passaram. No hardening técnico de 2026-08-12, CI e deploy
-Cloudflare foram declarados concluídos: SHA `2a91711`, run `31598675826` e deployment `ceaf4832`.
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
+- `CI ISOLATED DB REBUILD: PENDING` até o primeiro run do SHA completo do Prompt 11;
+- migration 18 já aplicada remotamente e semanticamente alinhada; não reaplicar;
+- run `31661244246` é anterior à árvore do Prompt 11 e não vale como gate atual.
 
 ## 4. Variáveis e secrets
 
@@ -125,6 +121,8 @@ $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
 15. `20260811200418_loyalty_rewards_redemptions_vouchers.sql`
 16. `20260812030000_prompt10_release_hardening.sql`
 17. `20260812090000_prompt10_final_integrity_hardening.sql`
+18. `20260812120000_prompt11_pilot_readiness_team.sql`
+19. `20260813120000_prompt11_readiness_unit_coherence.sql`
 
 ### 5.2 Fluxo linked não destrutivo
 
@@ -141,14 +139,14 @@ Regras:
 - criar e revisar migration versionada antes de alterar o banco;
 - nunca editar/apagar migration já aplicada;
 - nunca aplicar SQL silencioso pelo Dashboard;
-- confirmar Local == Remote e db lint após push;
+- confirmar Git/filesystem == 19 e remote == 18 antes do push controlado da migration 19;
 - não usar `supabase db reset` no projeto oficial.
 
 ## 6. Testes DB e Edge
 
 Os testes DB usam conexão PostgreSQL administrativa para setup/cleanup e sessões dedicadas com
-`SET ROLE`/claims para cenários de cliente. Execute os oito scripts sequencialmente, nunca em
-paralelo:
+`SET ROLE`/claims. As nove suítes destrutivas rodam sequencialmente apenas no banco descartável do
+GitHub Actions:
 
 ```powershell
 $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
@@ -160,6 +158,7 @@ node supabase/tests/menu_publication_integrity.test.mjs
 node supabase/tests/orders_integrity.test.mjs
 node supabase/tests/loyalty_integrity.test.mjs
 node supabase/tests/loyalty_rewards_integrity.test.mjs
+node supabase/tests/pilot_readiness_team_integrity.test.mjs
 ```
 
 | Script                                       |   Checkpoint |
@@ -172,6 +171,7 @@ node supabase/tests/loyalty_rewards_integrity.test.mjs
 | `orders_integrity.test.mjs`                  | 318/318 PASS |
 | `loyalty_integrity.test.mjs`                 | 148/148 PASS |
 | `loyalty_rewards_integrity.test.mjs`         | 254/254 PASS |
+| `pilot_readiness_team_integrity.test.mjs`    |   PENDING CI |
 
 A execução sequencial evita interferência na contagem global herdada de `membership_units`. Cada
 script cria fixtures sintéticas e faz cleanup. Nunca limpar registros reais ao recuperar uma
@@ -209,7 +209,9 @@ programa desabilitado. O smoke cria fixtures e executa cleanup.
 
 ### 7.1 Identidade pública v2
 
-Endpoint: `POST /functions/v1/loyalty-cpf`, com publishable/anon JWT válido.
+Endpoint: `POST /functions/v1/loyalty-cpf`, com a publishable key do projeto nos headers `apikey` e
+`Authorization`. Smoke remoto confirmou que a chave atual atravessa o gateway; não assumir formato
+JWT legado apenas pelo nome da credencial.
 
 | Campo         | Lookup                                  | Enroll                                  |
 | ------------- | --------------------------------------- | --------------------------------------- |
@@ -327,6 +329,8 @@ continua autorizado a exibi-las.
 - checkout: vínculo opcional do token do Clube sem quebrar guest checkout;
 - `/app/clube`: protegido por `RequireOwner`; programa, métricas, membros e Reward management;
 - `/app/vouchers`: operação por unidade para owner/manager/operator autorizados;
+- `/app/equipe`: gestão de acesso por unidade, owner-only;
+- `/app/diagnostico`: versão/SHA, contexto, conectividade e readiness, owner-only;
 - manager/operator não acessam a página nem as RPCs owner-only;
 - toggle chama RPC server-authoritative e invalida/refaz a query do programa;
 - mudança de usuário chama `queryClient.clear()` e remove a unidade selecionada;
@@ -347,6 +351,8 @@ continua autorizado a exibi-las.
 | `/app/pedidos`               | Central de Pedidos                        |
 | `/app/clube`                 | administração owner-only                  |
 | `/app/vouchers`              | consulta e consumo por unidade             |
+| `/app/equipe`                | gestão de equipe owner-only                 |
+| `/app/diagnostico`           | diagnóstico owner-only                      |
 | `/menu/:publicSlug`          | cardápio público                          |
 | `/menu/:publicSlug/carrinho` | carrinho público local                    |
 | `/menu/:publicSlug/checkout` | checkout guest/Clube network-only         |
@@ -363,7 +369,8 @@ continua autorizado a exibi-las.
 
 Jobs obrigatórias atuais: `Quality gates`, `E2E smoke tests` e `Backend release gates`. Backend
 reconstrói o Supabase local exclusivamente pelas migrations versionadas, valida alinhamento local,
-executa `supabase db lint --local --level error`, as oito suítes DB sequenciais e Edge unit. O job
+executa `supabase db lint --local --level error --fail-on error`, as nove suítes DB sequenciais e
+Edge unit. O job
 não usa service role, senha ou banco remoto. Edge smoke remoto e Cloudflare smoke permanecem gates
 manuais de release por dependerem de ambiente implantado.
 | Pages project     | `ped-on`                                   |
@@ -372,7 +379,7 @@ manuais de release por dependerem de ambiente implantado.
 | Output            | `apps/web/dist`                            |
 | URL estável       | `https://ped-on.pages.dev`                 |
 
-Release técnica verificada:
+Release técnica histórica do Prompt 10, não utilizável como evidência do Prompt 11:
 
 - source `2a91711bc83b54841b4b4beee8beca930b9ea986`;
 - run CI `31598675826`, com Quality gates, Backend release gates e E2E smoke tests aprovados;
@@ -407,10 +414,11 @@ Release técnica verificada:
 | Staff recebe `PED11` no voucher          | conferir unidade ativa e `membership_units`                                 |
 | Dados antigos após troca de login        | confirmar `queryClient.clear()` em mudança de user ID                      |
 | Migration ausente                        | `supabase migration list`; revisar antes de `db push --linked`             |
-| DB test falha por contagem               | confirmar execução sequencial das oito suítes                              |
+| DB test falha por contagem               | confirmar execução sequencial das nove suítes                              |
 
 ## 13. Próximo passo
 
-Prompt 10 encerrado oficialmente como `COMPLETED` / `RELEASE_VERIFIED`. Reauditoria independente
-concluída com `GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL/HIGH/MEDIUM BLOCKING = 0; B1 a B5 RESOLVED).
-Próxima etapa: `A DEFINIR APÓS O ENCERRAMENTO DO PROMPT 10`.
+Prompt 11 permanece `IN_PROGRESS / PRE_CI`. Próximo passo: commit/push, primeiro CI oficial com
+fresh rebuild das 19 migrations, aplicação remota controlada da migration 19 após o CI, validação
+Cloudflare do mesmo SHA e reconciliação documental.
+Prompt 12: `NOT STARTED`.

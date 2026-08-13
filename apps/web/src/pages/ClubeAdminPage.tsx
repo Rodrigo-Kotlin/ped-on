@@ -3,6 +3,7 @@ import { useContext, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useAdmin } from '../lib/admin/admin-context';
 import { AuthContext } from '../lib/auth/auth-context';
+import { assertOnline } from '../lib/offline/useOnline';
 import {
   createLoyaltyReward,
   createLoyaltyRewardSchema,
@@ -414,7 +415,10 @@ export function ClubeAdminPage() {
   }
 
   const createRewardMutation = useMutation({
-    mutationFn: (input: CreateLoyaltyRewardInput) => createLoyaltyReward(organizationId, input),
+    mutationFn: (input: CreateLoyaltyRewardInput) => {
+      assertOnline();
+      return createLoyaltyReward(organizationId, input);
+    },
     onSuccess: async () => {
       setName('');
       setDescription('');
@@ -425,25 +429,34 @@ export function ClubeAdminPage() {
   });
 
   const updateRewardMutation = useMutation({
-    mutationFn: ({ rewardId, input }: { rewardId: string; input: UpdateLoyaltyRewardInput }) =>
-      updateLoyaltyReward(rewardId, input),
+    mutationFn: ({ rewardId, input }: { rewardId: string; input: UpdateLoyaltyRewardInput }) => {
+      assertOnline();
+      return updateLoyaltyReward(rewardId, input);
+    },
     onSuccess: refreshRewards,
   });
 
   const stockRewardMutation = useMutation({
-    mutationFn: ({ rewardId, stock }: { rewardId: string; stock: string }) =>
-      setLoyaltyRewardStock(rewardId, stock),
+    mutationFn: ({ rewardId, stock }: { rewardId: string; stock: string }) => {
+      assertOnline();
+      return setLoyaltyRewardStock(rewardId, stock);
+    },
     onSuccess: refreshRewards,
   });
 
   const activeRewardMutation = useMutation({
-    mutationFn: ({ rewardId, active }: { rewardId: string; active: boolean }) =>
-      setLoyaltyRewardActive(rewardId, active),
+    mutationFn: ({ rewardId, active }: { rewardId: string; active: boolean }) => {
+      assertOnline();
+      return setLoyaltyRewardActive(rewardId, active);
+    },
     onSuccess: refreshRewards,
   });
 
   const toggleMutation = useMutation({
-    mutationFn: (enabled: boolean) => setLoyaltyProgramEnabled(organizationId, enabled),
+    mutationFn: (enabled: boolean) => {
+      assertOnline();
+      return setLoyaltyProgramEnabled(organizationId, enabled);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: loyaltyProgramKey(userId, organizationId),

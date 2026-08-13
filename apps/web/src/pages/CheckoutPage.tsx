@@ -8,6 +8,8 @@ import { useCart } from '../lib/cart/cart-context';
 import { cartSubtotalCents, isCartStale } from '../lib/cart/cart';
 import { addCents, centsToDecimal, decimalToCents, formatBRL } from '../lib/money';
 import { publicMenuQueryKey, publicMenuQueryOptions } from '../lib/menu/public-menu-query';
+import { assertOnline } from '../lib/offline/useOnline';
+import { useCriticalOperation } from '../lib/pwa/critical-operation';
 import {
   createPublicOrder,
   getPublicOrderByAttempt,
@@ -135,6 +137,7 @@ function optional(value: string): string | undefined {
 }
 
 export function CheckoutPage() {
+  const { runCriticalOperation } = useCriticalOperation();
   const { publicSlug = '' } = useParams<{ publicSlug: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -447,11 +450,14 @@ export function CheckoutPage() {
     setSubmitError(null);
 
     try {
-      const result = await createPublicOrder(
-        publicSlug,
-        pendingAttempt.idempotency_key,
-        pendingAttempt.request_fingerprint,
-        payload,
+      assertOnline();
+      const result = await runCriticalOperation(() =>
+        createPublicOrder(
+          publicSlug,
+          pendingAttempt.idempotency_key,
+          pendingAttempt.request_fingerprint,
+          payload,
+        ),
       );
       clearPendingOrderAttempt(publicSlug);
       clearCart();

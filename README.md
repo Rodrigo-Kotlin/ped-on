@@ -6,9 +6,11 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 3C, Prompt 10: Recompensas, resgate atômico e vouchers do Clube Ped-On, `COMPLETED`.
-Checkpoint `RELEASE_VERIFIED`: reauditoria independente concluída com
-`GO_WITH_NON_BLOCKING_FINDINGS`; encerramento documental oficial.
+Fase 4A — Pilot Ready, Prompt 11: Pilot Readiness, Observabilidade e Product Hardening.
+Status `IN_PROGRESS`, checkpoint `PRE_CI`: ainda não `READY_FOR_REAUDIT`.
+
+`LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+`CI ISOLATED DB REBUILD: PENDING` para a árvore completa do Prompt 11.
 
 O produto atual inclui:
 
@@ -24,6 +26,9 @@ O produto atual inclui:
 - catálogo público de recompensas, resgate atômico recuperável, vouchers ativos e extrato `redeem`;
 - Reward management owner-only com Create / Read / Update / Activate-Deactivate / Stock Adjustment;
 - validação e consumo de vouchers por owner/manager/operator no contexto da unidade;
+- prontidão para piloto derivada do estado real, gestão owner-only de acessos por unidade e
+  diagnóstico com versão/SHA;
+- estados offline/loading/error e atualização PWA explícita, sem interromper mutações críticas;
 - PWA hospedada em Cloudflare Pages e CI no GitHub Actions.
 
 O CPF e o telefone completos não são persistidos. A Edge Function `loyalty-cpf` usa fingerprints
@@ -61,8 +66,8 @@ ped-on/
 │       └── src/                   # app, componentes, domínio web e páginas
 ├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # 17 migrations versionadas até o hardening do Prompt 10
-│   ├── tests/                     # oito suítes DB e smoke remoto da Edge
+│   ├── migrations/                # 19 migrations versionadas até o Prompt 11
+│   ├── tests/                     # nove suítes DB e smoke remoto da Edge
 │   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
 │   └── seed.example.sql           # seed de exemplo, sem dados reais
 ├── docs/                          # continuidade, schema, RLS e operação
@@ -87,6 +92,8 @@ ped-on/
 | `/app/pedidos`           | Central de Pedidos por unidade                       |
 | `/app/clube`             | programa, métricas, membros e rewards; somente owner |
 | `/app/vouchers`          | validação e consumo de vouchers por unidade          |
+| `/app/equipe`            | gestão owner-only dos acessos por unidade            |
+| `/app/diagnostico`       | versão, contexto, conectividade e readiness          |
 | `/menu/:slug`            | cardápio público do cliente                          |
 | `/menu/:slug/carrinho`   | carrinho público local                               |
 | `/menu/:slug/checkout`   | checkout guest/Clube, idempotente e network-only     |
@@ -130,7 +137,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O release esperado possui 17 migrations ordenadas e reproduzíveis:
+O filesystem versionado possui 19 migrations ordenadas:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -149,6 +156,8 @@ O release esperado possui 17 migrations ordenadas e reproduzíveis:
 15. `20260811200418_loyalty_rewards_redemptions_vouchers.sql`
 16. `20260812030000_prompt10_release_hardening.sql`
 17. `20260812090000_prompt10_final_integrity_hardening.sql`
+18. `20260812120000_prompt11_pilot_readiness_team.sql`
+19. `20260813120000_prompt11_readiness_unit_coherence.sql`
 
 Fluxo linked não destrutivo:
 
@@ -159,23 +168,21 @@ supabase migration list
 supabase db lint --linked
 ```
 
-`supabase db lint --linked` está verificado com sucesso no checkpoint atual. Não editar migration já
-aplicada e não usar `supabase db reset` como substituto desse fluxo.
+Migration 18 está aplicada remotamente e local/remoto são semanticamente iguais; não reaplicar. A
+migration 19 reconcilia a coerência por unidade e aguarda o fresh rebuild das 19 migrations no
+GitHub Actions antes de qualquer aplicação remota.
+Não editar migration aplicada nem usar `supabase db reset` localmente.
 
-## Testes verificados
+## Testes do Prompt 11
 
-- frontend unit/component: 233/233;
-- E2E mocked: 192/192 em 360/768/1024/1440; suíte dedicada do Prompt 10: 44/44, mais smoke com SW ativo;
-- banco isolado: RLS 22/22, RBAC 32/32, operacional 80/80, catálogo 123/123, menu 121/121,
-  pedidos 318/318, loyalty 148/148 e rewards/vouchers 254/254;
-- Edge unit: 15/15;
-- Edge remote smoke: 36/36;
-- `supabase db lint --linked`: PASS;
-- migrations: 17 Local == Remote.
+- gates locais leves pré-reconciliação: frontend 274/274, E2E 236/236, Prompt 11 E2E 44/44 e Edge
+  unit 15/15;
+- gates locais finais serão repetidos após UX PWA e documentação;
+- banco isolado, nove suítes, DB lint e baseline esperado 1182: `PENDING` no CI oficial do novo SHA;
+- migrations Git/filesystem: 19; remote: 18; única pendência esperada: migration 19, ainda não aplicada.
 
-Format, lint, typecheck, testes, build, E2E, Gitleaks, Edge unit, alinhamento de migrations e db lint
-passaram no hardening técnico de 2026-08-12. O run CI `31598675826` e o deployment Cloudflare
-`ceaf4832-bc0e-4159-a983-fd5ca367efd8`, ambos da release técnica `2a91711`, também passaram.
+O run `31661244246` é histórico e anterior à árvore atual; não é evidência do Prompt 11. O primeiro
+CI oficial e o deployment Cloudflare do novo SHA ainda estão pendentes.
 
 ## Segurança e secrets
 
@@ -203,6 +210,4 @@ passaram no hardening técnico de 2026-08-12. O run CI `31598675826` e o deploym
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 - `docs/PEDON_POST_MVP_ROADMAP.md`: roadmap oficial pós-Core MVP
 
-Prompt 10 encerrado oficialmente como `COMPLETED` / `RELEASE_VERIFIED` após reauditoria independente
-concluída com GO. Próxima etapa: `Prompt 11 — Pilot Readiness, Observabilidade e Product Hardening`
-(Fase 4 — Pilot Ready); ver `docs/PEDON_POST_MVP_ROADMAP.md`.
+Prompt 11 permanece `IN_PROGRESS / PRE_CI`. Prompt 12: `NOT STARTED`.

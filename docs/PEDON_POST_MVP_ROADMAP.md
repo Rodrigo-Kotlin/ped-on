@@ -18,12 +18,15 @@
 - `unit_id` continua o escopo operacional.
 - Ped-On continua sem intermediação financeira.
 
-# FASE 4 — PILOT READY
+# FASE 4A — PILOT READY
 
 Objetivo: transformar o Core MVP validado em um produto adequado para operação controlada com os
 primeiros restaurantes reais.
 
 ## Prompt 11 — Pilot Readiness, Observabilidade e Product Hardening
+
+Estado: `IN_PROGRESS / PRE_CI`. O projeto ainda não atingiu `PILOT_READY` nem
+`READY_FOR_REAUDIT`; fresh rebuild, DB tests/lint e deploy da árvore atual estão pendentes no CI.
 
 Objetivos:
 
@@ -39,7 +42,8 @@ Objetivos:
 - limpeza de dívida técnica segura;
 - preparação para piloto.
 
-Critério: `PILOT_READY`.
+Critério futuro: `PILOT_READY`. O `ready=true` calculado para uma organização não substitui os gates
+de release do projeto.
 
 ## Prompt 12 — Produtos, Variações e Adicionais
 

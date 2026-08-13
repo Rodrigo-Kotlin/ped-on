@@ -1,9 +1,8 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa do esquema Supabase/PostgreSQL do Ped-On no checkpoint
-> `RELEASE_VERIFIED` do Prompt 10.
-> Fonte autoritativa: as 17 migrations versionadas em `supabase/migrations/`, reconstruídas no
-> projeto `ped-on` (ref `zmuxkztnilnzjyyojbbr`).
+> Referência cumulativa da Fase 4A — Pilot Ready, Prompt 11, status `IN_PROGRESS / PRE_CI`.
+> Fonte autoritativa: 19 migrations versionadas em `supabase/migrations/`. Migration 18 está aplicada
+> e alinhada remotamente; migration 19 é reconciliação pendente do fresh rebuild isolado no CI.
 
 ## 1. Estado das migrations
 
@@ -26,9 +25,12 @@
 | 15    | `20260811200418_loyalty_rewards_redemptions_vouchers.sql`         | rewards, resgate atômico, estoque auditável e vouchers                                   |
 | 16    | `20260812030000_prompt10_release_hardening.sql`                    | replay autenticado por recovery secret, FKs relacionais e métricas corretas               |
 | 17    | `20260812090000_prompt10_final_integrity_hardening.sql`            | BigInt como texto decimal, stock único por redemption e consumo auditável                 |
+| 18    | `20260812120000_prompt11_pilot_readiness_team.sql`                  | readiness derivada, listagem de equipe e gestão owner-only dos vínculos por unidade        |
+| 19    | `20260813120000_prompt11_readiness_unit_coherence.sql`              | exige uma mesma unidade com todos os pré-requisitos de piloto                               |
 
-Checkpoint oficial de 2026-08-12: `supabase migration list` apresenta Local == Remote para as 17
-versões; `supabase db lint --linked` passou sem erros.
+Estado pré-CI de 2026-08-13: Git/filesystem apresentam 19 versões e remote 18; a única pendência é a
+migration 19 nova, que não será aplicada antes do rebuild oficial. `LOCAL DB REBUILD: NOT RUN — BY
+DESIGN / NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PENDING`.
 
 ## 2. Convenções
 
@@ -872,10 +874,20 @@ usa `PED60`. Voucher consumido não pode ser consumido novamente (`PED61`).
 | `_loyalty_earn_order(orders)` / `_loyalty_reverse_order(orders)`                   | earn/reversal internos do ledger (revogados de navegador)                             |
 | RPCs da Seção 10.2                                                                | catálogo, resgate atômico e recovery públicos                                         |
 | RPCs da Seção 10.3                                                                | Reward management owner-only e operação staff de vouchers                            |
+| `get_org_pilot_readiness(uuid)`                                                    | readiness derivada; owner/manager; nove checks bloqueantes e loyalty opcional         |
+| `get_org_members_admin(uuid)`                                                      | membros e vínculos minimizados; owner-only                                            |
+| `assign_unit_to_member(uuid,uuid,uuid)` / `remove_unit_from_member(uuid,uuid,uuid)` | gestão transacional owner-only, sem escrita direta do browser                         |
 
 Todas as funções desta tabela, exceto `set_updated_at()`, são `security definer` com
 `search_path=''`; `get_my_admin_context`, helpers de acesso e getters são `stable` quando aplicável,
 e validadores puros são `immutable`.
+
+As quatro RPCs do Prompt 11 usam `SECURITY DEFINER`, `search_path=''`, grant somente para
+`authenticated` entre os papéis de navegador e SQLSTATEs `PED67..PED71`. Readiness não persiste flag
+manual: deriva organização, unidades ativas, configuração, horários, pagamentos, catálogo,
+publicação, primeiro pedido e loyalty. A implementação aplicada usa `bool_or(lp.enabled)`, não
+`max(boolean)`. A migration 19 acrescenta o check `pilot_unit`, impedindo que pré-requisitos
+distribuídos entre unidades diferentes resultem em `ready=true`.
 
 `complete_onboarding` serializa pelo usuário. `set_unit_active` serializa a contagem pelo tenant
 com `pg_advisory_xact_lock(hashtext('pedon:org:' || organization_id))`, garantindo pelo menos uma
@@ -922,6 +934,16 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
+Estado Prompt 11 pré-CI:
+
+- 19 migrations em Git/filesystem, 18 remote e migration 18 semanticamente alinhada;
+- migration 18 não foi reaplicada; migration 19 foi criada somente após encontrar falso positivo
+  real de readiness com pré-requisitos distribuídos entre unidades;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
+- `CI ISOLATED DB REBUILD: PENDING`;
+- nona suíte `pilot_readiness_team_integrity.test.mjs` versionada; baseline esperado 1182 checks;
+- resultados históricos abaixo permanecem evidência do Prompt 10, não da árvore atual.
+
 Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 
 - migrations do Prompt 10 versionadas até `20260812090000_prompt10_final_integrity_hardening.sql`;
@@ -939,7 +961,7 @@ Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 - CI `31598675826` (Quality gates, Backend release gates e E2E smoke tests) e Cloudflare deployment
   `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, source `2a91711`, aprovados.
 
-Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 17 migrations:
+Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 19 migrations:
 
 - migrations `20260810144145_orders_checkout.sql` e
   `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente naquele checkpoint;

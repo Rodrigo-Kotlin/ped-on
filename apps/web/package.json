@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "audit:precache": "node scripts/audit-precache.mjs",
     "typecheck": "tsc -b",
     "preview": "vite preview",
     "test": "vitest run",
@@ -25,6 +26,7 @@
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.85.0",
     "react-router": "^8.3.0",
+    "workbox-window": "7.4.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

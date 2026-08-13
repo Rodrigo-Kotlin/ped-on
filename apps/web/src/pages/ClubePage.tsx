@@ -7,6 +7,8 @@ import type { SubmitHandler, UseFormRegisterReturn } from 'react-hook-form';
 import { publicMenuQueryOptions } from '../lib/menu/public-menu-query';
 import type { PublicMenuData } from '../lib/menu/menu';
 import { formatBRL } from '../lib/money';
+import { assertOnline } from '../lib/offline/useOnline';
+import { useCriticalOperation } from '../lib/pwa/critical-operation';
 import {
   clubEnrollSchema,
   clubLookupSchema,
@@ -415,6 +417,7 @@ function LoyaltyAccountView({
   onConsumeAccessToken: () => void;
   onUpdateAccount: (account: LoyaltyResolveFound) => void;
 }) {
+  const { runCriticalOperation } = useCriticalOperation();
   const [balance, setBalance] = useState(account.account.points_balance);
   const [recovery, setRecovery] = useState(account.account.recovery_points);
   const [statement, setStatement] = useState(
@@ -487,14 +490,17 @@ function LoyaltyAccountView({
     setRedeeming(true);
     setRedemptionError(null);
     try {
-      const result = await redeemPublicLoyaltyReward({
-        publicSlug,
-        idempotencyKey,
-        recoverySecret,
-        rewardId: reward.id,
-        rewardRevision: reward.revision,
-        accessToken,
-      });
+      assertOnline();
+      const result = await runCriticalOperation(() =>
+        redeemPublicLoyaltyReward({
+          publicSlug,
+          idempotencyKey,
+          recoverySecret,
+          rewardId: reward.id,
+          rewardRevision: reward.revision,
+          accessToken,
+        }),
+      );
       setAccessToken(null);
       onConsumeAccessToken();
       clearPendingRedemption(publicSlug);

@@ -952,13 +952,46 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
 - **Status:** APROVADA
 - **Data:** 2026-08-12
 - **Decisão:** todo `bigint` autoritativo de pontos cruza JSON como texto decimal validado e é operado
-  no browser com `BigInt`. O CI obrigatório reconstrói migrations e executa DB lint, oito suítes DB e
+  no browser com `BigInt`. O CI obrigatório reconstrói migrations e executa DB lint, nove suítes DB e
   Edge unit contra Supabase local descartável, sem credenciais do projeto oficial. Uma operação de
   redemption que já adquiriu seus locks antes de disable/revogação pode concluir; operações que
   validam o estado depois do disable são rejeitadas. Nenhum dos casos pode cruzar tenant ou produzir
   artefatos parcialmente relacionados.
 - **Justificativa:** preservar precisão acima de `Number.MAX_SAFE_INTEGER`, tornar o release
   reproduzível pelo Git e documentar uma semântica concorrente segura sem lock global excessivo.
+
+## Decisões Aprovadas (Prompt 11 — Pilot Readiness e Product Hardening)
+
+### DEC-110 — Readiness de piloto é derivada, não persistida
+
+- **Status:** APROVADA
+- **Data:** 2026-08-13
+- **Decisão:** não existe flag manual `pilot_ready`. `get_org_pilot_readiness` deriva o resultado do
+  estado autoritativo de organização, unidades, configuração, horários, pagamentos, catálogo,
+  publicação e pedidos; ao menos uma mesma unidade ativa deve reunir todos os pré-requisitos
+  operacionais. Loyalty é informativa e não bloqueante. Owner e manager consultam; operator não.
+  `ready=true` de uma organização não substitui CI, deploy ou checkpoint de release.
+- **Justificativa:** evitar drift entre um marcador manual e a capacidade operacional real.
+
+### DEC-111 — Gestão de acesso por unidade é owner-only via RPC
+
+- **Status:** APROVADA
+- **Data:** 2026-08-13
+- **Decisão:** a pendência de UI da DEC-056 é encerrada por `/app/equipe`, mas escrita direta em
+  `membership_units` continua proibida. Listagem, atribuição e remoção usam RPCs `SECURITY DEFINER`
+  owner-only, com validação de tenant, membro e unidade ativa.
+- **Justificativa:** entregar operação administrativa sem ampliar policies ou grants de browser.
+
+### DEC-112 — Atualização PWA exige consentimento e respeita mutações críticas
+
+- **Status:** APROVADA
+- **Data:** 2026-08-13
+- **Decisão:** novas versões são anunciadas globalmente e aplicadas somente por ação explícita. O
+  reload fica bloqueado durante checkout, mutação de pedido, redemption, consumo de voucher e gestão
+  de equipe. Registros duráveis de recovery não mantêm o bloqueio após a operação terminar.
+  `runtimeCaching` de API permanece inexistente.
+- **Justificativa:** atualizar assets sem interromper operações server-authoritative ou perder o
+  contexto imediato do usuário.
 
 ## Decisões em Aberto (OPEN)
 

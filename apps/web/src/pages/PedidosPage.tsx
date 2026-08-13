@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useAdmin } from '../lib/admin/admin-context';
 import { formatBRL } from '../lib/money';
+import { assertOnline } from '../lib/offline/useOnline';
+import { useCriticalOperation } from '../lib/pwa/critical-operation';
 import {
   fetchOrderAdmin,
   fetchUnitOrdersAdmin,
@@ -97,6 +99,7 @@ function OrderDetail({
   canManageUnit: boolean;
   onClose: () => void;
 }) {
+  const { runCriticalOperation } = useCriticalOperation();
   const queryClient = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const hasFocusedRef = useRef(false);
@@ -120,12 +123,18 @@ function OrderDetail({
   }
 
   const statusMutation = useMutation({
-    mutationFn: (status: OrderStatus) => setOrderStatus(orderId, status),
+    mutationFn: (status: OrderStatus) => {
+      assertOnline();
+      return runCriticalOperation(() => setOrderStatus(orderId, status));
+    },
     onSuccess: acceptServerOrder,
     onError: (error: Error) => setActionError(error.message),
   });
   const paymentMutation = useMutation({
-    mutationFn: (status: PaymentStatus) => setOrderPaymentStatus(orderId, status),
+    mutationFn: (status: PaymentStatus) => {
+      assertOnline();
+      return runCriticalOperation(() => setOrderPaymentStatus(orderId, status));
+    },
     onSuccess: acceptServerOrder,
     onError: (error: Error) => setActionError(error.message),
   });

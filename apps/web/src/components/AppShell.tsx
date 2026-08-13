@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router';
 import { useAdmin } from '../lib/admin/admin-context';
 import { useAuth } from '../lib/auth/auth-context';
+import { OfflineBanner } from './OfflineBanner';
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return isActive
@@ -92,11 +93,23 @@ export function AppShell() {
           </>
         )}
         {role === 'owner' && (
-          <NavLink to="/app/clube" className={navLinkClass}>
-            Clube Ped-On
-          </NavLink>
+          <>
+            <NavLink to="/app/clube" className={navLinkClass}>
+              Clube Ped-On
+            </NavLink>
+            <NavLink to="/app/equipe" className={navLinkClass}>
+              Equipe
+            </NavLink>
+            <NavLink to="/app/diagnostico" className={navLinkClass}>
+              Diagnóstico
+            </NavLink>
+          </>
         )}
       </nav>
+
+      <div className="mt-4">
+        <OfflineBanner />
+      </div>
 
       <div className="flex-1 py-6">
         <Outlet />

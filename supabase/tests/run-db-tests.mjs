@@ -9,6 +9,7 @@ const suites = [
   'orders_integrity.test.mjs',
   'loyalty_integrity.test.mjs',
   'loyalty_rewards_integrity.test.mjs',
+  'pilot_readiness_team_integrity.test.mjs',
 ];
 
 for (const suite of suites) {

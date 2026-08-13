@@ -6,13 +6,20 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   envDir: fileURLToPath(new URL('../..', import.meta.url)),
+  define: {
+    __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0'),
+    __BUILD_SHA__: JSON.stringify(
+      process.env.CF_PAGES_COMMIT_SHA ?? process.env.GITHUB_SHA ?? 'local',
+    ),
+    __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       injectRegister: 'auto',
-      includeAssets: ['favicon.svg'],
+      includeManifestIcons: false,
       manifest: {
         name: 'Ped-On',
         short_name: 'Ped-On',

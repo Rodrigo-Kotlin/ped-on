@@ -19,13 +19,10 @@ test('service worker ativo não armazena APIs mutáveis do Clube', async ({ page
 
   await page.goto('/');
   await page.evaluate(() => navigator.serviceWorker.ready);
-  const controlled = await page.evaluate(async () => {
-    if (navigator.serviceWorker.controller !== null) return true;
-    await new Promise<void>((resolve) =>
-      navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true }),
-    );
-    return navigator.serviceWorker.controller !== null;
-  });
+  if (!(await page.evaluate(() => navigator.serviceWorker.controller !== null))) {
+    await page.reload();
+  }
+  const controlled = await page.evaluate(() => navigator.serviceWorker.controller !== null);
   expect(controlled).toBe(true);
 
   await page.evaluate(async (urls) => {

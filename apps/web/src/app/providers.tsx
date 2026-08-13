@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { PwaUpdatePrompt } from '../components/PwaUpdatePrompt';
 import { AuthProvider } from '../lib/auth/AuthProvider';
+import { CriticalOperationProvider } from '../lib/pwa/critical-operation';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -15,7 +17,10 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>{children}</AuthProvider>
+      <CriticalOperationProvider>
+        <AuthProvider>{children}</AuthProvider>
+        <PwaUpdatePrompt />
+      </CriticalOperationProvider>
     </QueryClientProvider>
   );
 }

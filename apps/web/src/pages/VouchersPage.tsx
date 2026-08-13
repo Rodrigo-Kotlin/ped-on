@@ -2,6 +2,8 @@ import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import { useAdmin } from '../lib/admin/admin-context';
+import { assertOnline } from '../lib/offline/useOnline';
+import { useCriticalOperation } from '../lib/pwa/critical-operation';
 import {
   consumeLoyaltyVoucher,
   formatVoucherCodeInput,
@@ -116,6 +118,7 @@ function ConfirmationDialog({
 }
 
 function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string }) {
+  const { runCriticalOperation } = useCriticalOperation();
   const [code, setCode] = useState('');
   const [voucher, setVoucher] = useState<StaffVoucher | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -132,7 +135,10 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
     mutationFn: (voucherCode: string) => getLoyaltyVoucherStaff(unitId, voucherCode),
   });
   const consumeMutation = useMutation({
-    mutationFn: (voucherCode: string) => consumeLoyaltyVoucher(unitId, voucherCode),
+    mutationFn: (voucherCode: string) => {
+      assertOnline();
+      return runCriticalOperation(() => consumeLoyaltyVoucher(unitId, voucherCode));
+    },
   });
 
   function closeConfirmation(returnFocus = true) {

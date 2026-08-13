@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "pnpm --filter @pedon/web dev",
     "build": "pnpm -r build",
+    "audit:precache": "pnpm --filter @pedon/web audit:precache",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",

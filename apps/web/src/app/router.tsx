@@ -1,39 +1,96 @@
-import { createBrowserRouter, type RouteObject } from 'react-router';
+﻿import { lazy, Suspense } from 'react';
+import type { ComponentType } from 'react';
+import { createBrowserRouter } from 'react-router';
+import type { RouteObject } from 'react-router';
 import { AppShell } from '../components/AppShell';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { PublicOrderLayout } from '../components/PublicOrderLayout';
 import { AdminProvider } from '../lib/admin/AdminProvider';
 import { RequireManageUnit, RequireOwner } from '../lib/admin/guards';
 import { AppGate, GuestOnly, OnboardingGate } from '../lib/auth/guards';
-import { AppPage } from '../pages/AppPage';
-import { CardapioPage } from '../pages/CardapioPage';
-import { CartPage } from '../pages/CartPage';
-import { CatalogoPage } from '../pages/CatalogoPage';
-import { CheckoutPage } from '../pages/CheckoutPage';
-import { ClubeAdminPage } from '../pages/ClubeAdminPage';
-import { ClubePage } from '../pages/ClubePage';
-import { ConfiguracoesPage } from '../pages/ConfiguracoesPage';
 import { FoundationPage } from '../pages/FoundationPage';
 import { LoginPage } from '../pages/LoginPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OnboardingPage } from '../pages/OnboardingPage';
-import { PedidosPage } from '../pages/PedidosPage';
-import { PublicMenuPage } from '../pages/PublicMenuPage';
-import { TrackingPage } from '../pages/TrackingPage';
 import { SignupPage } from '../pages/SignupPage';
-import { VouchersPage } from '../pages/VouchersPage';
 import { App } from './App';
+
+function lazyPage(getComponent: () => Promise<{ default: ComponentType }>) {
+  const Component = lazy(getComponent);
+  return function LazyPage() {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex min-h-svh items-center justify-center" role="status">
+            <p className="text-pedon-text/60">Carregando…</p>
+          </div>
+        }
+      >
+        <Component />
+      </Suspense>
+    );
+  };
+}
+
+const AppPage = lazyPage(() => import('../pages/AppPage').then((m) => ({ default: m.AppPage })));
+const PedidosPage = lazyPage(() =>
+  import('../pages/PedidosPage').then((m) => ({ default: m.PedidosPage })),
+);
+const CatalogoPage = lazyPage(() =>
+  import('../pages/CatalogoPage').then((m) => ({ default: m.CatalogoPage })),
+);
+const VouchersPage = lazyPage(() =>
+  import('../pages/VouchersPage').then((m) => ({ default: m.VouchersPage })),
+);
+const CardapioPage = lazyPage(() =>
+  import('../pages/CardapioPage').then((m) => ({ default: m.CardapioPage })),
+);
+const ConfiguracoesPage = lazyPage(() =>
+  import('../pages/ConfiguracoesPage').then((m) => ({ default: m.ConfiguracoesPage })),
+);
+const ClubeAdminPage = lazyPage(() =>
+  import('../pages/ClubeAdminPage').then((m) => ({ default: m.ClubeAdminPage })),
+);
+const EquipePage = lazyPage(() =>
+  import('../pages/EquipePage').then((m) => ({ default: m.EquipePage })),
+);
+const DiagnosticoPage = lazyPage(() =>
+  import('../pages/DiagnosticoPage').then((m) => ({ default: m.DiagnosticoPage })),
+);
+const PublicMenuPage = lazyPage(() =>
+  import('../pages/PublicMenuPage').then((m) => ({ default: m.PublicMenuPage })),
+);
+const CartPage = lazyPage(() => import('../pages/CartPage').then((m) => ({ default: m.CartPage })));
+const CheckoutPage = lazyPage(() =>
+  import('../pages/CheckoutPage').then((m) => ({ default: m.CheckoutPage })),
+);
+const TrackingPage = lazyPage(() =>
+  import('../pages/TrackingPage').then((m) => ({ default: m.TrackingPage })),
+);
+const ClubePage = lazyPage(() =>
+  import('../pages/ClubePage').then((m) => ({ default: m.ClubePage })),
+);
 
 export const appRoutes: RouteObject[] = [
   {
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <FoundationPage /> },
+      {
+        index: true,
+        element: (
+          <ErrorBoundary>
+            <FoundationPage />
+          </ErrorBoundary>
+        ),
+      },
       {
         path: 'login',
         element: (
           <GuestOnly>
-            <LoginPage />
+            <ErrorBoundary>
+              <LoginPage />
+            </ErrorBoundary>
           </GuestOnly>
         ),
       },
@@ -41,7 +98,9 @@ export const appRoutes: RouteObject[] = [
         path: 'cadastro',
         element: (
           <GuestOnly>
-            <SignupPage />
+            <ErrorBoundary>
+              <SignupPage />
+            </ErrorBoundary>
           </GuestOnly>
         ),
       },
@@ -49,7 +108,9 @@ export const appRoutes: RouteObject[] = [
         path: 'onboarding',
         element: (
           <OnboardingGate>
-            <OnboardingPage />
+            <ErrorBoundary>
+              <OnboardingPage />
+            </ErrorBoundary>
           </OnboardingGate>
         ),
       },
@@ -74,15 +135,45 @@ export const appRoutes: RouteObject[] = [
           </AppGate>
         ),
         children: [
-          { index: true, element: <AppPage /> },
-          { path: 'pedidos', element: <PedidosPage /> },
-          { path: 'catalogo', element: <CatalogoPage /> },
-          { path: 'vouchers', element: <VouchersPage /> },
+          {
+            index: true,
+            element: (
+              <ErrorBoundary>
+                <AppPage />
+              </ErrorBoundary>
+            ),
+          },
+          {
+            path: 'pedidos',
+            element: (
+              <ErrorBoundary>
+                <PedidosPage />
+              </ErrorBoundary>
+            ),
+          },
+          {
+            path: 'catalogo',
+            element: (
+              <ErrorBoundary>
+                <CatalogoPage />
+              </ErrorBoundary>
+            ),
+          },
+          {
+            path: 'vouchers',
+            element: (
+              <ErrorBoundary>
+                <VouchersPage />
+              </ErrorBoundary>
+            ),
+          },
           {
             path: 'cardapio',
             element: (
               <RequireManageUnit>
-                <CardapioPage />
+                <ErrorBoundary>
+                  <CardapioPage />
+                </ErrorBoundary>
               </RequireManageUnit>
             ),
           },
@@ -90,7 +181,9 @@ export const appRoutes: RouteObject[] = [
             path: 'configuracoes',
             element: (
               <RequireManageUnit>
-                <ConfiguracoesPage />
+                <ErrorBoundary>
+                  <ConfiguracoesPage />
+                </ErrorBoundary>
               </RequireManageUnit>
             ),
           },
@@ -98,13 +191,42 @@ export const appRoutes: RouteObject[] = [
             path: 'clube',
             element: (
               <RequireOwner>
-                <ClubeAdminPage />
+                <ErrorBoundary>
+                  <ClubeAdminPage />
+                </ErrorBoundary>
+              </RequireOwner>
+            ),
+          },
+          {
+            path: 'equipe',
+            element: (
+              <RequireOwner>
+                <ErrorBoundary>
+                  <EquipePage />
+                </ErrorBoundary>
+              </RequireOwner>
+            ),
+          },
+          {
+            path: 'diagnostico',
+            element: (
+              <RequireOwner>
+                <ErrorBoundary>
+                  <DiagnosticoPage />
+                </ErrorBoundary>
               </RequireOwner>
             ),
           },
         ],
       },
-      { path: '*', element: <NotFoundPage /> },
+      {
+        path: '*',
+        element: (
+          <ErrorBoundary>
+            <NotFoundPage />
+          </ErrorBoundary>
+        ),
+      },
     ],
   },
 ];
