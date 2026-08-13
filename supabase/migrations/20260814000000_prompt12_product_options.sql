@@ -1719,6 +1719,7 @@ declare
   v_selected_ids uuid[] := array[]::uuid[];
   v_opt jsonb;
   v_option_id uuid;
+  v_sel_options jsonb := '[]'::jsonb;
   v_available boolean;
   v_missing integer;
   v_wrong_product integer;
@@ -2103,14 +2104,6 @@ begin
     raise exception 'INVALID_CART' using errcode = 'PED37';
   end if;
 
-  create temp table t_item_sel (
-    option_id uuid primary key,
-    menu_group_id uuid not null,
-    group_min integer not null,
-    group_max integer not null,
-    price_delta numeric not null
-  ) on commit drop;
-
   for v_item in
     select entry.value
     from jsonb_array_elements(v_items) as entry(value)
@@ -2292,9 +2285,19 @@ begin
         raise exception 'OPTION_UNAVAILABLE' using errcode = 'PED75';
       end if;
 
-      delete from t_item_sel;
-      insert into t_item_sel (option_id, menu_group_id, group_min, group_max, price_delta)
-      select o.id, g.id, g.min_select, g.max_select, o.price_delta
+      -- Carrega regras e deltas das opcoes selecionadas.
+      v_sel_options := '[]'::jsonb;
+      select coalesce(
+        jsonb_agg(
+          jsonb_build_object(
+            'menu_group_id', g.id,
+            'group_min', g.min_select,
+            'group_max', g.max_select,
+            'price_delta', o.price_delta
+          )
+        ),
+        '[]'::jsonb
+      ) into v_sel_options
       from unnest(v_selected_ids) as s(id)
       join public.menu_version_options as o
         on o.id = s.id
@@ -2309,21 +2312,22 @@ begin
        and g.menu_version_id = o.menu_version_id
        and g.menu_product_id = o.menu_product_id;
 
-      get diagnostics v_missing = row_count;
-      if v_missing <> coalesce(array_length(v_selected_ids, 1), 0) then
+      if jsonb_array_length(v_sel_options) <> coalesce(array_length(v_selected_ids, 1), 0) then
         raise exception 'OPTION_NOT_FOUND' using errcode = 'PED74';
       end if;
 
       -- Regras min/max por grupo.
       select count(*) into v_sel_count
       from (
-        select menu_group_id, count(*) as c
-        from t_item_sel
-        group by menu_group_id
+        select (entry.value ->> 'menu_group_id')::uuid as menu_group_id, count(*) as c
+        from jsonb_array_elements(v_sel_options) as entry(value)
+        group by (entry.value ->> 'menu_group_id')::uuid
       ) as x
       join (
-        select distinct menu_group_id, group_min
-        from t_item_sel
+        select distinct
+          (entry.value ->> 'menu_group_id')::uuid as menu_group_id,
+          (entry.value ->> 'group_min')::integer as group_min
+        from jsonb_array_elements(v_sel_options) as entry(value)
       ) as g on g.menu_group_id = x.menu_group_id
       where x.c < g.group_min;
 
@@ -2333,13 +2337,15 @@ begin
 
       select count(*) into v_sel_count
       from (
-        select menu_group_id, count(*) as c
-        from t_item_sel
-        group by menu_group_id
+        select (entry.value ->> 'menu_group_id')::uuid as menu_group_id, count(*) as c
+        from jsonb_array_elements(v_sel_options) as entry(value)
+        group by (entry.value ->> 'menu_group_id')::uuid
       ) as x
       join (
-        select distinct menu_group_id, group_max
-        from t_item_sel
+        select distinct
+          (entry.value ->> 'menu_group_id')::uuid as menu_group_id,
+          (entry.value ->> 'group_max')::integer as group_max
+        from jsonb_array_elements(v_sel_options) as entry(value)
       ) as g on g.menu_group_id = x.menu_group_id
       where x.c > g.group_max;
 
@@ -2347,8 +2353,8 @@ begin
         raise exception 'SELECTION_LIMIT_EXCEEDED' using errcode = 'PED77';
       end if;
 
-      select coalesce(sum(price_delta), 0) into v_delta_sum
-      from t_item_sel;
+      select coalesce(sum((entry.value ->> 'price_delta')::numeric), 0) into v_delta_sum
+      from jsonb_array_elements(v_sel_options) as entry(value);
     else
       v_delta_sum := 0;
     end if;

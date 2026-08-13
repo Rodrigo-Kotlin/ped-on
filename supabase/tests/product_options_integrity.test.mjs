@@ -41,10 +41,6 @@ function isHex64(value) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 }
 
-function isTrackingToken(value) {
-  return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
-}
-
 async function adminClient() {
   const client = new Client({ connectionString: DIRECT_URL, ssl: DB_SSL });
   await client.connect();
@@ -354,10 +350,8 @@ async function run() {
   let unitA1;
   let unitA2;
   let slugA1;
-  let slugA2;
   let categoryA1;
   let configurable;
-  let simpleProduct;
   let fritas;
   let requerido;
   let mega;
@@ -441,7 +435,7 @@ async function run() {
     categoryA1 = await createCategory(ownerAS, unitA1, 'Opcoes Itens');
 
     configurable = await createProduct(ownerAS, unitA1, categoryA1.id, 'Configuravel', '5.00');
-    simpleProduct = await createProduct(ownerAS, unitA1, categoryA1.id, 'Simples', '4.00');
+    await createProduct(ownerAS, unitA1, categoryA1.id, 'Simples', '4.00');
     fritas = await createProduct(ownerAS, unitA1, categoryA1.id, 'Fritas', '8.00');
     requerido = await createProduct(ownerAS, unitA1, categoryA1.id, 'Requerido', '6.00');
     mega = await createProduct(ownerAS, unitA1, categoryA1.id, 'Mega', '7.00');
@@ -584,14 +578,26 @@ async function run() {
     );
     const extraC = await createOption(ownerAS, temporarioExtras2.id, 'Extra C', '0.00');
 
-    ok(tamanho.sort_order === 100, '0.1 sort_order do primeiro grupo e 100');
+    ok(pequeno.price_delta === '0.00', '0.4 opcao base com delta zero');
+    ok(queijo.price_delta === '1.00', '0.5 adicional com delta textual');
+    ok(
+      alface.price_delta === '0.50' && rucula.price_delta === '0.50',
+      '0.6 extras com delta textual',
+    );
+    ok(
+      semCebola.price_delta === '0.00' && semAlface.price_delta === '0.00',
+      '0.7 remocoes com delta zero',
+    );
+    ok(extraFritas.price_delta === '1.00', '0.8 extra de fritas com delta textual');
+
+    ok(tamanho.sort_order === 100, '0.9 sort_order do primeiro grupo e 100');
     ok(
       adicionais.sort_order === 200 && extras.sort_order === 300,
-      '0.2 sort_order incrementa por grupo',
+      '0.10 sort_order incrementa por grupo',
     );
     ok(
       remover.sort_order === 400 && opcionalUnico.sort_order === 500,
-      '0.3 sort_order dos demais grupos',
+      '0.11 sort_order dos demais grupos',
     );
 
     await saveConfig(ownerAS, unitA1, operationalConfig());
@@ -759,7 +765,6 @@ async function run() {
     );
     const semItemA2 = await createOption(ownerAS, remocaoA2.id, 'Sem Item A2', '0.00');
     const publicationA2 = await publish(ownerAS, unitA2);
-    slugA2 = publicationA2.public_slug;
     ok(publicationA2.option_group_count === 3, '2.7 publicacao A2 congela tres grupos');
     ok(publicationA2.option_count === 3, '2.8 publicacao A2 congela tres opcoes');
 
