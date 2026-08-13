@@ -1,8 +1,8 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 11. HEAD técnico
-> `925f7d94adea4c0c2cef9a1017270269960817aa`, CI `31712486989` e deployment Cloudflare
-> `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` aprovados.
+> Guia operacional do Ped-On no checkpoint `RELEASE_VERIFIED` do Prompt 11. Release auditado
+> `3a6cd42eab24719e01505fc854d03c65ca9d9975`, CI `31713901328` e Cloudflare imutável
+> `https://8f7d42fd.ped-on.pages.dev` aprovados.
 
 ## 1. Pré-requisitos
 
@@ -397,6 +397,18 @@ Release candidata do Prompt 11 — `READY_FOR_REAUDIT`:
 - Supabase em 19/19, dry-run linked informa remote up to date e lint linked não encontrou erros;
 - rebuild local não executado por design.
 
+Encerramento oficial do Prompt 11 — `RELEASE_VERIFIED` (reauditoria independente):
+
+- HEAD auditado / release verificado: `3a6cd42eab24719e01505fc854d03c65ca9d9975`;
+- CI final auditado `31713901328`: `Quality gates`, `Backend release gates` e `E2E smoke tests`
+  SUCCESS;
+- Cloudflare imutável `https://8f7d42fd.ped-on.pages.dev` e estável `https://ped-on.pages.dev`;
+- resultado: `GO_WITH_NON_BLOCKING_FINDINGS` — CRITICAL 0, HIGH 0, MEDIUM BLOCKING 0; LOW 4, INFO 1;
+- test baseline: Frontend 274/274; E2E 236/236; Prompt 11 44/44; DB 1182/1182; readiness 84/84;
+  Edge 15/15; DB lint PASS; migrations 19/19; Supabase dry-run remote up to date;
+- PILOT_READY: ACHIEVED; Prompt 12: NOT STARTED;
+- banco descartável/rebuild: exclusivamente GitHub Actions; nenhum Docker local.
+
 Release técnica histórica do Prompt 10, não utilizável como evidência do Prompt 11:
 
 - source `2a91711bc83b54841b4b4beee8beca930b9ea986`;
@@ -436,7 +448,7 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 
 ## 13. Próximo passo
 
-Prompt 11 está em `READY_FOR_REAUDIT`. Próximo passo: reauditoria independente sobre o HEAD técnico
-`925f7d94adea4c0c2cef9a1017270269960817aa` e suas evidências convergentes.
+Prompt 11 está em `COMPLETED`, checkpoint `RELEASE_VERIFIED`. Próximo passo: Prompt 12 — Produtos,
+Variações e Adicionais, conforme o roadmap pós-Core MVP.
 
 Prompt 12: `NOT STARTED`.

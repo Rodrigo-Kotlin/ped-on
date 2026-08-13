@@ -1,7 +1,7 @@
 # PED-ON — RLS Security
 
 > Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 11, checkpoint
-> `READY_FOR_REAUDIT`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
+> `RELEASE_VERIFIED`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
 > nega por padrão e o Clube usa superfícies públicas minimizadas e RPCs internas restritas.
 
 ## 1. Princípios

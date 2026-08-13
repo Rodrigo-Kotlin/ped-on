@@ -7,10 +7,14 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 ## Estado atual
 
 Fase 4A — Pilot Ready, Prompt 11: Pilot Readiness, Observabilidade e Product Hardening.
-Status `IN_PROGRESS`, checkpoint `PRE_CI`: ainda não `READY_FOR_REAUDIT`.
+Status `COMPLETED`, checkpoint `RELEASE_VERIFIED` — reauditoria independente
+`GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL 0, HIGH 0, MEDIUM BLOCKING 0).
+
+`PILOT_READY: ACHIEVED`.
+`PROMPT 12: NOT STARTED`.
 
 `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
-`CI ISOLATED DB REBUILD: PENDING` para a árvore completa do Prompt 11.
+`CI ISOLATED DB REBUILD: PASS` (GitHub Actions; nenhum Docker local).
 
 O produto atual inclui:
 
@@ -210,4 +214,5 @@ CI oficial e o deployment Cloudflare do novo SHA ainda estão pendentes.
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 - `docs/PEDON_POST_MVP_ROADMAP.md`: roadmap oficial pós-Core MVP
 
-Prompt 11 permanece `IN_PROGRESS / PRE_CI`. Prompt 12: `NOT STARTED`.
+Prompt 11: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `PILOT_READY: ACHIEVED`.
+Prompt 12: `NOT STARTED`.

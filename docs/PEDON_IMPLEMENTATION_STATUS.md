@@ -12,8 +12,8 @@
 | MODELO                 | Main-First monitorado                                                                                                                                                                                                                                                                      |
 | FASE ATUAL             | Fase 4A — Pilot Ready                                                                                                                                                                                                                                                                      |
 | PROMPT ATUAL           | Prompt 11 — Pilot Readiness, Observabilidade e Product Hardening                                                                                                                                                                                                                           |
-| STATUS                 | `READY_FOR_REAUDIT`                                                                                                                                                                                                                                                                        |
-| CHECKPOINT             | `READY_FOR_REAUDIT` — gates técnicos, convergência remota e deployment aprovados                                                                                                                                                                                                           |
+| STATUS                 | `COMPLETED`                                                                                                                                                                                                                                                                                |
+| CHECKPOINT             | `RELEASE_VERIFIED` — gates técnicos, convergência remota, deployment e reauditoria independente aprovados                                                                                                                                                                                  |
 | HEAD INICIAL DO PROMPT | `7ee0e9a` — docs: formalize post-MVP roadmap                                                                                                                                                                                                                                               |
 | HEAD TÉCNICO VALIDADO  | `925f7d94adea4c0c2cef9a1017270269960817aa`                                                                                                                                                                                                                                                 |
 | BACKEND                | `IMPLEMENTED / VERIFIED` — CI `31712486989` aprovou fresh rebuild isolado das 19 migrations, alinhamento, DB lint, nove suítes DB com 1182/1182 checks e Edge unit 15/15; remoto alinhado em 19/19 e lint linked sem erros                                                                       |
@@ -25,13 +25,13 @@
 | PWA                    | Atualização por prompt explícito; aplicação bloqueada durante checkout, order mutation, redemption, voucher consume e team assignment/removal; runtime cache de API `NONE`; precache sem duplicatas após audit estático                                                                      |
 | CLOUDFLARE             | Check/deployment `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` aprovado; URL imutável `https://82dedad7.ped-on.pages.dev` e estável `https://ped-on.pages.dev`; fallback SPA 18/18 e 4/4 e SHA técnico confirmado nos bundles                                                                          |
 | GITHUB ACTIONS         | CI `31712486989` aprovado para o HEAD técnico validado, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                    |
-| PENDÊNCIAS             | Nenhuma pendência de CI, migration ou deployment para este checkpoint; aguarda reauditoria independente                                                                                                                                                                                   |
-| NEXT_STEP              | Executar a reauditoria independente do checkpoint `READY_FOR_REAUDIT`                                                                                                                                                                                                                      |
+| PENDÊNCIAS             | Nenhuma pendência bloqueante; dívida técnica não bloqueante registrada (LOW 4, INFO 1); Prompt 11 oficialmente encerrado                                                                                                                                                              |
+| NEXT_STEP              | Preparar e executar o Prompt 12 — Produtos, Variações e Adicionais, conforme o roadmap pós-Core MVP                                                                                                                                                                                     |
 | FASE SEGUINTE          | Não iniciada                                                                                                                                                                                                                                                                               |
 | PROMPT SEGUINTE        | Prompt 12 — `NOT STARTED`                                                                                                                                                                                                                                                                  |
 | PROMPT 10              | `COMPLETED` — checkpoint `RELEASE_VERIFIED`; reauditoria independente concluída com `GO_WITH_NON_BLOCKING_FINDINGS`                                                                                                                                                              |
 | LOCAL DB REBUILD       | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                                                    |
-| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 19 migrations no CI `31712486989`                                                                                                                                                                                                                               |
+| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 19 migrations no CI `31712486989` (técnico) e revalidado no CI `31713901328` (reauditado)                                                                                                                                                                      |
 
 ---
 
@@ -68,6 +68,25 @@
   `31598675826`, deployment `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, docs `453af6557964620de8565d884ece6123b46266ba`.
 - Dívida não bloqueante preservada na linha `PENDÊNCIAS`; nenhum item foi corrigido nesta execução.
 
+## Reauditoria independente do Prompt 11 — encerramento oficial
+
+- Independent final reaudit: `GO_WITH_NON_BLOCKING_FINDINGS`.
+- CRITICAL: 0; HIGH: 0; MEDIUM BLOCKING: 0; LOW: 4; INFO: 1 — dívida não bloqueante preservada,
+  nenhum item corrigido nesta execução.
+- HEAD auditado / release verificado (evidência final): `3a6cd42eab24719e01505fc854d03c65ca9d9975`;
+  CI `31713901328` (SUCCESS); Cloudflare imutável `https://8f7d42fd.ped-on.pages.dev` e estável
+  `https://ped-on.pages.dev`; Supabase 19/19 com dry-run remote up to date.
+- HEAD técnico anterior (histórico): `925f7d94adea4c0c2cef9a1017270269960817aa`; CI `31712486989`;
+  deployment `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` — preservados como rastreabilidade histórica
+  legítima do checkpoint técnico.
+- Test baseline final: Frontend 274/274; E2E 236/236; Prompt 11 44/44; DB 1182/1182; Pilot
+  readiness 84/84; Edge 15/15; DB lint PASS; CI isolated rebuild PASS; migrations 19/19;
+  `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- O release funcional auditado permanece `3a6cd42…` / CI `31713901328` / `8f7d42fd.ped-on.pages.dev`;
+  o commit documental de encerramento não altera código, banco, CI, Supabase, Cloudflare ou Edge. O
+  SHA e o CI do fechamento documental são registrados no relatório final (evitando autorreferência).
+- Marco alcançado: `PILOT_READY`. Prompt 12: `NOT STARTED`.
+
 ## Histórico de execução
 
 | Etapa                             | Prompt                                                  | Status                          | Commit                                     | Data       |
@@ -83,4 +102,4 @@
 | Fase 3A — Pedidos                 | Prompt 08 — Carrinho, checkout e Central de Pedidos     | COMPLETED                       | `41b9da2`, `b801468`, `7fe07df`            | 2026-08-10 |
 | Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED                       | `2013e8d`                                  | 2026-08-11 |
 | Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; encerramento oficial (`2a91711`, `453af65`) | 2026-08-12 |
-| Fase 4A — Pilot Ready             | Prompt 11 — Pilot Readiness e Product Hardening         | READY_FOR_REAUDIT               | técnico `925f7d9`; CI `31712486989`; deploy `82dedad7`      | 2026-08-13 |
+| Fase 4A — Pilot Ready             | Prompt 11 — Pilot Readiness e Product Hardening         | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; auditado `3a6cd42`, CI `31713901328`, deploy `8f7d42fd` | 2026-08-13 |

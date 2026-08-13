@@ -993,6 +993,20 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
 - **Justificativa:** atualizar assets sem interromper operações server-authoritative ou perder o
   contexto imediato do usuário.
 
+### DEC-113 — Recovery secret de redemption é temporário e isolado no pending-redemption
+
+- **Status:** APROVADA
+- **Data:** 2026-08-13
+- **Decisão:** o segredo de recuperação de tentativa ambígua de redemption pode ser persistido
+  temporariamente no browser, exclusivamente no registro `pedon:pending-redemption:<slug>`, por no
+  máximo 24 horas, para recuperação idempotente da tentativa. O segredo é aleatório de alta entropia
+  (64 hex), não derivado de CPF/telefone/token, não aparece em URL, não entra em query key, não entra
+  em runtime cache e não deve ser logado. É removido quando a recuperação é resolvida ou expira. Não
+  representa sessão administrativa e nenhuma PII acompanha o registro.
+- **Justificativa:** formalizar como decisão arquitetural o comportamento auditado como INFO não
+  bloqueante na reauditoria independente do Prompt 11, sem duplicar a DEC-104, que cobre o registro
+  de pedido pendente (`request_fingerprint`), não o de resgate.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

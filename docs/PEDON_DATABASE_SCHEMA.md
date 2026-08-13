@@ -1,6 +1,6 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa da Fase 4A — Pilot Ready, Prompt 11, checkpoint `READY_FOR_REAUDIT`.
+> Referência cumulativa da Fase 4A — Pilot Ready, Prompt 11, checkpoint `RELEASE_VERIFIED`.
 > Fonte autoritativa: 19 migrations versionadas; migration list local/remota em 19/19 e dry-run
 > linked confirmando que o remoto está up to date.
 
@@ -934,7 +934,7 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
-Checkpoint Prompt 11 — `READY_FOR_REAUDIT`:
+Checkpoint Prompt 11 — `READY_FOR_REAUDIT` (histórico técnico):
 
 - HEAD técnico `925f7d94adea4c0c2cef9a1017270269960817aa`;
 - CI `31712486989`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
@@ -946,6 +946,16 @@ Checkpoint Prompt 11 — `READY_FOR_REAUDIT`:
 - Cloudflare check/deployment `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` aprovado;
 - URLs aprovadas: `https://82dedad7.ped-on.pages.dev` e `https://ped-on.pages.dev`, com fallback
   SPA e SHA técnico confirmados;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+
+Checkpoint Prompt 11 — `RELEASE_VERIFIED` (evidência final da reauditoria independente):
+
+- HEAD auditado: `3a6cd42eab24719e01505fc854d03c65ca9d9975`;
+- CI `31713901328`: `Quality gates`, `Backend release gates` e `E2E smoke tests` SUCCESS;
+- Cloudflare imutável `https://8f7d42fd.ped-on.pages.dev` e estável `https://ped-on.pages.dev`;
+- resultado: `GO_WITH_NON_BLOCKING_FINDINGS` — CRITICAL 0, HIGH 0, MEDIUM BLOCKING 0; LOW 4, INFO 1;
+- test baseline: Frontend 274/274; E2E 236/236; Prompt 11 44/44; DB 1182/1182; readiness 84/84;
+  Edge 15/15; DB lint PASS; CI isolated rebuild PASS; migrations 19/19;
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
 Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):

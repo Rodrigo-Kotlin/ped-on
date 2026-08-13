@@ -25,9 +25,10 @@ primeiros restaurantes reais.
 
 ## Prompt 11 — Pilot Readiness, Observabilidade e Product Hardening
 
-Estado: `READY_FOR_REAUDIT`. O HEAD técnico
-`925f7d94adea4c0c2cef9a1017270269960817aa` possui CI, backend isolado, E2E, Supabase e Cloudflare
-convergentes. Este checkpoint não declara automaticamente `PILOT_READY`.
+Estado: `COMPLETED / RELEASE_VERIFIED`. Reauditoria independente concluída com
+`GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL 0, HIGH 0, MEDIUM BLOCKING 0) sobre o HEAD auditado
+`3a6cd42eab24719e01505fc854d03c65ca9d9975`, CI `31713901328` e Cloudflare
+`https://8f7d42fd.ped-on.pages.dev` convergentes. Marco `PILOT_READY` alcançado.
 
 Objetivos:
 
@@ -43,8 +44,8 @@ Objetivos:
 - limpeza de dívida técnica segura;
 - preparação para piloto.
 
-Critério futuro: `PILOT_READY`. O `ready=true` calculado para uma organização não substitui os gates
-de release do projeto.
+Critério alcançado: `PILOT_READY`. O `ready=true` calculado para uma organização não substitui os
+gates de release do projeto.
 
 ## Prompt 12 — Produtos, Variações e Adicionais
 
@@ -234,7 +235,7 @@ real e estratégia comercial.
 
 ```
 Core MVP — COMPLETED
-↓ Pilot Ready
+↓ Pilot Ready — ACHIEVED (Prompt 11)
 ↓ Operation Ready
 ↓ Pilot Gate
 ↓ Commercial Ready
