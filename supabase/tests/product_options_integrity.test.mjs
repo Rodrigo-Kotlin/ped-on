@@ -127,7 +127,16 @@ async function updateProduct(client, productId, categoryId, name, price) {
   ).rows[0];
 }
 
-async function createGroup(client, unitId, productId, name, kind, selectionMode, minSelect, maxSelect) {
+async function createGroup(
+  client,
+  unitId,
+  productId,
+  name,
+  kind,
+  selectionMode,
+  minSelect,
+  maxSelect,
+) {
   return (
     await client.query(
       `select * from public.create_catalog_product_option_group($1, $2, $3, $4, $5, $6, $7)`,
@@ -383,7 +392,10 @@ async function run() {
     ownerA = await createTestUser(admin, `options-owner-a-${suffix}@pedon-test.invalid`);
     managerA = await createTestUser(admin, `options-manager-a-${suffix}@pedon-test.invalid`);
     operatorA = await createTestUser(admin, `options-operator-a-${suffix}@pedon-test.invalid`);
-    managerOther = await createTestUser(admin, `options-manager-other-${suffix}@pedon-test.invalid`);
+    managerOther = await createTestUser(
+      admin,
+      `options-manager-other-${suffix}@pedon-test.invalid`,
+    );
     ownerB = await createTestUser(admin, `options-owner-b-${suffix}@pedon-test.invalid`);
     createdUsers.push(ownerA.id, managerA.id, operatorA.id, managerOther.id, ownerB.id);
 
@@ -398,8 +410,8 @@ async function run() {
     anon = await anonClient();
     openClients.push(anon);
 
-    orgA = (await ownerAS.query(`select public.complete_onboarding('Options Org A') as org`)).rows[0]
-      .org;
+    orgA = (await ownerAS.query(`select public.complete_onboarding('Options Org A') as org`))
+      .rows[0].org;
     createdOrgIds.push(orgA);
     unitA1 = (
       await ownerAS.query(
@@ -411,8 +423,8 @@ async function run() {
       await ownerAS.query('select (public.create_unit($1)).id as id', ['Options Unidade A2'])
     ).rows[0].id;
 
-    orgB = (await ownerBS.query(`select public.complete_onboarding('Options Org B') as org`)).rows[0]
-      .org;
+    orgB = (await ownerBS.query(`select public.complete_onboarding('Options Org B') as org`))
+      .rows[0].org;
     createdOrgIds.push(orgB);
 
     await admin.query(
@@ -435,31 +447,112 @@ async function run() {
     mega = await createProduct(ownerAS, unitA1, categoryA1.id, 'Mega', '7.00');
     temporario = await createProduct(ownerAS, unitA1, categoryA1.id, 'Temporario', '9.00');
 
-    tamanho = await createGroup(ownerAS, unitA1, configurable.id, 'Tamanho', 'variation', 'single', 1, 1);
+    tamanho = await createGroup(
+      ownerAS,
+      unitA1,
+      configurable.id,
+      'Tamanho',
+      'variation',
+      'single',
+      1,
+      1,
+    );
     pequeno = await createOption(ownerAS, tamanho.id, 'Pequeno', '0.00');
     grande = await createOption(ownerAS, tamanho.id, 'Grande', '2.00');
-    adicionais = await createGroup(ownerAS, unitA1, configurable.id, 'Adicionais', 'addon', 'multiple', 0, 1);
+    adicionais = await createGroup(
+      ownerAS,
+      unitA1,
+      configurable.id,
+      'Adicionais',
+      'addon',
+      'multiple',
+      0,
+      1,
+    );
     bacon = await createOption(ownerAS, adicionais.id, 'Bacon', '1.50');
     queijo = await createOption(ownerAS, adicionais.id, 'Queijo', '1.00');
-    extras = await createGroup(ownerAS, unitA1, configurable.id, 'Extras', 'addon', 'multiple', 0, 2);
+    extras = await createGroup(
+      ownerAS,
+      unitA1,
+      configurable.id,
+      'Extras',
+      'addon',
+      'multiple',
+      0,
+      2,
+    );
     alface = await createOption(ownerAS, extras.id, 'Alface', '0.50');
     rucula = await createOption(ownerAS, extras.id, 'Rucula', '0.50');
-    remover = await createGroup(ownerAS, unitA1, configurable.id, 'Remover', 'removal', 'multiple', 0, 50);
+    remover = await createGroup(
+      ownerAS,
+      unitA1,
+      configurable.id,
+      'Remover',
+      'removal',
+      'multiple',
+      0,
+      50,
+    );
     semCebola = await createOption(ownerAS, remover.id, 'Sem Cebola', '0.00');
     semAlface = await createOption(ownerAS, remover.id, 'Sem Alface', '0.00');
-    opcionalUnico = await createGroup(ownerAS, unitA1, configurable.id, 'Opcional Unico', 'addon', 'single', 0, 1);
+    opcionalUnico = await createGroup(
+      ownerAS,
+      unitA1,
+      configurable.id,
+      'Opcional Unico',
+      'addon',
+      'single',
+      0,
+      1,
+    );
     molho = await createOption(ownerAS, opcionalUnico.id, 'Molho', '0.50');
 
-    const fritasExtras = await createGroup(ownerAS, unitA1, fritas.id, 'Extras Fritas', 'addon', 'multiple', 0, 2);
+    const fritasExtras = await createGroup(
+      ownerAS,
+      unitA1,
+      fritas.id,
+      'Extras Fritas',
+      'addon',
+      'multiple',
+      0,
+      2,
+    );
     extraFritas = await createOption(ownerAS, fritasExtras.id, 'Extra Fritas', '1.00');
-    const fritasInactive = await createGroup(ownerAS, unitA1, fritas.id, 'Fritas Desativado', 'addon', 'multiple', 0, 1);
+    const fritasInactive = await createGroup(
+      ownerAS,
+      unitA1,
+      fritas.id,
+      'Fritas Desativado',
+      'addon',
+      'multiple',
+      0,
+      1,
+    );
     await createOption(ownerAS, fritasInactive.id, 'Fritas D', '0.50');
 
-    const saborObrigatorio = await createGroup(ownerAS, unitA1, requerido.id, 'Sabor Obrigatorio', 'variation', 'single', 1, 1);
+    const saborObrigatorio = await createGroup(
+      ownerAS,
+      unitA1,
+      requerido.id,
+      'Sabor Obrigatorio',
+      'variation',
+      'single',
+      1,
+      1,
+    );
     opcaoA = await createOption(ownerAS, saborObrigatorio.id, 'Opcao A', '0.00');
     opcaoB = await createOption(ownerAS, saborObrigatorio.id, 'Opcao B', '0.00');
 
-    const combos = await createGroup(ownerAS, unitA1, mega.id, 'Combos', 'addon', 'multiple', 0, 50);
+    const combos = await createGroup(
+      ownerAS,
+      unitA1,
+      mega.id,
+      'Combos',
+      'addon',
+      'multiple',
+      0,
+      50,
+    );
     megaOptions = [];
     for (let index = 1; index <= 50; index += 1) {
       megaOptions.push(
@@ -467,15 +560,39 @@ async function run() {
       );
     }
 
-    const temporarioExtras = await createGroup(ownerAS, unitA1, temporario.id, 'Extras', 'addon', 'multiple', 0, 3);
+    const temporarioExtras = await createGroup(
+      ownerAS,
+      unitA1,
+      temporario.id,
+      'Extras',
+      'addon',
+      'multiple',
+      0,
+      3,
+    );
     extraA = await createOption(ownerAS, temporarioExtras.id, 'Extra A', '0.00');
     extraB = await createOption(ownerAS, temporarioExtras.id, 'Extra B', '0.00');
-    const temporarioExtras2 = await createGroup(ownerAS, unitA1, temporario.id, 'Extras 2', 'addon', 'multiple', 0, 3);
+    const temporarioExtras2 = await createGroup(
+      ownerAS,
+      unitA1,
+      temporario.id,
+      'Extras 2',
+      'addon',
+      'multiple',
+      0,
+      3,
+    );
     const extraC = await createOption(ownerAS, temporarioExtras2.id, 'Extra C', '0.00');
 
     ok(tamanho.sort_order === 100, '0.1 sort_order do primeiro grupo e 100');
-    ok(adicionais.sort_order === 200 && extras.sort_order === 300, '0.2 sort_order incrementa por grupo');
-    ok(remover.sort_order === 400 && opcionalUnico.sort_order === 500, '0.3 sort_order dos demais grupos');
+    ok(
+      adicionais.sort_order === 200 && extras.sort_order === 300,
+      '0.2 sort_order incrementa por grupo',
+    );
+    ok(
+      remover.sort_order === 400 && opcionalUnico.sort_order === 500,
+      '0.3 sort_order dos demais grupos',
+    );
 
     await saveConfig(ownerAS, unitA1, operationalConfig());
 
@@ -596,12 +713,50 @@ async function run() {
       '2.5 opcao inexistente retorna PED74',
     );
     const categoryA2 = await createCategory(ownerAS, unitA2, 'Opcoes A2');
-    const opcionalNegativo = await createProduct(ownerAS, unitA2, categoryA2.id, 'Opcional Negativo', '10.00');
-    const descontoOpcional = await createGroup(ownerAS, unitA2, opcionalNegativo.id, 'Desconto Opcional', 'variation', 'single', 0, 1);
-    const promoOpcional = await createOption(ownerAS, descontoOpcional.id, 'Promo Opcional', '-2.00');
-    const addonA2 = await createGroup(ownerAS, unitA2, opcionalNegativo.id, 'Adicionais A2', 'addon', 'multiple', 0, 2);
+    const opcionalNegativo = await createProduct(
+      ownerAS,
+      unitA2,
+      categoryA2.id,
+      'Opcional Negativo',
+      '10.00',
+    );
+    const descontoOpcional = await createGroup(
+      ownerAS,
+      unitA2,
+      opcionalNegativo.id,
+      'Desconto Opcional',
+      'variation',
+      'single',
+      0,
+      1,
+    );
+    const promoOpcional = await createOption(
+      ownerAS,
+      descontoOpcional.id,
+      'Promo Opcional',
+      '-2.00',
+    );
+    const addonA2 = await createGroup(
+      ownerAS,
+      unitA2,
+      opcionalNegativo.id,
+      'Adicionais A2',
+      'addon',
+      'multiple',
+      0,
+      2,
+    );
     const aditivoA2 = await createOption(ownerAS, addonA2.id, 'Aditivo A2', '1.00');
-    const remocaoA2 = await createGroup(ownerAS, unitA2, opcionalNegativo.id, 'Remocao A2', 'removal', 'multiple', 0, 50);
+    const remocaoA2 = await createGroup(
+      ownerAS,
+      unitA2,
+      opcionalNegativo.id,
+      'Remocao A2',
+      'removal',
+      'multiple',
+      0,
+      50,
+    );
     const semItemA2 = await createOption(ownerAS, remocaoA2.id, 'Sem Item A2', '0.00');
     const publicationA2 = await publish(ownerAS, unitA2);
     slugA2 = publicationA2.public_slug;
@@ -647,7 +802,15 @@ async function run() {
       'PED73',
       '2.14 mudar variacao negativa para removal retorna PED73',
     );
-    const addonAsVariation = await updateGroup(ownerAS, addonA2.id, 'Adicionais A2', 'variation', 'single', 1, 1);
+    const addonAsVariation = await updateGroup(
+      ownerAS,
+      addonA2.id,
+      'Adicionais A2',
+      'variation',
+      'single',
+      1,
+      1,
+    );
     ok(addonAsVariation.kind === 'variation', '2.15 addon sem violacao vira variation');
     await updateGroup(ownerAS, addonA2.id, 'Adicionais A2', 'addon', 'multiple', 0, 2);
 
@@ -673,8 +836,23 @@ async function run() {
       '2.18 manager cross-unit sem alternar disponibilidade',
     );
 
-    const pisoNegativo = await createProduct(ownerAS, unitA2, categoryA2.id, 'Piso Negativo', '1.00');
-    const obrigatorioA2 = await createGroup(ownerAS, unitA2, pisoNegativo.id, 'Obrigatorio A2', 'variation', 'single', 1, 1);
+    const pisoNegativo = await createProduct(
+      ownerAS,
+      unitA2,
+      categoryA2.id,
+      'Piso Negativo',
+      '1.00',
+    );
+    const obrigatorioA2 = await createGroup(
+      ownerAS,
+      unitA2,
+      pisoNegativo.id,
+      'Obrigatorio A2',
+      'variation',
+      'single',
+      1,
+      1,
+    );
     await createOption(ownerAS, obrigatorioA2.id, 'Desconto Total', '-1.50');
     await expectError(
       ownerAS,
@@ -728,10 +906,21 @@ async function run() {
 
     scenario(4, 'contrato do cardapio publico');
     const configuravelMenu = productByName(currentMenu, 'Configuravel');
-    ok(Array.isArray(configuravelMenu.option_groups) && configuravelMenu.option_groups.length === 5, '4.0 option_groups presente');
+    ok(
+      Array.isArray(configuravelMenu.option_groups) && configuravelMenu.option_groups.length === 5,
+      '4.0 option_groups presente',
+    );
     const tamanhoMenu = groupByName(configuravelMenu, 'Tamanho');
     ok(
-      exactKeys(tamanhoMenu, ['id', 'name', 'kind', 'selection_mode', 'min_select', 'max_select', 'options']),
+      exactKeys(tamanhoMenu, [
+        'id',
+        'name',
+        'kind',
+        'selection_mode',
+        'min_select',
+        'max_select',
+        'options',
+      ]),
       '4.1 chaves do grupo publico exatas',
     );
     ok(
@@ -746,25 +935,40 @@ async function run() {
       exactKeys(pequenoMenu, ['id', 'name', 'price_delta', 'is_available']),
       '4.3 chaves da opcao publica exatas',
     );
-    ok(pequenoMenu.price_delta === '0.00' && pequenoMenu.is_available === true, '4.4 delta textual e disponibilidade');
+    ok(
+      pequenoMenu.price_delta === '0.00' && pequenoMenu.is_available === true,
+      '4.4 delta textual e disponibilidade',
+    );
     const grandeMenu = optionByName(tamanhoMenu, 'Grande');
     ok(grandeMenu.price_delta === '2.00', '4.5 delta positivo textual');
     const menuJson = JSON.stringify(currentMenu);
     ok(!menuJson.includes('source_'), '4.6 cardapio sem source ids');
     ok(configuravelMenu.is_configurable === true, '4.7 configuravel marcado como configurable');
     const simpplesMenu = productByName(currentMenu, 'Simples');
-    ok(Array.isArray(simpplesMenu.option_groups) && simpplesMenu.option_groups.length === 0, '4.8 produto sem grupos exposto vazio');
+    ok(
+      Array.isArray(simpplesMenu.option_groups) && simpplesMenu.option_groups.length === 0,
+      '4.8 produto sem grupos exposto vazio',
+    );
     ok(simpplesMenu.is_configurable === true, '4.9 produto sem grupos configuravel');
     const requeridoMenu = productByName(currentMenu, 'Requerido');
-    ok(requeridoMenu.is_configurable === true, '4.10 obrigatorio com opcoes disponiveis configuravel');
+    ok(
+      requeridoMenu.is_configurable === true,
+      '4.10 obrigatorio com opcoes disponiveis configuravel',
+    );
     await setOptionAvailable(operatorAS, opcaoA.id, false);
     await setOptionAvailable(operatorAS, opcaoB.id, false);
     currentMenu = await publicMenu(anon, slugA1);
-    ok(productByName(currentMenu, 'Requerido').is_configurable === false, '4.11 sem opcoes disponiveis nao configuravel');
+    ok(
+      productByName(currentMenu, 'Requerido').is_configurable === false,
+      '4.11 sem opcoes disponiveis nao configuravel',
+    );
     await setOptionAvailable(operatorAS, opcaoA.id, true);
     await setOptionAvailable(operatorAS, opcaoB.id, true);
     currentMenu = await publicMenu(anon, slugA1);
-    ok(productByName(currentMenu, 'Requerido').is_configurable === true, '4.12 restaurado configuravel');
+    ok(
+      productByName(currentMenu, 'Requerido').is_configurable === true,
+      '4.12 restaurado configuravel',
+    );
 
     scenario(5, 'checkout com opcoes: regras e preco');
     const configurableCurrent = productByName(currentMenu, 'Configuravel');
@@ -773,8 +977,14 @@ async function run() {
     const queijoCurrent = optionByName(groupByName(configurableCurrent, 'Adicionais'), 'Queijo');
     const alfaceCurrent = optionByName(groupByName(configurableCurrent, 'Extras'), 'Alface');
     const ruculaCurrent = optionByName(groupByName(configurableCurrent, 'Extras'), 'Rucula');
-    const semCebolaCurrent = optionByName(groupByName(configurableCurrent, 'Remover'), 'Sem Cebola');
-    const semAlfaceCurrent = optionByName(groupByName(configurableCurrent, 'Remover'), 'Sem Alface');
+    const semCebolaCurrent = optionByName(
+      groupByName(configurableCurrent, 'Remover'),
+      'Sem Cebola',
+    );
+    const semAlfaceCurrent = optionByName(
+      groupByName(configurableCurrent, 'Remover'),
+      'Sem Alface',
+    );
     const molhoCurrent = optionByName(groupByName(configurableCurrent, 'Opcional Unico'), 'Molho');
 
     await expectError(
@@ -783,7 +993,11 @@ async function run() {
       [
         slugA1,
         randomUUID(),
-        JSON.stringify(makePayload(currentMenu, [{ menu_item_id: configurableCurrent.id, quantity: 1, note: null }])),
+        JSON.stringify(
+          makePayload(currentMenu, [
+            { menu_item_id: configurableCurrent.id, quantity: 1, note: null },
+          ]),
+        ),
       ],
       'PED76',
       '5.0 sem grupo obrigatorio retorna PED76',
@@ -796,7 +1010,12 @@ async function run() {
         randomUUID(),
         JSON.stringify(
           makePayload(currentMenu, [
-            { menu_item_id: configurableCurrent.id, quantity: 1, note: null, options: [baconCurrent.id] },
+            {
+              menu_item_id: configurableCurrent.id,
+              quantity: 1,
+              note: null,
+              options: [baconCurrent.id],
+            },
           ]),
         ),
       ],
@@ -871,7 +1090,12 @@ async function run() {
         randomUUID(),
         JSON.stringify(
           makePayload(currentMenu, [
-            { menu_item_id: configurableCurrent.id, quantity: 1, note: null, options: [randomUUID()] },
+            {
+              menu_item_id: configurableCurrent.id,
+              quantity: 1,
+              note: null,
+              options: [randomUUID()],
+            },
           ]),
         ),
       ],
@@ -891,7 +1115,10 @@ async function run() {
               quantity: 1,
               note: null,
               options: [
-                optionByName(groupByName(productByName(currentMenu, 'Fritas'), 'Extras Fritas'), 'Extra Fritas').id,
+                optionByName(
+                  groupByName(productByName(currentMenu, 'Fritas'), 'Extras Fritas'),
+                  'Extra Fritas',
+                ).id,
               ],
             },
           ]),
@@ -994,13 +1221,14 @@ async function run() {
       anon,
       slugA1,
       randomUUID(),
-      makePayload(currentMenu, [
-        { menu_item_id: simpleCurrent.id, quantity: 1, note: null },
-      ]),
+      makePayload(currentMenu, [{ menu_item_id: simpleCurrent.id, quantity: 1, note: null }]),
     );
     const simpleOrderId = await orderIdForCreation(ownerAS, simpleCreation);
     const simpleDetail = await adminDetail(ownerAS, simpleOrderId);
-    ok(Array.isArray(simpleDetail.items[0].options) && simpleDetail.items[0].options.length === 0, '5.12 pedido sem opcoes retrocompativel');
+    ok(
+      Array.isArray(simpleDetail.items[0].options) && simpleDetail.items[0].options.length === 0,
+      '5.12 pedido sem opcoes retrocompativel',
+    );
 
     mathCreation = await checkout(
       anon,
@@ -1032,7 +1260,15 @@ async function run() {
     ok(mathDetail.items[0].options.length === 7, '5.17 snapshot por linha com sete opcoes');
     const firstOption = mathDetail.items[0].options[0];
     ok(
-      exactKeys(firstOption, ['id', 'group_id', 'group_name', 'group_kind', 'option_id', 'option_name', 'price_delta']),
+      exactKeys(firstOption, [
+        'id',
+        'group_id',
+        'group_name',
+        'group_kind',
+        'option_id',
+        'option_name',
+        'price_delta',
+      ]),
       '5.18 chaves administrativas da opcao exatas',
     );
     ok(
@@ -1051,14 +1287,17 @@ async function run() {
       slugA1,
       randomUUID(),
       makePayload(currentMenu, [
-        { menu_item_id: configurableCurrent.id, quantity: 1, note: null, options: [grandCurrent.id] },
         {
           menu_item_id: configurableCurrent.id,
           quantity: 1,
           note: null,
-          options: [
-            optionByName(groupByName(configurableCurrent, 'Tamanho'), 'Pequeno').id,
-          ],
+          options: [grandCurrent.id],
+        },
+        {
+          menu_item_id: configurableCurrent.id,
+          quantity: 1,
+          note: null,
+          options: [optionByName(groupByName(configurableCurrent, 'Tamanho'), 'Pequeno').id],
         },
       ]),
     );
@@ -1071,8 +1310,18 @@ async function run() {
         randomUUID(),
         JSON.stringify(
           makePayload(currentMenu, [
-            { menu_item_id: configurableCurrent.id, quantity: 1, note: null, options: [grandCurrent.id] },
-            { menu_item_id: configurableCurrent.id, quantity: 1, note: null, options: [grandCurrent.id] },
+            {
+              menu_item_id: configurableCurrent.id,
+              quantity: 1,
+              note: null,
+              options: [grandCurrent.id],
+            },
+            {
+              menu_item_id: configurableCurrent.id,
+              quantity: 1,
+              note: null,
+              options: [grandCurrent.id],
+            },
           ]),
         ),
       ],
@@ -1101,7 +1350,8 @@ async function run() {
     ok(mathDetail.items[0].product_name === 'Configuravel', '6.0 nome snapshot nao muda');
     ok(mathDetail.items[0].unit_price === '10.00', '6.1 preco snapshot nao muda');
     ok(
-      mathDetail.items[0].options.find((entry) => entry.option_name === 'Bacon')?.price_delta === '1.50',
+      mathDetail.items[0].options.find((entry) => entry.option_name === 'Bacon')?.price_delta ===
+        '1.50',
       '6.2 delta da opcao snapshot nao muda',
     );
     const trackedAfter = await tracking(anon, mathCreation.tracking_token);
@@ -1119,23 +1369,20 @@ async function run() {
       await admin.query('select public._options_fingerprint($1::uuid[]) as out', [[grande.id]])
     ).rows[0].out;
     const hashTwo = (
-      await admin.query(
-        'select public._options_fingerprint($1::uuid[]) as out',
-        [[grande.id, molho.id]],
-      )
+      await admin.query('select public._options_fingerprint($1::uuid[]) as out', [
+        [grande.id, molho.id],
+      ])
     ).rows[0].out;
     const hashSwap = (
-      await admin.query(
-        'select public._options_fingerprint($1::uuid[]) as out',
-        [[molho.id, grande.id]],
-      )
+      await admin.query('select public._options_fingerprint($1::uuid[]) as out', [
+        [molho.id, grande.id],
+      ])
     ).rows[0].out;
     ok(hashTwo === hashSwap && isHex64(hashTwo), '7.1 fingerprint canonico por ordem');
     ok(hashOne !== hashTwo, '7.2 fingerprint distingue selecoes');
     ok(
-      (
-        await admin.query('select public._options_fingerprint(array[]::uuid[]) as out')
-      ).rows[0].out === emptyHash,
+      (await admin.query('select public._options_fingerprint(array[]::uuid[]) as out')).rows[0]
+        .out === emptyHash,
       '7.3 fingerprint vazio determinístico',
     );
 
@@ -1150,7 +1397,10 @@ async function run() {
     ]);
     const replayFirst = await checkout(anon, slugA1, replayKey, replayPayload);
     const replaySecond = await checkout(anon, slugA1, replayKey, replayPayload);
-    ok(JSON.stringify(replaySecond) === JSON.stringify(replayFirst), '7.4 replay com opcoes identico');
+    ok(
+      JSON.stringify(replaySecond) === JSON.stringify(replayFirst),
+      '7.4 replay com opcoes identico',
+    );
     const replayCount = await admin.query(
       'select count(*)::int as count from public.orders where unit_id = $1 and idempotency_key = $2',
       [unitA1, replayKey],
@@ -1195,7 +1445,10 @@ async function run() {
     const durableFirst = await checkout(anon, slugA1, durableKey, durablePayload);
     await publish(ownerAS, unitA1);
     const durableAfter = await checkout(anon, slugA1, durableKey, durablePayload);
-    ok(JSON.stringify(durableAfter) === JSON.stringify(durableFirst), '7.9 replay precede revalidacao apos republicacao');
+    ok(
+      JSON.stringify(durableAfter) === JSON.stringify(durableFirst),
+      '7.9 replay precede revalidacao apos republicacao',
+    );
 
     scenario(8, 'RLS, grants e escrita direta');
     for (const table of [
@@ -1205,7 +1458,12 @@ async function run() {
       'menu_version_options',
       'order_item_options',
     ]) {
-      await expectDenied(anon, `select * from public.${table} limit 1`, [], '8.0 anon sem SELECT direto');
+      await expectDenied(
+        anon,
+        `select * from public.${table} limit 1`,
+        [],
+        '8.0 anon sem SELECT direto',
+      );
     }
     for (const statement of [
       `insert into public.catalog_product_option_groups
@@ -1220,12 +1478,24 @@ async function run() {
       'update public.catalog_product_option_groups set name = name where product_id = $1',
       'delete from public.catalog_product_options where product_id = $1',
     ]) {
-      await expectDenied(ownerAS, statement, [configurable.id], '8.1 escrita direta authenticated negada');
+      await expectDenied(
+        ownerAS,
+        statement,
+        [configurable.id],
+        '8.1 escrita direta authenticated negada',
+      );
     }
     for (const table of ['catalog_product_option_groups', 'catalog_product_options']) {
-      const ownRows = await operatorAS.query(`select id from public.${table} where unit_id = $1`, [unitA1]);
-      const crossRows = await managerOtherS.query(`select id from public.${table} where unit_id = $1`, [unitA1]);
-      const foreignRows = await ownerBS.query(`select id from public.${table} where unit_id = $1`, [unitA1]);
+      const ownRows = await operatorAS.query(`select id from public.${table} where unit_id = $1`, [
+        unitA1,
+      ]);
+      const crossRows = await managerOtherS.query(
+        `select id from public.${table} where unit_id = $1`,
+        [unitA1],
+      );
+      const foreignRows = await ownerBS.query(`select id from public.${table} where unit_id = $1`, [
+        unitA1,
+      ]);
       ok(ownRows.rows.length > 0, '8.2 operator le catalogo da unidade');
       ok(crossRows.rows.length === 0, '8.3 manager cross-unit isolado');
       ok(foreignRows.rows.length === 0, '8.4 owner cross-tenant isolado');
@@ -1283,8 +1553,13 @@ async function run() {
        from information_schema.columns
        where table_schema = 'public' and table_name = 'order_items'`,
     );
-    const itemColumnMap = new Map(itemColumns.rows.map((row) => [row.column_name, row.is_nullable]));
-    ok(itemColumnMap.has('options_fingerprint') && itemColumnMap.get('options_fingerprint') === 'NO', '9.1 options_fingerprint not null');
+    const itemColumnMap = new Map(
+      itemColumns.rows.map((row) => [row.column_name, row.is_nullable]),
+    );
+    ok(
+      itemColumnMap.has('options_fingerprint') && itemColumnMap.get('options_fingerprint') === 'NO',
+      '9.1 options_fingerprint not null',
+    );
 
     const constraints = await admin.query(
       `select conname
@@ -1292,8 +1567,14 @@ async function run() {
        where conrelid = 'public.order_items'::regclass`,
     );
     const constraintNames = new Set(constraints.rows.map((row) => row.conname));
-    ok(constraintNames.has('order_items_order_menu_item_options_key'), '9.2 unicidade por fingerprint presente');
-    ok(constraintNames.has('order_items_organization_unit_order_id_key'), '9.3 unicidade organizacional presente');
+    ok(
+      constraintNames.has('order_items_order_menu_item_options_key'),
+      '9.2 unicidade por fingerprint presente',
+    );
+    ok(
+      constraintNames.has('order_items_organization_unit_order_id_key'),
+      '9.3 unicidade organizacional presente',
+    );
     ok(!constraintNames.has('order_items_order_menu_item_key'), '9.4 unicidade legada removida');
 
     const helperGrants = await admin.query(

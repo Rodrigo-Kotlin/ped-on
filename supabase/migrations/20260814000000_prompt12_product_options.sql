@@ -2248,7 +2248,7 @@ begin
         raise exception 'SELECTION_MENU_MISMATCH' using errcode = 'PED78';
       end if;
 
-      -- Disponibilidade overlay serializada por FOR SHARE.
+      -- Fonte ausente ou removida do catalogo e indisponivel.
       select 1 into v_unavailable_flag
       from unnest(v_selected_ids) as s(id)
       join public.menu_version_options as o
@@ -2257,12 +2257,34 @@ begin
        and o.unit_id = v_publication.unit_id
        and o.menu_version_id = v_menu_version_id
        and o.menu_product_id = v_menu_item_id
-      left join public.catalog_product_options as co
+      where o.source_option_id is null
+         or not exists (
+           select 1
+           from public.catalog_product_options as co2
+           where co2.id = o.source_option_id
+             and co2.organization_id = o.organization_id
+             and co2.unit_id = o.unit_id
+         )
+      limit 1;
+
+      if v_unavailable_flag is not null then
+        raise exception 'OPTION_UNAVAILABLE' using errcode = 'PED75';
+      end if;
+
+      -- Disponibilidade overlay serializada por FOR SHARE no catalogo.
+      select 1 into v_unavailable_flag
+      from unnest(v_selected_ids) as s(id)
+      join public.menu_version_options as o
+        on o.id = s.id
+       and o.organization_id = v_publication.organization_id
+       and o.unit_id = v_publication.unit_id
+       and o.menu_version_id = v_menu_version_id
+       and o.menu_product_id = v_menu_item_id
+      join public.catalog_product_options as co
         on co.id = o.source_option_id
        and co.organization_id = o.organization_id
        and co.unit_id = o.unit_id
-      where o.source_option_id is null
-         or coalesce(co.is_available, false) = false
+      where co.is_available = false
       limit 1
       for share of co;
 
