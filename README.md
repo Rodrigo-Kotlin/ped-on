@@ -201,6 +201,8 @@ passaram no hardening técnico de 2026-08-12. O run CI `31598675826` e o deploym
 - `docs/PEDON_DATABASE_SCHEMA.md`: schema cumulativo e contratos SQL/HTTP
 - `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
+- `docs/PEDON_POST_MVP_ROADMAP.md`: roadmap oficial pós-Core MVP
 
 Prompt 10 encerrado oficialmente como `COMPLETED` / `RELEASE_VERIFIED` após reauditoria independente
-concluída com GO. Próxima etapa: `A DEFINIR APÓS O ENCERRAMENTO DO PROMPT 10`.
+concluída com GO. Próxima etapa: `Prompt 11 — Pilot Readiness, Observabilidade e Product Hardening`
+(Fase 4 — Pilot Ready); ver `docs/PEDON_POST_MVP_ROADMAP.md`.

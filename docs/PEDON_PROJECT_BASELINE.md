@@ -182,3 +182,11 @@ Regras de branding nesta fase:
 - Supabase (PostgreSQL + RLS);
 - PWA;
 - Documentação versionada junto ao código.
+
+## 11. Roadmap Pós-Core MVP
+
+O Core MVP foi encerrado oficialmente (STATUS `COMPLETED`, checkpoint `RELEASE_VERIFIED`). A
+evolução oficial do produto está formalizada em `docs/PEDON_POST_MVP_ROADMAP.md`.
+
+A lista "Fora do Core MVP" permanece historicamente correta. Recursos que agora aparecem no roadmap
+continuam sendo "fora do Core MVP"; eles apenas passaram a compor o planejamento pós-MVP.
