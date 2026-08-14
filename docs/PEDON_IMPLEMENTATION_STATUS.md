@@ -11,27 +11,25 @@
 | BRANCH                 | `main`                                                                                                                                                                                                                                                                                     |
 | MODELO                 | Main-First monitorado                                                                                                                                                                                                                                                                      |
 | FASE ATUAL             | Fase 4A — Pilot Ready                                                                                                                                                                                                                                                                      |
-| PROMPT ATUAL           | Prompt 11 — Pilot Readiness, Observabilidade e Product Hardening                                                                                                                                                                                                                           |
-| STATUS                 | `COMPLETED`                                                                                                                                                                                                                                                                                |
-| CHECKPOINT             | `RELEASE_VERIFIED` — gates técnicos, convergência remota, deployment e reauditoria independente aprovados                                                                                                                                                                                  |
-| HEAD INICIAL DO PROMPT | `7ee0e9a` — docs: formalize post-MVP roadmap                                                                                                                                                                                                                                               |
-| HEAD TÉCNICO VALIDADO  | `925f7d94adea4c0c2cef9a1017270269960817aa`                                                                                                                                                                                                                                                 |
-| BACKEND                | `IMPLEMENTED / VERIFIED` — CI `31712486989` aprovou fresh rebuild isolado das 19 migrations, alinhamento, DB lint, nove suítes DB com 1182/1182 checks e Edge unit 15/15; remoto alinhado em 19/19 e lint linked sem erros                                                                       |
-| FRONTEND               | `IMPLEMENTED / VERIFIED` — painel de prontidão, equipe, diagnóstico, estados offline/erro/loading, lazy routes, SHA de build e atualização PWA não destrutiva; Quality gates e E2E smoke tests 236/236 aprovados no CI `31712486989`                                                           |
-| IDENTIDADE V2          | CPF + telefone protegidos por HMAC-SHA-256 tenant-bound; lookup desconhecido e telefone incorreto usam a mesma resposta exata HTTP 422 `IDENTITY_NOT_CONFIRMED`; resolver legado revogado de `service_role`; enroll exige consentimento e gera evidência append-only                         |
-| RATE LIMIT             | Fixed-window persistente no PostgreSQL, chaveado por HMAC(IP confiável + slug canônico + mode), sem PII; lookup 10/60s e enroll 5/60s; excesso HTTP 429 com `Retry-After`; slugs inexistentes compartilham escopo canônico                                                                        |
-| TOKEN                  | 64 hex, hash SHA-256 no banco, TTL máximo de 2h + tolerância transacional de 5 min; leitura repetível de conta/extrato até checkout; checkout o remove atomicamente; cleanup incremental remove expirados; token existente continua legível após disable                              |
-| TESTES VERIFICADOS     | CI `31712486989`: Quality gates PASS; Backend release gates PASS, com nove suítes DB e baseline 1182/1182, Edge 15/15; E2E smoke tests 236/236 PASS                                                                                                                                          |
+| PROMPT ATUAL           | Prompt 12 — Produtos, Variações e Adicionais                                                                                                                                                                                                                                               |
+| STATUS                 | `IN PROGRESS` — Etapa 3 concluída                                                                                                                                                                                                                                                          |
+| CHECKPOINT             | `ADMIN_CHECKPOINT` — painel administrativo de variações/adicionais/remoções implementado e verificado; Etapa 4 (checkout público) pendente                                                                                                                                                 |
+| HEAD INICIAL DO PROMPT | `3a6cd42` — Prompt 11 encerrado (`RELEASE_VERIFIED`)                                                                                                                                                                                                                                       |
+| HEAD TÉCNICO VALIDADO  | `df2cee31fa4afb288ab5d7bb08ae54d07aff1572`                                                                                                                                                                                                                                                 |
+| BACKEND                | `IMPLEMENTED / VERIFIED` — migration 20 (`catalog_product_option_groups`/`catalog_product_options`, snapshot de publicação, `order_item_options` e validação de seleção no checkout); CI `31761944228` aprovou fresh rebuild das 20 migrations, DB lint e dez suítes DB com 1332/1332 checks  |
+| FRONTEND               | `IMPLEMENTED / VERIFIED` — painel de grupos/opções em `/app/catalogo` (criar, editar, desativar grupos; criar/editar/desativar/alternar disponibilidade de opções; regras por kind; estados offline); Quality gates e E2E smoke tests 288/288 aprovados no CI `31761944228`                 |
+| OPÇÕES DE PRODUTO      | kinds `variation`/`addon`/`removal`; `single`/`multiple`; min/max validados no servidor; `price_delta` decimal exato com `unit_price = base + SUM(delta)` no checkout; snapshot imutável na publicação (`menu_version_*`) e por linha no pedido (`order_item_options`)                       |
+| TESTES VERIFICADOS     | CI `31761944228`: Quality gates PASS; Backend release gates PASS, com dez suítes DB e baseline 1332/1332, Edge 15/15; E2E smoke tests 288/288 PASS (52 dos quais = Prompt 12, 13 cenários em 4 viewports)                                                                                    |
 | PWA                    | Atualização por prompt explícito; aplicação bloqueada durante checkout, order mutation, redemption, voucher consume e team assignment/removal; runtime cache de API `NONE`; precache sem duplicatas após audit estático                                                                      |
-| CLOUDFLARE             | Check/deployment `82dedad7-c36e-4ddf-af8a-8d48176b9b0a` aprovado; URL imutável `https://82dedad7.ped-on.pages.dev` e estável `https://ped-on.pages.dev`; fallback SPA 18/18 e 4/4 e SHA técnico confirmado nos bundles                                                                          |
-| GITHUB ACTIONS         | CI `31712486989` aprovado para o HEAD técnico validado, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                    |
-| PENDÊNCIAS             | Nenhuma pendência bloqueante; dívida técnica não bloqueante registrada (LOW 4, INFO 1); Prompt 11 oficialmente encerrado                                                                                                                                                              |
-| NEXT_STEP              | Preparar e executar o Prompt 12 — Produtos, Variações e Adicionais, conforme o roadmap pós-Core MVP                                                                                                                                                                                     |
+| CLOUDFLARE             | URLs vigentes do Prompt 11 mantidas: imutável `https://8f7d42fd.ped-on.pages.dev` e estável `https://ped-on.pages.dev`; sem alteração de deploy nesta etapa                                                                                                                                  |
+| GITHUB ACTIONS         | CI `31761944228` aprovado para o HEAD técnico, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                             |
+| PENDÊNCIAS             | Etapa 4 do Prompt 12 (cardápio público com seleção de opções, carrinho e checkout) pendente; sem pendência bloqueante na Etapa 3                                                                                                                                                            |
+| NEXT_STEP              | Executar a Etapa 4 do Prompt 12: seleção de opções no cardápio público e no checkout, consumindo o backend já entregue (snapshot + validação `PED72..PED78`)                                                                                                                                |
 | FASE SEGUINTE          | Não iniciada                                                                                                                                                                                                                                                                               |
-| PROMPT SEGUINTE        | Prompt 12 — `NOT STARTED`                                                                                                                                                                                                                                                                  |
+| PROMPT SEGUINTE        | Prompt 12 — `IN PROGRESS` (Etapa 4)                                                                                                                                                                                                                                                        |
 | PROMPT 10              | `COMPLETED` — checkpoint `RELEASE_VERIFIED`; reauditoria independente concluída com `GO_WITH_NON_BLOCKING_FINDINGS`                                                                                                                                                              |
 | LOCAL DB REBUILD       | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                                                    |
-| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 19 migrations no CI `31712486989` (técnico) e revalidado no CI `31713901328` (reauditado)                                                                                                                                                                      |
+| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 20 migrations no CI `31761944228` (Prompt 12)                                                                                                                                                                                                                   |
 
 ---
 
@@ -57,6 +55,18 @@
   telefone, saldo ou payload da conta.
 - `/app/vouchers` normaliza o código em memória e não o coloca na URL, Local Storage ou Session
   Storage; owner, manager e operator ainda dependem de `can_access_unit` no PostgreSQL.
+- O catálogo mutável ganhou grupos de opções (`catalog_product_option_groups` com `kind`
+  `variation`/`addon`/`removal`, `selection_mode` `single`/`multiple`, `min_select`/`max_select`) e
+  opções (`catalog_product_options` com `price_delta` decimal exato); escrita exclusiva por RPCs
+  server-authoritative, leitura administrativa por SELECT com policy `can_access_unit`.
+- A publicação congela grupos/opções ativos em `menu_version_option_groups`/`menu_version_options`
+  (overlay de disponibilidade via `source_group_id`/`source_option_id`); o checkout valida seleção
+  no servidor, calcula `final_unit_price = base + SUM(price_delta)` e grava
+  `order_item_options` (snapshot append-only por linha).
+- Erros de opções: `PED72`–`PED78`; o tracking público expõe opções com nome/tipo/delta sem IDs
+  técnicos, e o detalhe administrativo mantém os IDs de snapshot.
+- Opção de `removal` exige `price_delta = 0`; `variation` exige seleção única obrigatória
+  (`single`, `max_select = 1`); `addon`/`removal` não podem ter preço negativo.
 
 ## Reauditoria independente do Prompt 10 — resultado histórico
 
@@ -87,6 +97,23 @@
   SHA e o CI do fechamento documental são registrados no relatório final (evitando autorreferência).
 - Marco alcançado: `PILOT_READY`. Prompt 12: `NOT STARTED`.
 
+## Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (Etapa 3)
+
+- HEAD técnico validado: `df2cee31fa4afb288ab5d7bb08ae54d07aff1572`; CI `31761944228` SUCCESS
+  (Quality gates, Backend release gates e E2E smoke tests).
+- Backend: migration 20 aplicada e verificada — fresh rebuild isolado das 20 migrations, DB lint
+  PASS e dez suítes DB 1332/1332 (inclui `product_options_integrity`); Edge 15/15;
+  Git/filesystem e remoto em 20/20; dry-run linked informa remote up to date.
+- Frontend: painel de variações/adicionais/remoções em `/app/catalogo` — `OptionGroupsPanel`,
+  `GroupCard`, `GroupEditor`, `OptionEditor` e lib `product-options.ts` com contratos de preço;
+  unit 312/312 (37 arquivos); E2E 288/288 com 13 cenários do Prompt 12 em 4 viewports
+  (criação de grupos variação/adicional/remoção, validação min>max sem RPC, opções com
+  preço/desconto/sem acréscimo, edição, desativação com confirmação, toggle de disponibilidade,
+  operator view-only e offline pausando mutações).
+- Sem alteração de deploy Cloudflare nesta etapa; URLs vigentes do Prompt 11 mantidas.
+- Próximo: Etapa 4 — seleção de opções no cardápio público e no checkout (backend da migration 20
+  já entregue).
+
 ## Histórico de execução
 
 | Etapa                             | Prompt                                                  | Status                          | Commit                                     | Data       |
@@ -103,3 +130,4 @@
 | Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED                       | `2013e8d`                                  | 2026-08-11 |
 | Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; encerramento oficial (`2a91711`, `453af65`) | 2026-08-12 |
 | Fase 4A — Pilot Ready             | Prompt 11 — Pilot Readiness e Product Hardening         | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; auditado `3a6cd42`, CI `31713901328`, deploy `8f7d42fd` | 2026-08-13 |
+| Fase 4A — Pilot Ready             | Prompt 12 — Produtos, Variações e Adicionais            | IN PROGRESS — ADMIN_CHECKPOINT   | Etapa 3 `df2cee3`, CI `31761944228`, migrations 20/20, E2E 288/288     | 2026-08-14 |

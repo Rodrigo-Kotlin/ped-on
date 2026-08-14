@@ -70,8 +70,8 @@ ped-on/
 │       └── src/                   # app, componentes, domínio web e páginas
 ├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # 19 migrations versionadas até o Prompt 11
-│   ├── tests/                     # nove suítes DB e smoke remoto da Edge
+│   ├── migrations/                # 20 migrations versionadas até o Prompt 12
+│   ├── tests/                     # dez suítes DB e smoke remoto da Edge
 │   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
 │   └── seed.example.sql           # seed de exemplo, sem dados reais
 ├── docs/                          # continuidade, schema, RLS e operação
@@ -141,7 +141,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O filesystem versionado possui 19 migrations ordenadas:
+O filesystem versionado possui 20 migrations ordenadas:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -162,6 +162,7 @@ O filesystem versionado possui 19 migrations ordenadas:
 17. `20260812090000_prompt10_final_integrity_hardening.sql`
 18. `20260812120000_prompt11_pilot_readiness_team.sql`
 19. `20260813120000_prompt11_readiness_unit_coherence.sql`
+20. `20260814000000_prompt12_product_options.sql`
 
 Fluxo linked não destrutivo:
 
@@ -172,21 +173,17 @@ supabase migration list
 supabase db lint --linked
 ```
 
-Migration 18 está aplicada remotamente e local/remoto são semanticamente iguais; não reaplicar. A
-migration 19 reconcilia a coerência por unidade e aguarda o fresh rebuild das 19 migrations no
-GitHub Actions antes de qualquer aplicação remota.
-Não editar migration aplicada nem usar `supabase db reset` localmente.
+Git/filesystem e remoto estão em 20/20; o dry-run linked informa que o remoto está up to date. Não
+reaplicar migrations já aplicadas nem editar migration existente. Não usar `supabase db reset`
+localmente.
 
-## Testes do Prompt 11
+## Testes do Prompt 12
 
-- gates locais leves pré-reconciliação: frontend 274/274, E2E 236/236, Prompt 11 E2E 44/44 e Edge
-  unit 15/15;
-- gates locais finais serão repetidos após UX PWA e documentação;
-- banco isolado, nove suítes, DB lint e baseline esperado 1182: `PENDING` no CI oficial do novo SHA;
-- migrations Git/filesystem: 19; remote: 18; única pendência esperada: migration 19, ainda não aplicada.
-
-O run `31661244246` é histórico e anterior à árvore atual; não é evidência do Prompt 11. O primeiro
-CI oficial e o deployment Cloudflare do novo SHA ainda estão pendentes.
+- gates locais e do CI `31761944228`: frontend unit 312/312, E2E 288/288 (dos quais 52 são os 13
+  cenários do Prompt 12 em 4 viewports) e Edge unit 15/15;
+- banco isolado: dez suítes, DB lint e baseline 1332/1332 checks (inclui
+  `product_options_integrity`);
+- migrations Git/filesystem: 20; remote: 20; dry-run linked informa remote up to date.
 
 ## Segurança e secrets
 
@@ -215,4 +212,4 @@ CI oficial e o deployment Cloudflare do novo SHA ainda estão pendentes.
 - `docs/PEDON_POST_MVP_ROADMAP.md`: roadmap oficial pós-Core MVP
 
 Prompt 11: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `PILOT_READY: ACHIEVED`.
-Prompt 12: `NOT STARTED`.
+Prompt 12: `IN PROGRESS` / checkpoint `ADMIN_CHECKPOINT` (Etapa 3 concluída; Etapa 4 pendente).

@@ -1,12 +1,12 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 11, checkpoint
-> `RELEASE_VERIFIED`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
+> Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 12, checkpoint
+> `ADMIN_CHECKPOINT`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
 > nega por padrão e o Clube usa superfícies públicas minimizadas e RPCs internas restritas.
 
 ## 1. Princípios
 
-- RLS está habilitado nas 30 tabelas `public` atuais.
+- RLS está habilitado nas 35 tabelas `public` atuais.
 - `organization_id` delimita o tenant; `unit_id` delimita o acesso operacional.
 - Owner acessa todas as unidades da própria organização. Manager/operator dependem de vínculo em
   `membership_units`.
@@ -380,10 +380,15 @@ uniforme, consentimento, token repetível/consumido, disable explícito, rate li
 máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
 concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108.
 
-O CI `31712486989` aprovou fresh rebuild das 19 migrations, alinhamento, DB lint, as nove suítes
-sequenciais com 1182/1182 checks e Edge unit 15/15. O remote smoke 36/36 permanece evidência
-histórica do Prompt 10. `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
-`CI ISOLATED DB REBUILD: PASS`.
+O CI `31761944228` aprovou fresh rebuild das 20 migrations, alinhamento, DB lint, as dez suítes
+sequenciais com 1332/1332 checks (inclui `product_options_integrity`) e Edge unit 15/15. O remote
+smoke 36/36 permanece evidência histórica do Prompt 10. `LOCAL DB REBUILD: NOT RUN — BY DESIGN /
+NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PASS`.
+
+Opções de produto seguem o mesmo modelo: leitura por policy `can_access_unit` com SELECT concedido
+somente a `authenticated`; escrita exclusiva por RPCs `SECURITY DEFINER`; snapshot imutável na
+publicação e `order_item_options` no checkout preservam nomes/deltas sem depender do catálogo
+mutável. Nenhuma escrita de opção por grant de navegador.
 
 Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
 `membership_units` durante um cenário e é frágil se outra suíte inserir vínculos em paralelo.
@@ -395,6 +400,6 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial das nove suítes DB e DB lint no CI isolado.
+- Alterações de autorização exigem execução sequencial das dez suítes DB e DB lint no CI isolado.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.

@@ -1,7 +1,7 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa da Fase 4A — Pilot Ready, Prompt 11, checkpoint `RELEASE_VERIFIED`.
-> Fonte autoritativa: 19 migrations versionadas; migration list local/remota em 19/19 e dry-run
+> Referência cumulativa da Fase 4A — Prompt 12, checkpoint `ADMIN_CHECKPOINT`.
+> Fonte autoritativa: 20 migrations versionadas; migration list local/remota em 20/20 e dry-run
 > linked confirmando que o remoto está up to date.
 
 ## 1. Estado das migrations
@@ -27,17 +27,18 @@
 | 17    | `20260812090000_prompt10_final_integrity_hardening.sql`            | BigInt como texto decimal, stock único por redemption e consumo auditável                 |
 | 18    | `20260812120000_prompt11_pilot_readiness_team.sql`                  | readiness derivada, listagem de equipe e gestão owner-only dos vínculos por unidade        |
 | 19    | `20260813120000_prompt11_readiness_unit_coherence.sql`              | exige uma mesma unidade com todos os pré-requisitos de piloto                               |
+| 20    | `20260814000000_prompt12_product_options.sql`                       | grupos de opções (variações/adicionais/remoções) e opções por produto no catálogo mutável  |
 
-Estado reconciliado de 2026-08-13: Git/filesystem e remoto apresentam 19/19 migrations. A migration
-19 foi aplicada e o dry-run linked informa remote up to date. `LOCAL DB REBUILD: NOT RUN — BY
-DESIGN / NO LOCAL DOCKER`; fresh rebuild isolado aprovado no CI `31712486989`.
+Estado reconciliado de 2026-08-14: Git/filesystem e remoto apresentam 20/20 migrations. A migration
+20 foi aplicada e o dry-run linked informa remote up to date. `LOCAL DB REBUILD: NOT RUN — BY
+DESIGN / NO LOCAL DOCKER`; fresh rebuild isolado aprovado no CI `31761944228`.
 
 ## 2. Convenções
 
 - PostgreSQL 17 no Supabase; objetos de negócio no schema `public`.
 - Identificadores em `snake_case`; UUIDs gerados por `gen_random_uuid()`.
 - `organization_id` é o tenant e `unit_id` é o escopo operacional.
-- Todas as 30 tabelas `public` possuem RLS habilitado.
+- Todas as 35 tabelas `public` possuem RLS habilitado.
 - Dinheiro usa `numeric(12,2)`, nunca `float`/`double`; RPCs devolvem valores monetários como
   string decimal.
 - Mutações administrativas e de domínio são server-authoritative via RPC; grants diretos são
@@ -59,12 +60,17 @@ DESIGN / NO LOCAL DOCKER`; fresh rebuild isolado aprovado no CI `31712486989`.
 | `unit_payment_methods`      | meios de pagamento externos aceitos pela unidade                              |
 | `catalog_categories`        | categorias mutáveis do catálogo de uma unidade                                |
 | `catalog_products`          | produtos simples mutáveis de uma categoria/unidade                            |
+| `catalog_product_option_groups` | grupos de opções (variação, adicional, remoção) de um produto             |
+| `catalog_product_options`   | opções de um grupo com `price_delta` exato                                    |
 | `menu_versions`             | snapshots comerciais imutáveis do cardápio de uma unidade                     |
 | `menu_version_categories`   | categorias congeladas de uma versão                                           |
 | `menu_version_products`     | produtos congelados de uma versão                                             |
+| `menu_version_option_groups` | grupos de opções congelados de uma versão publicada                         |
+| `menu_version_options`      | opções congeladas de um grupo da versão                                       |
 | `menu_publications`         | ponte atual: slug público estável → versão CURRENT                            |
 | `orders`                    | pedido, snapshots operacionais/comerciais, PII mínima e estados independentes |
 | `order_items`               | snapshot imutável dos itens e preços no checkout                              |
+| `order_item_options`        | snapshot append-only das opções selecionadas por linha do pedido             |
 | `order_events`              | auditoria append-only de criação, status e pagamento                          |
 | `loyalty_programs`          | programa de fidelidade por organização                                        |
 | `customers`                 | identidade protegida por fingerprints HMAC de CPF + telefone                  |
@@ -310,6 +316,93 @@ converte `price` para texto, preservando, por exemplo, `8.10`.
 
 As RPCs reutilizam `PED10`, `PED11` e `PED12` para autenticação, autorização e unidade ausente.
 
+### 6.5 `public.catalog_product_option_groups`
+
+| Coluna            | Tipo                                   | Regras                                                              |
+| ----------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| `id`              | `uuid` PK default `gen_random_uuid()`  |                                                                     |
+| `organization_id` | `uuid` NOT NULL                        | parte da FK composta da unidade                                     |
+| `unit_id`         | `uuid` NOT NULL                        | FK `(organization_id,unit_id)` para `units`, cascade                |
+| `product_id`      | `uuid` NOT NULL                        | FK `(organization_id,unit_id,product_id)` para produto, cascade     |
+| `name`            | `text` NOT NULL                        | já trimado; tamanho `1..80`                                         |
+| `kind`            | `text` NOT NULL                        | `variation`, `addon` ou `removal`                                   |
+| `selection_mode`  | `text` NOT NULL                        | `single` ou `multiple`                                              |
+| `min_select`      | `integer` NOT NULL                     | `>= 0`; limite superior em `max_select`                             |
+| `max_select`      | `integer` NOT NULL                     | `<= 50`; `min_select <= max_select`                                 |
+| `is_active`       | `boolean` NOT NULL default `true`      | desativação lógica                                                  |
+| `sort_order`      | `integer` NOT NULL                     | `> 0`, calculado no servidor                                        |
+| `created_at`      | `timestamptz` NOT NULL default `now()` |                                                                     |
+| `updated_at`      | `timestamptz` NOT NULL default `now()` | trigger `set_catalog_product_option_groups_updated_at`              |
+
+Regras estruturais (CHECK + triggers):
+
+- `variation` exige `selection_mode = 'single'` e `max_select = 1`.
+- `removal` exige `selection_mode = 'multiple'` e `min_select = 0`.
+- unique composto `catalog_product_option_groups_organization_unit_product_id_key
+  (organization_id,unit_id,product_id,id)`, alvo da FK das opções;
+- índice `catalog_product_option_groups_product_order_idx
+  (organization_id,unit_id,product_id,sort_order,id)`;
+- trigger `catalog_product_option_groups_kind_guard` rejeita mudança de `kind` que deixaria opções
+  existentes em violação (sem correção silenciosa).
+
+### 6.6 `public.catalog_product_options`
+
+| Coluna            | Tipo                                   | Regras                                                              |
+| ----------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| `id`              | `uuid` PK default `gen_random_uuid()`  |                                                                     |
+| `organization_id` | `uuid` NOT NULL                        | parte da FK composta                                                |
+| `unit_id`         | `uuid` NOT NULL                        | FK composta para a unidade, cascade                                 |
+| `product_id`      | `uuid` NOT NULL                        | parte da FK composta do grupo                                       |
+| `group_id`        | `uuid` NOT NULL                        | FK `(organization_id,unit_id,product_id,group_id)` para o grupo     |
+| `name`            | `text` NOT NULL                        | já trimado; tamanho `1..80`                                         |
+| `price_delta`     | `numeric(12,2)` NOT NULL               | `-9999999999.99..9999999999.99`; exato, nunca float                 |
+| `is_active`       | `boolean` NOT NULL default `true`      | estado estrutural                                                   |
+| `is_available`    | `boolean` NOT NULL default `true`      | disponibilidade operacional independente                            |
+| `sort_order`      | `integer` NOT NULL                     | `> 0`, calculado no servidor                                        |
+| `created_at`      | `timestamptz` NOT NULL default `now()` |                                                                     |
+| `updated_at`      | `timestamptz` NOT NULL default `now()` | trigger `set_catalog_product_options_updated_at`                    |
+
+unique `catalog_product_options_organization_unit_product_group_id_key
+(organization_id,unit_id,product_id,group_id,id)` e índice
+`catalog_product_options_group_order_idx (organization_id,unit_id,group_id,sort_order,id)`. A FK
+composta do grupo impede IDOR de opção de outro grupo/unidade/organização.
+
+Regra de `price_delta` por `kind` (trigger `catalog_product_options_delta_by_kind`):
+
+- `variation` e `addon` aceitam acréscimo (`>= 0`); variação pode reduzir o preço base (desconto).
+- `removal` exige `price_delta = 0` (remoção nunca altera o preço).
+- A mudança de `kind` do grupo é validada contra as opções existentes.
+
+### 6.7 RPCs de grupos e opções (Prompt 12)
+
+| RPC                                                        | Autorização              | Efeito                                              |
+| ---------------------------------------------------------- | ------------------------ | --------------------------------------------------- |
+| `create_catalog_product_option_group(uuid,uuid,text,text,text,int,int)` | owner/manager da unidade | cria grupo; valida regras e calcula `sort_order`    |
+| `update_catalog_product_option_group(uuid,text,text,text,int,int)`      | owner/manager da unidade | edita nome/kind/modo/min/max; valida contra opções  |
+| `set_catalog_product_option_group_active(uuid,boolean)`    | owner/manager da unidade | desativação lógica do grupo                         |
+| `create_catalog_product_option(uuid,text,text)`            | owner/manager da unidade | cria opção; `price_delta` entra como texto          |
+| `update_catalog_product_option(uuid,text,text)`            | owner/manager da unidade | edita nome e `price_delta`                          |
+| `set_catalog_product_option_active(uuid,boolean)`          | owner/manager da unidade | estado estrutural da opção                          |
+| `set_catalog_product_option_available(uuid,boolean)`       | owner/manager/operator   | altera somente disponibilidade                      |
+
+`_validate_option_delta(text,text)` aceita somente decimal textual válido (até dez dígitos inteiros
+e duas casas, sem expoente/`NaN`/`Infinity`); opções usam `price_delta` decimal e `_options_fingerprint`
+interna para ordenação/validação. A leitura administrativa das opções é feita por SELECT direto via
+política RLS (grants de escrita inexistem; mutações exclusivamente pelas RPCs acima).
+
+| SQLSTATE | Mensagem                   |
+| -------- | -------------------------- |
+| `PED72`  | `INVALID_OPTION_GROUP`     |
+| `PED73`  | `INVALID_SELECTION_RULE`   |
+| `PED74`  | `OPTION_NOT_FOUND`         |
+| `PED75`  | `OPTION_UNAVAILABLE`       |
+| `PED76`  | `SELECTION_REQUIRED`       |
+| `PED77`  | `SELECTION_LIMIT_EXCEEDED` |
+| `PED78`  | `SELECTION_MENU_MISMATCH`  |
+
+Reutilizam `PED10`, `PED11`, `PED12` (auth/RBAC/unidade), `PED24` (produto ausente), `PED25`/`PED26`
+(nome do grupo/opção) e `PED28` (preço inválido).
+
 ## 7. Cardápio publicado (Prompt 07)
 
 ### 7.1 `public.menu_versions`
@@ -382,12 +475,17 @@ No máximo uma linha por unidade. O slug nunca é rejeitado em republicação: r
   além do lock de produtos de cada categoria ativa (`pedon:catalog:products:category:<id>`);
 - captura somente o catálogo estruturalmente ativo (`is_active=true`); categorias sem ao menos um
   produto ativo são omitidas; menu vazio falha com `PED31` sem criar versão;
+- congela também os grupos de opções ativos e suas opções ativas por produto
+  (`menu_version_option_groups` / `menu_version_options`, com `source_group_id`/`source_option_id`
+  para o overlay de disponibilidade);
+- valida o piso de preço final (`base +` menor combinação de deltas entre grupos `variation`)
+  usando o estado ativo, sem relaxar por disponibilidade atual das opções;
 - cria a versão com `max(version_number)+1`, copia categorias/produtos elegíveis e atualiza a ponte
   (insere com slug novo ou reutiliza o existente);
 - gera slug de 24 hex via `left(replace(gen_random_uuid()::text,'-',''),24)` com retry em
   `unique_violation` (10 tentativas) e `PED32` se esgotar;
 - retorna `version_id`, `version_number`, `published_at`, `public_slug`, `public_path`,
-  `category_count`, `product_count`.
+  `category_count`, `product_count`, `group_count`, `option_count`.
 
 `get_unit_menu_publication_admin(uuid)` (`can_access_unit`): devolve unidade, publicação atual,
 versão corrente e histórico (até 50 versões, ordem decrescente), somente leitura — sem rollback
@@ -405,11 +503,15 @@ nesta fase.
   (texto), `operation.estimated_pickup_minutes`, `operation.estimated_delivery_minutes`,
   `operation.payment_methods` (4, com `is_enabled`), `operation.business_hours` (7 dias);
 - `categories[]` com `id`, `name`, `sort_order` e `products[]` com `id`, `name`, `description`,
-  `price` (texto), `sort_order`, `is_available`.
+  `price` (texto), `sort_order`, `is_available`, `is_configurable` e `option_groups[]`.
 
 IDs e preços vêm exclusivamente do snapshot; `is_available` é overlay dinâmico de
 `catalog_products.is_available` via `source_product_id` (fonte ausente/deletada ⇒ `false`).
-`anon` nunca lê as tabelas de menu/catálogo diretamente.
+`option_groups[]` traz `id`, `name`, `kind`, `selection_mode`, `min_select`, `max_select` e
+`options[]` com `id`, `name`, `price_delta` (texto) e `is_available` (overlay via
+`source_option_id`). `is_configurable` é `true` quando existem grupos com `min_select > 0` e opções
+disponíveis suficientes; grupos de `variation` com seleção obrigatória tornam o produto
+configurável. `anon` nunca lê as tabelas de menu/catálogo diretamente.
 
 ### 7.7 Erros do cardápio publicado
 
@@ -449,7 +551,17 @@ Cada linha carrega `organization_id`, `unit_id`, `order_id`, `menu_version_id`, 
 opcional segura e `created_at`. FKs compostas garantem que pedido, versão e item pertençam ao mesmo
 tenant/unidade; `(order_id,menu_item_id)` é único e `line_total = unit_price * quantity`.
 
-Nome e preço são copiados de `menu_version_products`, não do payload nem do catálogo mutável.
+Nome e preço são copiados de `menu_version_products`, não do payload nem do catálogo mutável. O
+preço unitário final (`unit_price`) passa a incluir a soma dos `price_delta` das opções selecionadas
+(`base + SUM(delta)`), calculado no servidor no checkout do Prompt 12.
+
+### 8.2a `public.order_item_options`
+
+Snapshot append-only das opções escolhidas por linha: `order_item_id` (FK composta para
+`order_items`), `menu_group_id`/`menu_option_id` (FKs do snapshot com `ON DELETE RESTRICT`),
+`group_name`, `group_kind`, `option_name` e `price_delta numeric(12,2)`. Índices cobrem pedido,
+item e unidade; única escrita é o checkout transacional, preservando nome, tipo e delta no momento
+da compra — o catálogo mutável pode mudar depois sem afetar o pedido.
 
 ### 8.3 `public.order_events`
 
@@ -463,19 +575,24 @@ estado são geradas pelas RPCs com ator staff. Nenhum cliente recebe escrita dir
 `create_public_order(text,uuid,jsonb)` é executável por `anon`/`authenticated` e:
 
 - aceita somente versão/revisão, modalidade, pagamento, cliente, endereço, itens, notas e troco;
+  cada item pode carregar `selected_option_ids` (IDs do snapshot `menu_version_options`);
 - rejeita preço, nome ou total autoritativo enviado pelo navegador;
 - valida unidade ativa, aceite, horário, modalidade, pagamento, versão publicada, revisão
   operacional, disponibilidade, mínimo, endereço e troco;
-- calcula linhas, subtotal, taxa e total em `numeric(12,2)` e grava pedido, itens e evento inicial
-  atomicamente;
+- valida as seleções no servidor: opções existentes no snapshot, pertencentes ao mesmo produto,
+  disponíveis via overlay, dentro do `min_select`/`max_select` de cada grupo e do `kind`
+  (`PED72`–`PED78`); grupo obrigatório de variação sem seleção gera `PED76`;
+- calcula `unit_price = base + SUM(price_delta)` por linha, depois linhas, subtotal, taxa e total
+  em `numeric(12,2)` e grava pedido, itens, `order_item_options` e evento inicial atomicamente;
 - serializa `(unit_id,idempotency_key)` por advisory lock e guarda SHA-256 do payload canônico;
   replay igual retorna a criação original, payload diferente gera `PED42`;
 - serializa o número sequencial por unidade; token de tracking tem retry limitado em colisão.
 
 `get_public_order(text)` retorna `found=false` para token inválido/desconhecido. Quando encontrado,
 expõe nomes da organização/unidade, número, estados, modalidade, método, totais, ETA, timestamps e
-itens; não expõe PII, endereço, token, IDs internos, versão, hash, chave de idempotência nem a nota
-livre do item. A nota permanece disponível somente no detalhe administrativo.
+itens; cada item expõe `options[]` com `group_name`, `group_kind`, `option_name` e `price_delta`
+(sem IDs técnicos); não expõe PII, endereço, token, IDs internos, versão, hash, chave de idempotência
+nem a nota livre do item. A nota permanece disponível somente no detalhe administrativo.
 
 `create_public_order_v2(text,uuid,jsonb,text)` envolve o checkout original e vincula um attempt hash
 de 64 hex à criação. `get_public_order_by_attempt(text,uuid,text)` recupera exatamente a resposta
@@ -522,6 +639,10 @@ apenas para invalidar/refazer queries.
 | `PED48`  | `INVALID_PAYMENT_TRANSITION` |
 | `PED49`  | `TRACKING_TOKEN_CONFLICT`    |
 | `PED50`  | `ORDER_AMOUNT_OVERFLOW`      |
+
+Erros de seleção de opções (Prompt 12): `PED72` `INVALID_OPTION_GROUP`, `PED73`
+`INVALID_SELECTION_RULE`, `PED74` `OPTION_NOT_FOUND`, `PED75` `OPTION_UNAVAILABLE`, `PED76`
+`SELECTION_REQUIRED`, `PED77` `SELECTION_LIMIT_EXCEEDED` e `PED78` `SELECTION_MENU_MISMATCH`.
 
 A migration de hardening substitui `create_public_order` para remover uma declaração redundante
 apontada pelo lint e reaplica os grants, sem alterar assinatura ou comportamento.
@@ -877,6 +998,9 @@ usa `PED60`. Voucher consumido não pode ser consumido novamente (`PED61`).
 | `get_org_pilot_readiness(uuid)`                                                    | readiness derivada; owner/manager; nove checks bloqueantes e loyalty opcional         |
 | `get_org_members_admin(uuid)`                                                      | membros e vínculos minimizados; owner-only                                            |
 | `assign_unit_to_member(uuid,uuid,uuid)` / `remove_unit_from_member(uuid,uuid,uuid)` | gestão transacional owner-only, sem escrita direta do browser                         |
+| sete RPCs da Seção 6.7                                                             | grupos e opções de produto server-authoritative                                      |
+| `_validate_option_delta_by_kind()` / `_guard_option_group_kind_change()`           | triggers de integridade entre `kind` do grupo e `price_delta` das opções             |
+| `_validate_option_delta(text,text)` / `_options_fingerprint(uuid[])`               | validadores internos de `price_delta` e ordenação                                    |
 
 Todas as funções desta tabela, exceto `set_updated_at()`, são `security definer` com
 `search_path=''`; `get_my_admin_context`, helpers de acesso e getters são `stable` quando aplicável,
@@ -914,12 +1038,17 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | três tabelas operacionais         | sem policy seletora; acesso via RPC                                      | sem grant/policy                                           |
 | `catalog_categories`              | policy `can_access_unit(unit_id)`                                        | I/U/D revogados                                            |
 | `catalog_products`                | policy `can_access_unit(unit_id)`                                        | I/U/D revogados                                            |
+| `catalog_product_option_groups`   | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
+| `catalog_product_options`         | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
 | `menu_versions`                   | policy `can_access_unit(unit_id)`                                        | sem grant/policy                                           |
 | `menu_version_categories`         | policy `can_access_unit(unit_id)`                                        | sem grant/policy                                           |
 | `menu_version_products`           | policy `can_access_unit(unit_id)`                                        | sem grant/policy                                           |
+| `menu_version_option_groups`      | policy `can_access_unit(unit_id)`                                        | sem grant/policy                                           |
+| `menu_version_options`            | policy `can_access_unit(unit_id)`                                        | sem grant/policy                                           |
 | `menu_publications`               | policy `can_access_unit(unit_id)`                                        | sem grant/policy                                           |
 | `orders`                          | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
 | `order_items`                     | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
+| `order_item_options`              | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
 | `order_events`                    | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; append-only por RPC                       |
 | 13 tabelas do Clube (Seções 9 e 10) | sem policy seletora; acesso via RPC `security definer` ou `service_role` | grants de `public`/`anon`/`authenticated` revogados (zero) |
 
@@ -933,6 +1062,17 @@ superfície pública de leitura do cardápio. As tabelas de pedidos não possuem
 checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
+
+Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (evidência atual):
+
+- HEAD técnico `df2cee31fa4afb288ab5d7bb08ae54d07aff1572`;
+- CI `31761944228`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
+- fresh rebuild isolado das 20 migrations, alinhamento e DB lint aprovados;
+- dez suítes DB aprovadas com baseline 1332/1332 checks (inclui `product_options_integrity`);
+- Frontend unit: 312/312; Edge unit: 15/15; E2E smoke tests: 288/288 (13 cenários do Prompt 12
+  em 4 viewports);
+- migration list local/remota: 20/20; dry-run linked: remote up to date; lint linked sem erros;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
 Checkpoint Prompt 11 — `READY_FOR_REAUDIT` (histórico técnico):
 
@@ -975,7 +1115,7 @@ Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 - CI `31598675826` (Quality gates, Backend release gates e E2E smoke tests) e Cloudflare deployment
   `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, source `2a91711`, aprovados.
 
-Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 19 migrations:
+Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 20 migrations:
 
 - migrations `20260810144145_orders_checkout.sql` e
   `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente naquele checkpoint;

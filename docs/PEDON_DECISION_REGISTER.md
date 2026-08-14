@@ -1007,6 +1007,34 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
   bloqueante na reauditoria independente do Prompt 11, sem duplicar a DEC-104, que cobre o registro
   de pedido pendente (`request_fingerprint`), não o de resgate.
 
+## Decisões Aprovadas (Prompt 12 — Produtos, Variações e Adicionais)
+
+### DEC-114 — Opções de produto no catálogo mutável com escrita server-authoritative
+
+- **Status:** APROVADA
+- **Data:** 2026-08-14
+- **Decisão:** o catálogo administrativo ganha grupos de opções (`variation`/`addon`/`removal`) e
+  opções com `price_delta` decimal exato. Estrutura (grupos, `is_active`, opções) é de
+  owner/manager; somente disponibilidade (`is_available`) pode ser alterada por operator. Mutações
+  exclusivamente via RPCs `SECURITY DEFINER` (`create/update/set_active` de grupo e opção +
+  `set_available`); sem `DELETE` físico exposto; leitura administrativa por SELECT com policy
+  `can_access_unit`.
+- **Justificativa:** manter o padrão do projeto (catálogo mutável não é publicação pública) e
+  separar estado estrutural de disponibilidade operacional, conforme DEC-059 e DEC-062.
+
+### DEC-115 — Publicação congela opções e checkout valida seleção no servidor
+
+- **Status:** APROVADA
+- **Data:** 2026-08-14
+- **Decisão:** a publicação amplia o snapshot com `menu_version_option_groups`/`menu_version_options`
+  (overlay de disponibilidade via `source_group_id`/`source_option_id`). O checkout valida seleções
+  por opção existente, produto, disponibilidade e `min_select`/`max_select`; calcula
+  `final_unit_price = base + SUM(price_delta)` e grava `order_item_options` como snapshot
+  append-only por linha (nomes e deltas no momento da compra). Tracking público expõe opções com
+  nome/tipo/delta sem IDs técnicos; erros `PED72..PED78`.
+- **Justificativa:** preservar snapshots corretos no pedido (DEC-008) e manter o preço
+  server-authoritative (DEC-010), mesmo com produtos configuráveis.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.
