@@ -1,14 +1,58 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { Link, useParams } from 'react-router';
 import { useCart } from '../lib/cart/cart-context';
-import { cartSubtotalCents, isCartStale } from '../lib/cart/cart';
-import { decimalToCents, formatBRL, multiplyCents } from '../lib/money';
+import {
+  cartItemConfiguredUnitPriceCents,
+  cartItemKey,
+  cartSubtotalCents,
+  isCartStale,
+} from '../lib/cart/cart';
+import type { CartItem } from '../lib/cart/cart';
+import { formatBRL, multiplyCents } from '../lib/money';
+import type { PublicMenuData } from '../lib/menu/menu';
 import { publicMenuQueryOptions } from '../lib/menu/public-menu-query';
+
+type OptionGroupInfo = { name: string; kind: 'variation' | 'addon' | 'removal' };
+
+function buildGroupMap(menu: PublicMenuData | null): Map<string, OptionGroupInfo> {
+  const map = new Map<string, OptionGroupInfo>();
+  if (menu === null) return map;
+  for (const category of menu.categories) {
+    for (const product of category.products) {
+      for (const group of product.option_groups ?? []) {
+        map.set(group.id, { name: group.name, kind: group.kind });
+      }
+    }
+  }
+  return map;
+}
+
+function renderOptionLines(item: CartItem, groups: Map<string, OptionGroupInfo>) {
+  const lines: Array<{ id: string; label: string }> = [];
+  for (const option of item.options) {
+    const group = groups.get(option.menu_group_id);
+    if (group !== undefined) {
+      if (group.kind === 'variation') {
+        lines.push({ id: option.menu_option_id, label: `${group.name}: ${option.name}` });
+      } else if (group.kind === 'addon') {
+        lines.push({ id: option.menu_option_id, label: `+ ${option.name}` });
+      } else {
+        lines.push({ id: option.menu_option_id, label: option.name });
+      }
+    } else {
+      lines.push({ id: option.menu_option_id, label: option.name });
+    }
+  }
+  return lines;
+}
 
 export function CartPage() {
   const { publicSlug = '' } = useParams<{ publicSlug: string }>();
   const { cart, setQuantity, setNote, removeItem, clearCart } = useCart();
   const menuQuery = useQuery(publicMenuQueryOptions(publicSlug));
+  const menu = menuQuery.data?.found ? menuQuery.data : null;
+  const groupMap = useMemo(() => buildGroupMap(menu), [menu]);
   const currentVersion = menuQuery.data?.found === true ? menuQuery.data.menu.version_id : '';
   const stale = currentVersion !== '' && isCartStale(cart, currentVersion);
   const canOrder = menuQuery.data?.found === true && menuQuery.data.operation.can_order_now;
@@ -74,73 +118,84 @@ export function CartPage() {
           </div>
         ) : (
           <ul className="mt-5 space-y-4">
-            {cart.items.map((item) => (
-              <li
-                key={item.menu_item_id}
-                className="rounded-lg border border-pedon-navy/10 bg-white p-4 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="font-semibold text-pedon-navy">{item.name}</h2>
-                    <p className="mt-1 text-sm text-pedon-text/70">
-                      {formatBRL(item.unit_price)} cada
+            {cart.items.map((item) => {
+              const lineId = cartItemKey(item);
+              const optionLines = renderOptionLines(item, groupMap);
+              const configuredUnit = cartItemConfiguredUnitPriceCents(item);
+              return (
+                <li
+                  key={lineId}
+                  className="rounded-lg border border-pedon-navy/10 bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="font-semibold text-pedon-navy">{item.name}</h2>
+                      {optionLines.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 text-sm text-pedon-text/70">
+                          {optionLines.map((line) => (
+                            <li key={line.id}>{line.label}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="mt-1 text-sm text-pedon-text/70">
+                        {formatBRL(configuredUnit)} cada
+                      </p>
+                    </div>
+                    <p className="shrink-0 font-semibold">
+                      {formatBRL(multiplyCents(configuredUnit, item.quantity))}
                     </p>
                   </div>
-                  <p className="shrink-0 font-semibold">
-                    {formatBRL(multiplyCents(decimalToCents(item.unit_price), item.quantity))}
-                  </p>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center" aria-label={`Quantidade de ${item.name}`}>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center" aria-label={`Quantidade de ${item.name}`}>
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(lineId, item.quantity - 1)}
+                        className="min-h-11 min-w-11 rounded-l-md border border-pedon-navy/20 text-xl"
+                        aria-label={`Diminuir ${item.name}`}
+                      >
+                        −
+                      </button>
+                      <output
+                        className="flex min-h-11 min-w-11 items-center justify-center border-y border-pedon-navy/20 font-semibold"
+                        aria-live="polite"
+                      >
+                        {item.quantity}
+                      </output>
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(lineId, item.quantity + 1)}
+                        disabled={item.quantity >= 99}
+                        className="min-h-11 min-w-11 rounded-r-md border border-pedon-navy/20 text-xl disabled:opacity-40"
+                        aria-label={`Aumentar ${item.name}`}
+                      >
+                        +
+                      </button>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setQuantity(item.menu_item_id, item.quantity - 1)}
-                      className="min-h-11 min-w-11 rounded-l-md border border-pedon-navy/20 text-xl"
-                      aria-label={`Diminuir ${item.name}`}
+                      onClick={() => removeItem(lineId)}
+                      className="min-h-11 px-2 text-sm font-semibold text-red-700"
                     >
-                      −
-                    </button>
-                    <output
-                      className="flex min-h-11 min-w-11 items-center justify-center border-y border-pedon-navy/20 font-semibold"
-                      aria-live="polite"
-                    >
-                      {item.quantity}
-                    </output>
-                    <button
-                      type="button"
-                      onClick={() => setQuantity(item.menu_item_id, item.quantity + 1)}
-                      disabled={item.quantity >= 99}
-                      className="min-h-11 min-w-11 rounded-r-md border border-pedon-navy/20 text-xl disabled:opacity-40"
-                      aria-label={`Aumentar ${item.name}`}
-                    >
-                      +
+                      Remover
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => removeItem(item.menu_item_id)}
-                    className="min-h-11 px-2 text-sm font-semibold text-red-700"
-                  >
-                    Remover
-                  </button>
-                </div>
-                <label
-                  htmlFor={`note-${item.menu_item_id}`}
-                  className="mt-4 block text-sm font-medium"
-                >
-                  Observação do item
-                </label>
-                <textarea
-                  id={`note-${item.menu_item_id}`}
-                  value={item.note}
-                  maxLength={300}
-                  rows={2}
-                  onChange={(event) => setNote(item.menu_item_id, event.target.value)}
-                  className="mt-1 w-full resize-y rounded-md border border-pedon-navy/20 px-3 py-2 text-base"
-                />
-                <p className="mt-1 text-right text-xs text-pedon-text/60">{item.note.length}/300</p>
-              </li>
-            ))}
+                  <label htmlFor={`note-${lineId}`} className="mt-4 block text-sm font-medium">
+                    Observação do item
+                  </label>
+                  <textarea
+                    id={`note-${lineId}`}
+                    value={item.note}
+                    maxLength={300}
+                    rows={2}
+                    onChange={(event) => setNote(lineId, event.target.value)}
+                    className="mt-1 w-full resize-y rounded-md border border-pedon-navy/20 px-3 py-2 text-base"
+                  />
+                  <p className="mt-1 text-right text-xs text-pedon-text/60">
+                    {item.note.length}/300
+                  </p>
+                </li>
+              );
+            })}
           </ul>
         )}
 

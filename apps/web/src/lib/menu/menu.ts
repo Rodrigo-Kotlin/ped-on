@@ -49,6 +49,26 @@ export interface PublicMenuPaymentMethod {
   is_enabled: boolean;
 }
 
+export type PublicMenuOptionKind = 'variation' | 'addon' | 'removal';
+export type PublicMenuOptionSelectionMode = 'single' | 'multiple';
+
+export interface PublicMenuOption {
+  id: string;
+  name: string;
+  price_delta: string;
+  is_available: boolean;
+}
+
+export interface PublicMenuOptionGroup {
+  id: string;
+  name: string;
+  kind: PublicMenuOptionKind;
+  selection_mode: PublicMenuOptionSelectionMode;
+  min_select: number;
+  max_select: number;
+  options: PublicMenuOption[];
+}
+
 export interface PublicMenuProduct {
   id: string;
   name: string;
@@ -56,6 +76,8 @@ export interface PublicMenuProduct {
   price: string;
   sort_order: number;
   is_available: boolean;
+  is_configurable: boolean;
+  option_groups: PublicMenuOptionGroup[];
 }
 
 export interface PublicMenuCategory {

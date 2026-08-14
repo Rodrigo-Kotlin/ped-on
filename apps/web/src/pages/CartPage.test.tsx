@@ -107,4 +107,134 @@ describe('CartPage', () => {
       'version-1',
     );
   });
+
+  it('exibe configurações de opções e usa o preço configurado por linha', async () => {
+    const menuWithGroups: PublicMenuData = {
+      ...menu,
+      categories: [
+        {
+          id: 'cat-1',
+          name: 'Lanches',
+          sort_order: 1,
+          products: [
+            {
+              id: 'item-1',
+              name: 'X-Salada',
+              description: null,
+              price: '10.10',
+              sort_order: 1,
+              is_available: true,
+              is_configurable: true,
+              option_groups: [
+                {
+                  id: 'grp-1',
+                  name: 'Tamanho',
+                  kind: 'variation',
+                  selection_mode: 'single',
+                  min_select: 1,
+                  max_select: 1,
+                  options: [
+                    { id: 'opt-1', name: 'Duplo', price_delta: '5.00', is_available: true },
+                  ],
+                },
+                {
+                  id: 'grp-2',
+                  name: 'Adicionais',
+                  kind: 'addon',
+                  selection_mode: 'multiple',
+                  min_select: 0,
+                  max_select: 2,
+                  options: [
+                    { id: 'opt-2', name: 'Bacon', price_delta: '4.00', is_available: true },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    supabaseMock.rpc.mockResolvedValue({ data: menuWithGroups, error: null });
+    window.localStorage.setItem(
+      cartStorageKey('abc'),
+      JSON.stringify({
+        slug: 'abc',
+        menuVersionId: 'version-1',
+        items: [
+          {
+            menu_item_id: 'item-1',
+            name: 'X-Salada',
+            unit_price: '10.10',
+            quantity: 1,
+            note: '',
+            options: [
+              {
+                menu_group_id: 'grp-1',
+                menu_option_id: 'opt-1',
+                name: 'Duplo',
+                price_delta: '5.00',
+              },
+              {
+                menu_group_id: 'grp-2',
+                menu_option_id: 'opt-2',
+                name: 'Bacon',
+                price_delta: '4.00',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    renderCart();
+
+    expect(await screen.findByText('Tamanho: Duplo')).toBeInTheDocument();
+    expect(screen.getByText('+ Bacon')).toBeInTheDocument();
+    expect(screen.getByText('R$ 19,10 cada')).toBeInTheDocument();
+    expect(screen.getAllByText('R$ 19,10').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('link', { name: 'Ir para checkout' })).toHaveAttribute(
+      'href',
+      '/menu/abc/checkout',
+    );
+  });
+
+  it('preserva duas linhas distintas para configurações diferentes do mesmo produto', async () => {
+    window.localStorage.setItem(
+      cartStorageKey('abc'),
+      JSON.stringify({
+        slug: 'abc',
+        menuVersionId: 'version-1',
+        items: [
+          {
+            menu_item_id: 'item-1',
+            name: 'X-Salada',
+            unit_price: '10.10',
+            quantity: 1,
+            note: '',
+            options: [
+              {
+                menu_group_id: 'grp-1',
+                menu_option_id: 'opt-1',
+                name: 'Duplo',
+                price_delta: '5.00',
+              },
+            ],
+          },
+          {
+            menu_item_id: 'item-1',
+            name: 'X-Salada',
+            unit_price: '10.10',
+            quantity: 1,
+            note: '',
+            options: [],
+          },
+        ],
+      }),
+    );
+    renderCart();
+
+    const names = await screen.findAllByRole('heading', { name: 'X-Salada' });
+    expect(names).toHaveLength(2);
+    expect(screen.getAllByText('R$ 15,10 cada')).toHaveLength(1);
+    expect(screen.getAllByText('R$ 10,10 cada')).toHaveLength(1);
+  });
 });

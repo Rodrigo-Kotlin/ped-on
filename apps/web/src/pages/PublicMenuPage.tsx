@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useCart } from '../lib/cart/cart-context';
 import { cartQuantity, cartSubtotalCents, isCartStale } from '../lib/cart/cart';
 import { formatBRL } from '../lib/money';
 import { publicMenuQueryOptions } from '../lib/menu/public-menu-query';
-import type { PublicMenuData } from '../lib/menu/menu';
+import type { PublicMenuData, PublicMenuProduct } from '../lib/menu/menu';
+import { ProductCustomizer } from '../components/public-menu/ProductCustomizer';
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString('pt-BR', {
@@ -16,6 +18,7 @@ function formatDate(value: string): string {
 
 function PublicMenuFound({ menu, publicSlug }: { menu: PublicMenuData; publicSlug: string }) {
   const { cart, addItem, clearCart } = useCart();
+  const [customizing, setCustomizing] = useState<PublicMenuProduct | null>(null);
   const stale = isCartStale(cart, menu.menu.version_id);
   const quantity = cartQuantity(cart);
 
@@ -118,22 +121,36 @@ function PublicMenuFound({ menu, publicSlug }: { menu: PublicMenuData; publicSlu
                           {formatBRL(product.price)}
                         </p>
                       </div>
-                      {product.is_available && menu.operation.can_order_now && !stale && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            addItem(menu.menu.version_id, {
-                              menu_item_id: product.id,
-                              name: product.name,
-                              unit_price: product.price,
-                            })
-                          }
-                          className="mt-3 min-h-11 w-full rounded-md border border-pedon-orange px-4 py-2 text-sm font-semibold text-pedon-orange transition hover:bg-orange-50"
-                          aria-label={`Adicionar ${product.name}`}
-                        >
-                          Adicionar
-                        </button>
-                      )}
+                      {product.is_available &&
+                        menu.operation.can_order_now &&
+                        !stale &&
+                        product.is_configurable !== false &&
+                        ((product.option_groups?.length ?? 0) > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setCustomizing(product)}
+                            className="mt-3 min-h-11 w-full rounded-md border border-pedon-orange px-4 py-2 text-sm font-semibold text-pedon-orange transition hover:bg-orange-50"
+                            aria-label={`Personalizar ${product.name}`}
+                          >
+                            Personalizar
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              addItem(menu.menu.version_id, {
+                                menu_item_id: product.id,
+                                name: product.name,
+                                unit_price: product.price,
+                                options: [],
+                              })
+                            }
+                            className="mt-3 min-h-11 w-full rounded-md border border-pedon-orange px-4 py-2 text-sm font-semibold text-pedon-orange transition hover:bg-orange-50"
+                            aria-label={`Adicionar ${product.name}`}
+                          >
+                            Adicionar
+                          </button>
+                        ))}
                     </li>
                   ))}
                 </ul>
@@ -159,6 +176,14 @@ function PublicMenuFound({ menu, publicSlug }: { menu: PublicMenuData; publicSlu
             <span>{formatBRL(cartSubtotalCents(cart))}</span>
           </Link>
         </div>
+      )}
+
+      {customizing !== null && (
+        <ProductCustomizer
+          product={customizing}
+          versionId={menu.menu.version_id}
+          onClose={() => setCustomizing(null)}
+        />
       )}
     </div>
   );

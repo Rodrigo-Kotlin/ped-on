@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { addCents, centsToDecimal, decimalToCents, formatBRL, multiplyCents } from './money';
+import {
+  addCents,
+  centsToDecimal,
+  decimalToCents,
+  formatBRL,
+  formatSignedBRL,
+  multiplyCents,
+  signedDecimalToCents,
+} from './money';
 
 describe('money', () => {
   it('converte strings decimais e centavos sem ponto flutuante', () => {
@@ -19,5 +27,17 @@ describe('money', () => {
     expect(() => decimalToCents('1.001')).toThrow('Valor monetário inválido');
     expect(() => decimalToCents('1,00')).toThrow('Valor monetário inválido');
     expect(() => multiplyCents(100n, 1.5)).toThrow('Quantidade inválida');
+  });
+
+  it('converte e formata deltas assinados sem perda de sinal', () => {
+    expect(signedDecimalToCents('5.00')).toBe(500n);
+    expect(signedDecimalToCents('-5.00')).toBe(-500n);
+    expect(signedDecimalToCents('0.00')).toBe(0n);
+    expect(signedDecimalToCents('-0.00')).toBe(0n);
+    expect(signedDecimalToCents('4')).toBe(400n);
+    expect(formatSignedBRL(500n)).toBe('R$ 5,00');
+    expect(formatSignedBRL(-500n)).toBe('- R$ 5,00');
+    expect(() => signedDecimalToCents('abc')).toThrow('Valor monetário inválido');
+    expect(() => signedDecimalToCents('1,00')).toThrow('Valor monetário inválido');
   });
 });

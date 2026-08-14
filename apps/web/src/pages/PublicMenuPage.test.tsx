@@ -52,6 +52,8 @@ const foundMenu: PublicMenuData = {
           price: '29.90',
           sort_order: 1,
           is_available: true,
+          is_configurable: true,
+          option_groups: [],
         },
         {
           id: 'prod-2',
@@ -60,6 +62,8 @@ const foundMenu: PublicMenuData = {
           price: '6.00',
           sort_order: 2,
           is_available: false,
+          is_configurable: true,
+          option_groups: [],
         },
       ],
     },
@@ -222,4 +226,122 @@ describe('PublicMenuPage', () => {
     await screen.findByRole('heading', { name: 'Loja Centro' });
     expect(screen.queryByRole('link', { name: /Clube Ped-On/ })).not.toBeInTheDocument();
   });
+
+  it('abre o personalizador para produto com grupos e exige seleção obrigatória', async () => {
+    const user = userEvent.setup();
+    renderPublicMenu(customizableMenu);
+
+    const customizeButton = await screen.findByRole('button', { name: 'Personalizar X-Tudo' });
+    expect(customizeButton).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Adicionar X-Tudo' })).not.toBeInTheDocument();
+
+    await user.click(customizeButton);
+    expect(screen.getByRole('dialog', { name: 'X-Tudo' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Adicionar ao carrinho' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Escolha 1 opção de Tamanho.');
+  });
+
+  it('adiciona item configurado ao carrinho com opções e preço exato', async () => {
+    const user = userEvent.setup();
+    renderPublicMenu(customizableMenu);
+
+    await user.click(await screen.findByRole('button', { name: 'Personalizar X-Tudo' }));
+    await user.click(screen.getByRole('radio', { name: /Duplo/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Bacon/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Cebola/ }));
+    await user.click(screen.getByRole('button', { name: 'Adicionar ao carrinho' }));
+
+    expect(screen.getByRole('link', { name: /Ver carrinho \(1\).*R\$ 38,90/ })).toHaveAttribute(
+      'href',
+      '/menu/abc/carrinho',
+    );
+    const stored = JSON.parse(window.localStorage.getItem('pedon:cart:abc')!).items[0];
+    expect(stored.unit_price).toBe('29.90');
+    expect(stored.options).toEqual([
+      { menu_group_id: 'grp-1', menu_option_id: 'opt-1', name: 'Duplo', price_delta: '5.00' },
+      { menu_group_id: 'grp-2', menu_option_id: 'opt-2', name: 'Bacon', price_delta: '4.00' },
+      { menu_group_id: 'grp-3', menu_option_id: 'opt-3', name: 'Cebola', price_delta: '0.00' },
+    ]);
+  });
+
+  it('marca opções indisponíveis como desabilitadas no personalizador', async () => {
+    const user = userEvent.setup();
+    renderPublicMenu(customizableMenu);
+
+    await user.click(await screen.findByRole('button', { name: 'Personalizar X-Tudo' }));
+    const chipa = screen.getByRole('checkbox', { name: /Chipa/ });
+    expect(chipa).toBeDisabled();
+    expect(screen.getByText('Indisponível')).toBeInTheDocument();
+  });
+
+  it('fecha o personalizador com Escape e devolve o foco ao botão', async () => {
+    const user = userEvent.setup();
+    renderPublicMenu(customizableMenu);
+
+    const customizeButton = await screen.findByRole('button', { name: 'Personalizar X-Tudo' });
+    await user.click(customizeButton);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(customizeButton).toHaveFocus();
+  });
 });
+
+const customizableMenu: PublicMenuData = {
+  ...foundMenu,
+  categories: [
+    {
+      id: 'cat-1',
+      name: 'Lanches',
+      sort_order: 1,
+      products: [
+        {
+          id: 'prod-3',
+          name: 'X-Tudo',
+          description: 'O completo',
+          price: '29.90',
+          sort_order: 1,
+          is_available: true,
+          is_configurable: true,
+          option_groups: [
+            {
+              id: 'grp-1',
+              name: 'Tamanho',
+              kind: 'variation',
+              selection_mode: 'single',
+              min_select: 1,
+              max_select: 1,
+              options: [
+                { id: 'opt-1', name: 'Duplo', price_delta: '5.00', is_available: true },
+                { id: 'opt-4', name: 'Triplo', price_delta: '10.00', is_available: true },
+              ],
+            },
+            {
+              id: 'grp-2',
+              name: 'Adicionais',
+              kind: 'addon',
+              selection_mode: 'multiple',
+              min_select: 0,
+              max_select: 3,
+              options: [
+                { id: 'opt-2', name: 'Bacon', price_delta: '4.00', is_available: true },
+                { id: 'opt-5', name: 'Chipa', price_delta: '2.00', is_available: false },
+              ],
+            },
+            {
+              id: 'grp-3',
+              name: 'Sem',
+              kind: 'removal',
+              selection_mode: 'multiple',
+              min_select: 0,
+              max_select: 3,
+              options: [{ id: 'opt-3', name: 'Cebola', price_delta: '0.00', is_available: true }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};

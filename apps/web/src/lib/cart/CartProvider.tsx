@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import {
   CART_ITEM_LIMIT,
   CART_QUANTITY_LIMIT,
+  cartItemKey,
   emptyCart,
   isValidCartItem,
   loadCart,
@@ -35,7 +36,8 @@ export function CartProvider({
     if (menuVersionId === '' || !isValidCartItem(nextItem)) return;
     updateCart((current) => {
       if (current.items.length > 0 && current.menuVersionId !== menuVersionId) return current;
-      const existing = current.items.find((entry) => entry.menu_item_id === item.menu_item_id);
+      const key = cartItemKey(nextItem);
+      const existing = current.items.find((entry) => cartItemKey(entry) === key);
       if (existing !== undefined) {
         const nextQuantity = existing.quantity + quantity;
         if (nextQuantity > CART_QUANTITY_LIMIT) return current;
@@ -43,7 +45,7 @@ export function CartProvider({
           ...current,
           menuVersionId,
           items: current.items.map((entry) =>
-            entry.menu_item_id === item.menu_item_id ? { ...entry, quantity: nextQuantity } : entry,
+            cartItemKey(entry) === key ? { ...entry, quantity: nextQuantity } : entry,
           ),
         };
       }
@@ -56,38 +58,38 @@ export function CartProvider({
     });
   }
 
-  function setQuantity(menuItemId: string, quantity: number) {
+  function setQuantity(lineId: string, quantity: number) {
     if (!Number.isInteger(quantity)) return;
     if (quantity <= 0) {
-      removeItem(menuItemId);
+      removeItem(lineId);
       return;
     }
     if (quantity > CART_QUANTITY_LIMIT) return;
     updateCart((current) => ({
       ...current,
       items: current.items.map((item) =>
-        item.menu_item_id === menuItemId ? { ...item, quantity } : item,
+        cartItemKey(item) === lineId ? { ...item, quantity } : item,
       ),
     }));
   }
 
-  function setNote(menuItemId: string, note: string) {
+  function setNote(lineId: string, note: string) {
     if (note.length > 300) return;
     updateCart((current) => ({
       ...current,
       items: current.items.map((item) => {
-        if (item.menu_item_id !== menuItemId) return item;
+        if (cartItemKey(item) !== lineId) return item;
         const next = { ...item, note };
         return isValidCartItem(next) ? next : item;
       }),
     }));
   }
 
-  function removeItem(menuItemId: string) {
+  function removeItem(lineId: string) {
     updateCart((current) => ({
       ...current,
       menuVersionId: current.items.length === 1 ? '' : current.menuVersionId,
-      items: current.items.filter((item) => item.menu_item_id !== menuItemId),
+      items: current.items.filter((item) => cartItemKey(item) !== lineId),
     }));
   }
 

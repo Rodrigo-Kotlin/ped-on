@@ -9,9 +9,9 @@ export interface AddCartItem extends Omit<CartItem, 'quantity' | 'note'> {
 export interface CartContextValue {
   cart: PublicCart;
   addItem: (menuVersionId: string, item: AddCartItem) => void;
-  setQuantity: (menuItemId: string, quantity: number) => void;
-  setNote: (menuItemId: string, note: string) => void;
-  removeItem: (menuItemId: string) => void;
+  setQuantity: (lineId: string, quantity: number) => void;
+  setNote: (lineId: string, note: string) => void;
+  removeItem: (lineId: string) => void;
   clearCart: () => void;
 }
 
