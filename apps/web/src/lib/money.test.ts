@@ -40,4 +40,14 @@ describe('money', () => {
     expect(() => signedDecimalToCents('abc')).toThrow('Valor monetário inválido');
     expect(() => signedDecimalToCents('1,00')).toThrow('Valor monetário inválido');
   });
+
+  it('preserva o sinal em descontos fracionários negativos', () => {
+    expect(signedDecimalToCents('0.50')).toBe(50n);
+    expect(signedDecimalToCents('1.50')).toBe(150n);
+    expect(signedDecimalToCents('-0.50')).toBe(-50n);
+    expect(signedDecimalToCents('-0.01')).toBe(-1n);
+    expect(signedDecimalToCents('-1.50')).toBe(-150n);
+    expect(signedDecimalToCents('-10.05')).toBe(-1005n);
+    expect(signedDecimalToCents('-0.00')).toBe(0n);
+  });
 });

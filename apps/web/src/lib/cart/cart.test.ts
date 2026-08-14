@@ -158,6 +158,39 @@ describe('cart storage', () => {
     expect(cartItemKey(item)).not.toBe(cartItemKey(differentConfig));
   });
 
+  it('aplica descontos fracionários negativos no preço configurado da linha', () => {
+    const base: CartItem = {
+      menu_item_id: 'item-1',
+      name: 'Lanche',
+      unit_price: '10.00',
+      quantity: 1,
+      note: '',
+      options: [],
+    };
+    const minus50: CartItem = {
+      ...base,
+      options: [
+        { menu_group_id: 'grp-1', menu_option_id: 'opt-1', name: 'Desconto', price_delta: '-0.50' },
+      ],
+    };
+    const minus150: CartItem = {
+      ...base,
+      options: [
+        { menu_group_id: 'grp-1', menu_option_id: 'opt-1', name: 'Desconto', price_delta: '-1.50' },
+      ],
+    };
+    const plus250: CartItem = {
+      ...base,
+      options: [
+        { menu_group_id: 'grp-1', menu_option_id: 'opt-1', name: 'Extra', price_delta: '2.50' },
+      ],
+    };
+    expect(cartItemConfiguredUnitPriceCents(minus50)).toBe(950n);
+    expect(cartItemConfiguredUnitPriceCents(minus150)).toBe(850n);
+    expect(cartItemConfiguredUnitPriceCents(plus250)).toBe(1250n);
+    expect(cartSubtotalCents({ ...cart, items: [minus50] })).toBe(950n);
+  });
+
   it('descarta carrinho com opção duplicada, chave duplicada ou delta inválido', () => {
     const duplicatedOption: PublicCart = {
       ...configurableCart,

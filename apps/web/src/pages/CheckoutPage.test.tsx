@@ -113,6 +113,33 @@ function seedConfiguredCart() {
   );
 }
 
+function seedDiscountCart() {
+  window.localStorage.setItem(
+    cartStorageKey('abc'),
+    JSON.stringify({
+      slug: 'abc',
+      menuVersionId: 'version-1',
+      items: [
+        {
+          menu_item_id: 'item-1',
+          name: 'Lanche',
+          unit_price: '10.00',
+          quantity: 1,
+          note: '',
+          options: [
+            {
+              menu_group_id: 'group-size',
+              menu_option_id: 'option-a',
+              name: 'Leve -0.50',
+              price_delta: '-0.50',
+            },
+          ],
+        },
+      ],
+    }),
+  );
+}
+
 function renderCheckout() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
@@ -249,6 +276,21 @@ describe('CheckoutPage', () => {
     );
   });
 
+  it('aplica desconto fracionário negativo no subtotal e total exibidos', async () => {
+    const user = userEvent.setup();
+    seedDiscountCart();
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'get_public_menu' ? { data: menu, error: null } : { data: success, error: null },
+      ),
+    );
+    renderCheckout();
+    await fillCustomer(user);
+
+    expect(screen.getAllByText('R$ 9,50')).toHaveLength(2);
+    expect(screen.queryByText('R$ 10,50')).not.toBeInTheDocument();
+  });
+
   it('bloqueia checkout offline sem chamar criação nem limpar o carrinho', async () => {
     const user = userEvent.setup();
     vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
@@ -264,6 +306,7 @@ describe('CheckoutPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Você está offline');
     expect(rpcCalls('create_public_order_v2')).toHaveLength(0);
     expect(window.localStorage.getItem(cartStorageKey('abc'))).not.toBeNull();
+    expect(window.localStorage.getItem(pendingOrderStorageKey('abc'))).toBeNull();
   });
 
   it('envia endereço, taxa, dinheiro e troco somente no fluxo delivery/cash', async () => {
@@ -381,7 +424,7 @@ describe('CheckoutPage', () => {
     });
   });
 
-  it('reusa a tentativa pendente no remount quando o pedido ainda não existe', async () => {
+  it('descarta a tentativa no remount quando o pedido não existe e usa uma nova chave', async () => {
     const user = userEvent.setup();
     supabaseMock.rpc.mockImplementation((name: string) => {
       if (name === 'get_public_menu') return Promise.resolve({ data: menu, error: null });
@@ -410,7 +453,124 @@ describe('CheckoutPage', () => {
     expect(
       (rpcCalls('create_public_order_v2')[1]![1] as { p_idempotency_key: string })
         .p_idempotency_key,
-    ).toBe(firstKey);
+    ).not.toBe(firstKey);
+    expect(window.localStorage.getItem(pendingOrderStorageKey('abc'))).not.toBeNull();
+  });
+
+  it('bloqueia novo envio quando a recuperação é ambígua e preserva a tentativa', async () => {
+    const user = userEvent.setup();
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'get_public_menu') return Promise.resolve({ data: menu, error: null });
+      if (name === 'get_public_order_by_attempt') {
+        return Promise.resolve({ data: null, error: { code: '', message: 'Failed to fetch' } });
+      }
+      return Promise.resolve({ data: null, error: { code: '', message: 'Failed to fetch' } });
+    });
+
+    const firstView = renderCheckout();
+    await fillCustomer(user);
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+    await screen.findByRole('alert');
+    const firstKey = (rpcCalls('create_public_order_v2')[0]![1] as { p_idempotency_key: string })
+      .p_idempotency_key;
+    firstView.unmount();
+
+    renderCheckout();
+    expect(
+      await screen.findByRole('button', { name: 'Tentar recuperar pedido anterior' }),
+    ).toBeVisible();
+    const stored = JSON.parse(window.localStorage.getItem(pendingOrderStorageKey('abc'))!) as {
+      idempotency_key: string;
+    };
+    expect(stored.idempotency_key).toBe(firstKey);
+    expect(screen.getByRole('button', { name: 'Enviar pedido' })).toBeDisabled();
+  });
+
+  it('recupera o pedido ao tentar novamente após ambiguidade de recuperação', async () => {
+    const user = userEvent.setup();
+    let recovered = false;
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'get_public_menu') return Promise.resolve({ data: menu, error: null });
+      if (name === 'get_public_order_by_attempt') {
+        if (!recovered) {
+          recovered = true;
+          return Promise.resolve({ data: null, error: { code: '', message: 'Failed to fetch' } });
+        }
+        return Promise.resolve({ data: { found: true, ...success }, error: null });
+      }
+      return Promise.resolve({ data: null, error: { code: '', message: 'Failed to fetch' } });
+    });
+    window.localStorage.setItem(
+      pendingOrderStorageKey('abc'),
+      JSON.stringify({
+        idempotency_key: '11111111-1111-4111-8111-111111111111',
+        request_fingerprint: 'a'.repeat(64),
+        public_slug: 'abc',
+        created_at: new Date().toISOString(),
+      }),
+    );
+    renderCheckout();
+    await user.click(
+      await screen.findByRole('button', { name: 'Tentar recuperar pedido anterior' }),
+    );
+
+    expect(await screen.findByText('Tracking aberto')).toBeInTheDocument();
+    expect(window.localStorage.getItem(pendingOrderStorageKey('abc'))).toBeNull();
+  });
+
+  it('bloqueia o envio quando o storage não garante a persistência verificável', async () => {
+    const user = userEvent.setup();
+    const originalSetItem = Storage.prototype.setItem;
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (String(key).startsWith('pedon:pending-order:')) {
+        throw new DOMException('Full', 'QuotaExceededError');
+      }
+      return originalSetItem.call(this, key, value);
+    });
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'get_public_menu' ? { data: menu, error: null } : { data: success, error: null },
+      ),
+    );
+    renderCheckout();
+    await fillCustomer(user);
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('armazenamento do site');
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      /QuotaExceeded|SecurityError|DOMException|localStorage/,
+    );
+    expect(rpcCalls('create_public_order_v2')).toHaveLength(0);
+    expect(window.localStorage.getItem(pendingOrderStorageKey('abc'))).toBeNull();
+    setItem.mockRestore();
+  });
+
+  it('limpa a tentativa após erro determinístico que prova a não criação', async () => {
+    const user = userEvent.setup();
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'get_public_menu'
+          ? { data: menu, error: null }
+          : { data: null, error: { code: 'PED41', message: 'DB_ERROR' } },
+      ),
+    );
+    renderCheckout();
+    await fillCustomer(user);
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('valor mínimo');
+
+    expect(window.localStorage.getItem(pendingOrderStorageKey('abc'))).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+    await waitFor(() => expect(rpcCalls('create_public_order_v2')).toHaveLength(2));
+    const secondKey = (rpcCalls('create_public_order_v2')[1]![1] as { p_idempotency_key: string })
+      .p_idempotency_key;
+    const firstKey = (rpcCalls('create_public_order_v2')[0]![1] as { p_idempotency_key: string })
+      .p_idempotency_key;
+    expect(secondKey).not.toBe(firstKey);
   });
 
   it.each([

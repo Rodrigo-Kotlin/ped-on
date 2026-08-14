@@ -480,17 +480,40 @@ function LoyaltyAccountView({
     const reward = selectedReward;
     const idempotencyKey = crypto.randomUUID();
     const recoverySecret = createRecoverySecret();
-    savePendingRedemption({
+    setRedeeming(true);
+    setRedemptionError(null);
+
+    let onlineMessage: string | null = null;
+    try {
+      assertOnline();
+    } catch (error) {
+      onlineMessage =
+        error instanceof Error
+          ? error.message
+          : 'Você está offline. Operações que exigem conexão estão pausadas.';
+    }
+    if (onlineMessage !== null) {
+      setRedeeming(false);
+      setRedemptionError(onlineMessage);
+      return;
+    }
+
+    const persisted = savePendingRedemption({
       public_slug: publicSlug,
       idempotency_key: idempotencyKey,
       recovery_secret: recoverySecret,
       reward_id: reward.id,
       created_at: new Date().toISOString(),
     });
-    setRedeeming(true);
-    setRedemptionError(null);
+    if (!persisted) {
+      setRedeeming(false);
+      setRedemptionError(
+        'Não foi possível preparar esta troca com segurança neste navegador. Tente novamente após liberar o armazenamento do site.',
+      );
+      return;
+    }
+
     try {
-      assertOnline();
       const result = await runCriticalOperation(() =>
         redeemPublicLoyaltyReward({
           publicSlug,

@@ -20,7 +20,8 @@ export function signedDecimalToCents(value: string): bigint {
   }
 
   const fraction = (match[2] ?? '').padEnd(2, '0');
-  return BigInt(match[1]!) * 100n + BigInt(fraction || '0');
+  const unsigned = BigInt(match[1]!.replace(/^-/, '')) * 100n + BigInt(fraction || '0');
+  return normalized.startsWith('-') ? -unsigned : unsigned;
 }
 
 export function centsToDecimal(cents: bigint): string {

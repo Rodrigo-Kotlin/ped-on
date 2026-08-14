@@ -98,6 +98,31 @@ describe('option-selection', () => {
     expect(configuredPriceCents('29.90', [variation, addons], selection)).toBe(3890n);
   });
 
+  it('aplica descontos fracionários negativos sem perder o sinal', () => {
+    const discount: PublicMenuOptionGroup = {
+      id: 'grp-9',
+      name: 'Desconto',
+      kind: 'variation',
+      selection_mode: 'single',
+      min_select: 0,
+      max_select: 1,
+      options: [
+        { id: 'opt-9', name: 'Leve -0.50', price_delta: '-0.50', is_available: true },
+        { id: 'opt-10', name: 'Leve -1.50', price_delta: '-1.50', is_available: true },
+        { id: 'opt-11', name: 'Acréscimo +2.50', price_delta: '2.50', is_available: true },
+      ],
+    };
+    expect(
+      configuredPriceCents('10.00', [discount], new Map([['grp-9', new Set(['opt-9'])]] as const)),
+    ).toBe(950n);
+    expect(
+      configuredPriceCents('10.00', [discount], new Map([['grp-9', new Set(['opt-10'])]] as const)),
+    ).toBe(850n);
+    expect(
+      configuredPriceCents('10.00', [discount], new Map([['grp-9', new Set(['opt-11'])]] as const)),
+    ).toBe(1250n);
+  });
+
   it('reporta o primeiro erro de validação entre grupos', () => {
     expect(firstSelectionError([variation, addons], new Map())).toBe('Escolha 1 opção de Tamanho.');
     const onlyVariation = new Map([['grp-1', new Set(['opt-4'])] as const]);

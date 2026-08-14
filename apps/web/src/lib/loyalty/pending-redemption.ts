@@ -18,14 +18,29 @@ export function pendingRedemptionKey(publicSlug: string): string {
   return `pedon:pending-redemption:${publicSlug}`;
 }
 
-export function savePendingRedemption(value: PendingRedemption): void {
-  if (typeof window === 'undefined') return;
-  const parsed = pendingRedemptionSchema.parse(value);
+export function savePendingRedemption(value: PendingRedemption): boolean {
+  if (typeof window === 'undefined') return false;
+  let parsed: PendingRedemption;
   try {
-    window.localStorage.setItem(pendingRedemptionKey(parsed.public_slug), JSON.stringify(parsed));
+    parsed = pendingRedemptionSchema.parse(value);
   } catch {
-    // The current attempt can still finish when storage is blocked or full.
+    return false;
   }
+  const key = pendingRedemptionKey(parsed.public_slug);
+  try {
+    window.localStorage.setItem(key, JSON.stringify(parsed));
+  } catch {
+    return false;
+  }
+  const recovered = loadPendingRedemption(parsed.public_slug);
+  if (recovered === null) return false;
+  return (
+    recovered.public_slug === parsed.public_slug &&
+    recovered.idempotency_key === parsed.idempotency_key &&
+    recovered.recovery_secret === parsed.recovery_secret &&
+    recovered.reward_id === parsed.reward_id &&
+    recovered.created_at === parsed.created_at
+  );
 }
 
 export function clearPendingRedemption(publicSlug: string): void {

@@ -445,6 +445,88 @@ describe('ClubePage', () => {
     expect(screen.getByRole('button', { name: 'Atualizar saldo' })).toBeDisabled();
   });
 
+  it('bloqueia a troca sem RPC quando o storage não garante a persistência verificável', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(edgeResponse(200, foundPayload));
+    const originalSetItem = Storage.prototype.setItem;
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (String(key).startsWith('pedon:pending-redemption:')) {
+        throw new DOMException('Full', 'QuotaExceededError');
+      }
+      return originalSetItem.call(this, key, value);
+    });
+    renderClube(
+      foundMenu,
+      '/clube/abc',
+      { found: true, loyalty_enabled: true, rewards: [publicReward] },
+      (fn) =>
+        Promise.resolve(
+          fn === 'redeem_public_loyalty_reward'
+            ? { data: { found: true }, error: null }
+            : { data: null, error: null },
+        ),
+    );
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+    await user.click(await screen.findByRole('button', { name: 'Trocar por 80 pontos' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar troca' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('armazenamento do site');
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      /QuotaExceeded|SecurityError|DOMException|localStorage/,
+    );
+    expect(
+      supabaseMock.rpc.mock.calls.filter(
+        (call: unknown[]) => call[0] === 'redeem_public_loyalty_reward',
+      ),
+    ).toHaveLength(0);
+    expect(localStorage.getItem('pedon:pending-redemption:abc')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Atualizar saldo' })).toBeEnabled();
+    expect(screen.getByRole('dialog', { name: 'Confirmar troca' })).toBeInTheDocument();
+    setItem.mockRestore();
+  });
+
+  it('bloqueia a troca offline sem criar pending e preserva o token em memória', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(edgeResponse(200, foundPayload));
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+    renderClube(
+      foundMenu,
+      '/clube/abc',
+      { found: true, loyalty_enabled: true, rewards: [publicReward] },
+      (fn) =>
+        Promise.resolve(
+          fn === 'redeem_public_loyalty_reward'
+            ? { data: { found: true }, error: null }
+            : { data: null, error: null },
+        ),
+    );
+
+    await openLookup(user);
+    await user.type(screen.getByLabelText('CPF'), '529.982.247-25');
+    await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
+    await user.click(screen.getByRole('button', { name: 'Consultar' }));
+    await user.click(await screen.findByRole('button', { name: 'Trocar por 80 pontos' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar troca' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Você está offline');
+    expect(
+      supabaseMock.rpc.mock.calls.filter(
+        (call: unknown[]) => call[0] === 'redeem_public_loyalty_reward',
+      ),
+    ).toHaveLength(0);
+    expect(localStorage.getItem('pedon:pending-redemption:abc')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Atualizar saldo' })).toBeEnabled();
+    expect(screen.getByRole('dialog', { name: 'Confirmar troca' })).toBeInTheDocument();
+  });
+
   it('renderiza saldo acima de MAX_SAFE_INTEGER sem perda de precisão', async () => {
     const user = userEvent.setup();
     vi.mocked(fetch).mockResolvedValue(

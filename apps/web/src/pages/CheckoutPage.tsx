@@ -155,6 +155,7 @@ export function CheckoutPage() {
   );
   const [attemptPayloadFingerprint, setAttemptPayloadFingerprint] = useState<string | null>(null);
   const [recoveringAttempt, setRecoveringAttempt] = useState(attempt !== null);
+  const [recoveryBlocked, setRecoveryBlocked] = useState(false);
   const [club, setClub] = useState<{ found: LoyaltyResolveFound; optIn: boolean } | null>(null);
   const [clubOpen, setClubOpen] = useState(false);
   const [clubCpf, setClubCpf] = useState('');
@@ -230,9 +231,7 @@ export function CheckoutPage() {
 
   useEffect(() => {
     const savedAttempt = loadPendingOrderAttempt(publicSlug);
-    if (savedAttempt === null) {
-      return;
-    }
+    if (savedAttempt === null) return;
     let active = true;
     void getPublicOrderByAttempt(
       publicSlug,
@@ -245,10 +244,13 @@ export function CheckoutPage() {
           finishRecoveredAttempt(result.tracking_token);
           return;
         }
-        setAttempt(savedAttempt);
+        clearPendingOrderAttempt(publicSlug);
+        setAttempt(null);
+        setAttemptPayloadFingerprint(null);
       })
       .catch(() => {
-        // The same persisted attempt remains available for a safe retry.
+        // Ambiguous recovery: keep the credential and block a blind resubmit with an unknown payload.
+        if (active) setRecoveryBlocked(true);
       })
       .finally(() => {
         if (active) setRecoveringAttempt(false);
@@ -257,6 +259,39 @@ export function CheckoutPage() {
       active = false;
     };
   }, [publicSlug]);
+
+  function retryRecovery() {
+    const savedAttempt = attempt;
+    if (savedAttempt === null) {
+      setRecoveryBlocked(false);
+      setRecoveringAttempt(false);
+      return;
+    }
+    setRecoveringAttempt(true);
+    setRecoveryBlocked(false);
+    void getPublicOrderByAttempt(
+      publicSlug,
+      savedAttempt.idempotency_key,
+      savedAttempt.request_fingerprint,
+    )
+      .then((result) => {
+        if (result.found) {
+          clearCart();
+          clearPendingOrderAttempt(publicSlug);
+          navigate(`/pedido/${result.tracking_token}`, { replace: true });
+          return;
+        }
+        clearPendingOrderAttempt(publicSlug);
+        setAttempt(null);
+        setAttemptPayloadFingerprint(null);
+      })
+      .catch(() => {
+        setRecoveryBlocked(true);
+      })
+      .finally(() => {
+        setRecoveringAttempt(false);
+      });
+  }
 
   const stale = menu !== null && isCartStale(cart, menu.menu.version_id);
   const subtotal = cartSubtotalCents(cart);
@@ -438,10 +473,23 @@ export function CheckoutPage() {
       payload.loyalty_token = club.found.token.access_token;
     }
 
+    let onlineMessage: string | null = null;
+    try {
+      assertOnline();
+    } catch (error) {
+      onlineMessage =
+        error instanceof Error
+          ? error.message
+          : 'Você está offline. Operações que exigem conexão estão pausadas.';
+    }
+    if (onlineMessage !== null) {
+      setSubmitError({ code: null, message: onlineMessage });
+      return;
+    }
+
     const payloadFingerprint = await fingerprintOrderPayload(payload);
     const pendingAttempt: PendingOrderAttempt =
-      attempt !== null &&
-      (attemptPayloadFingerprint === null || attemptPayloadFingerprint === payloadFingerprint)
+      attempt !== null && attemptPayloadFingerprint === payloadFingerprint
         ? attempt
         : {
             idempotency_key: crypto.randomUUID(),
@@ -451,11 +499,18 @@ export function CheckoutPage() {
           };
     if (attempt !== pendingAttempt) setAttempt(pendingAttempt);
     setAttemptPayloadFingerprint(payloadFingerprint);
-    savePendingOrderAttempt(pendingAttempt);
+
+    if (!savePendingOrderAttempt(pendingAttempt)) {
+      setSubmitError({
+        code: null,
+        message:
+          'Não foi possível preparar este pedido com segurança neste navegador. Tente novamente após liberar o armazenamento do site.',
+      });
+      return;
+    }
     setSubmitError(null);
 
     try {
-      assertOnline();
       const result = await runCriticalOperation(() =>
         createPublicOrder(
           publicSlug,
@@ -498,6 +553,17 @@ export function CheckoutPage() {
       }
       if (orderError.code === 'PED52') {
         unlinkClub();
+      }
+      if (
+        orderError.code === 'PED35' ||
+        orderError.code === 'PED36' ||
+        orderError.code === 'PED38' ||
+        orderError.code === 'PED41' ||
+        (orderError.code !== null && /^PED7[2-8]$/.test(orderError.code))
+      ) {
+        clearPendingOrderAttempt(publicSlug);
+        setAttempt(null);
+        setAttemptPayloadFingerprint(null);
       }
     }
   }
@@ -573,6 +639,25 @@ export function CheckoutPage() {
                 Revisar carrinho
               </Link>
             )}
+          </div>
+        )}
+
+        {recoveryBlocked && (
+          <div className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+            <p role="alert" className="font-medium">
+              Não foi possível confirmar se um pedido anterior foi concluído neste navegador.
+            </p>
+            <p className="mt-1 text-amber-900/80">
+              Verifique novamente antes de enviar um novo pedido. O rascunho de recuperação foi
+              preservado.
+            </p>
+            <button
+              type="button"
+              onClick={retryRecovery}
+              className="mt-3 min-h-11 rounded-md border border-amber-800 px-4 font-semibold text-amber-900"
+            >
+              Tentar recuperar pedido anterior
+            </button>
           </div>
         )}
 
@@ -923,6 +1008,7 @@ export function CheckoutPage() {
             disabled={
               isSubmitting ||
               recoveringAttempt ||
+              recoveryBlocked ||
               !menu.operation.can_order_now ||
               menu.operation.revision === null ||
               enabledModes.length === 0 ||

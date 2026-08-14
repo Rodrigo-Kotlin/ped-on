@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearPendingOrderAttempt,
   createAttemptRecoveryHash,
@@ -24,7 +24,7 @@ describe('pending order attempt', () => {
 
   it('persiste e carrega somente o contrato estrito sem PII', () => {
     const attempt = attemptAt();
-    savePendingOrderAttempt(attempt);
+    expect(savePendingOrderAttempt(attempt)).toBe(true);
 
     const raw = window.localStorage.getItem(pendingOrderStorageKey('abc'))!;
     expect(JSON.parse(raw)).toEqual(attempt);
@@ -33,6 +33,36 @@ describe('pending order attempt', () => {
 
     clearPendingOrderAttempt('abc');
     expect(loadPendingOrderAttempt('abc')).toBeNull();
+  });
+
+  it('retorna false quando o storage não garante a persistência verificável', () => {
+    const attempt = attemptAt();
+
+    const blockedSet = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    expect(savePendingOrderAttempt(attempt)).toBe(false);
+    blockedSet.mockRestore();
+
+    const fullSet = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Full', 'QuotaExceededError');
+    });
+    expect(savePendingOrderAttempt(attempt)).toBe(false);
+    fullSet.mockRestore();
+
+    const blockedGet = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    expect(savePendingOrderAttempt(attempt)).toBe(false);
+    blockedGet.mockRestore();
+
+    const missingGet = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+    expect(savePendingOrderAttempt(attempt)).toBe(false);
+    missingGet.mockRestore();
+
+    const corruptedGet = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('{"corrupt":true}');
+    expect(savePendingOrderAttempt(attempt)).toBe(false);
+    corruptedGet.mockRestore();
   });
 
   it('rejeita campos extras, slug divergente e tentativas expiradas', () => {

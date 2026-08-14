@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearPendingRedemption,
   loadPendingRedemption,
@@ -11,19 +11,47 @@ const attempt = {
   idempotency_key: '22222222-2222-4222-8222-222222222222',
   recovery_secret: 'b'.repeat(64),
   reward_id: '11111111-1111-4111-8111-111111111111',
-  created_at: '2026-08-11T12:00:00.000Z',
+  created_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
 };
 
 describe('pending redemption storage', () => {
   beforeEach(() => localStorage.clear());
 
   it('uses the strict slug-scoped key and persists exactly the allowed fields', () => {
-    savePendingRedemption(attempt);
+    expect(savePendingRedemption(attempt)).toBe(true);
     expect(pendingRedemptionKey('abc')).toBe('pedon:pending-redemption:abc');
     expect(JSON.parse(localStorage.getItem(pendingRedemptionKey('abc'))!)).toEqual(attempt);
     expect(localStorage.getItem(pendingRedemptionKey('abc'))).not.toMatch(
       /cpf|phone|access_token|voucher|saldo/,
     );
+  });
+
+  it('retorna false quando o storage não garante a persistência verificável', () => {
+    const blockedSet = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    expect(savePendingRedemption(attempt)).toBe(false);
+    blockedSet.mockRestore();
+
+    const fullSet = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Full', 'QuotaExceededError');
+    });
+    expect(savePendingRedemption(attempt)).toBe(false);
+    fullSet.mockRestore();
+
+    const blockedGet = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    expect(savePendingRedemption(attempt)).toBe(false);
+    blockedGet.mockRestore();
+
+    const missingGet = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+    expect(savePendingRedemption(attempt)).toBe(false);
+    missingGet.mockRestore();
+
+    const corruptedGet = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('{"corrupt":true}');
+    expect(savePendingRedemption(attempt)).toBe(false);
+    corruptedGet.mockRestore();
   });
 
   it('loads an attempt up to 24 hours old', () => {

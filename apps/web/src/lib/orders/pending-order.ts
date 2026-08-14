@@ -65,15 +65,28 @@ export function loadPendingOrderAttempt(publicSlug: string): PendingOrderAttempt
   }
 }
 
-export function savePendingOrderAttempt(attempt: PendingOrderAttempt): void {
-  if (typeof window === 'undefined') return;
-  const serialized = JSON.stringify(attempt);
-  if (parsePendingOrderAttempt(serialized, attempt.public_slug) === null) return;
+export function savePendingOrderAttempt(attempt: PendingOrderAttempt): boolean {
+  if (typeof window === 'undefined') return false;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(attempt);
+  } catch {
+    return false;
+  }
+  if (parsePendingOrderAttempt(serialized, attempt.public_slug) === null) return false;
   try {
     window.localStorage.setItem(pendingOrderStorageKey(attempt.public_slug), serialized);
   } catch {
-    // A blocked or full storage still permits the current in-memory attempt.
+    return false;
   }
+  const recovered = loadPendingOrderAttempt(attempt.public_slug);
+  if (recovered === null) return false;
+  return (
+    recovered.idempotency_key === attempt.idempotency_key &&
+    recovered.request_fingerprint === attempt.request_fingerprint &&
+    recovered.created_at === attempt.created_at &&
+    recovered.public_slug === attempt.public_slug
+  );
 }
 
 export function clearPendingOrderAttempt(publicSlug: string): void {
