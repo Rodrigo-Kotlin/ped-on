@@ -394,10 +394,16 @@ uniforme, consentimento, token repetível/consumido, disable explícito, rate li
 máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
 concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108.
 
-O CI `31787020339` aprovou fresh rebuild das 21 migrations, alinhamento, DB lint, as dez suítes
-sequenciais com 1340/1340 checks (`product_options_integrity` 158/158) e Edge unit 15/15. O remote
+O CI `31814657987` aprovou fresh rebuild das 22 migrations, alinhamento, DB lint, as dez suítes
+sequenciais com 1409/1409 checks e Edge unit 15/15. O remote
 smoke 36/36 permanece evidência histórica do Prompt 10. `LOCAL DB REBUILD: NOT RUN — BY DESIGN /
 NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PASS`.
+
+A publicação passou a exigir regras de seleção satisfazíveis (grupo obrigatório ativo com menos
+opções ativas que `min_select` aborta a publicação com `PED73`, sem versão parcial) e todo writer
+estrutural do catálogo (categorias, produtos, grupos/opções e publicação) adquire primeiro o
+advisory lock unit-scoped `_lock_unit_structure(unit_id)`, revogado de `PUBLIC`/`anon`/`authenticated`
+e usado somente por RPCs `SECURITY DEFINER`.
 
 Opções de produto seguem o mesmo modelo: leitura por policy `can_access_unit` com SELECT concedido
 somente a `authenticated`; escrita exclusiva por RPCs `SECURITY DEFINER`; snapshot imutável na

@@ -49,9 +49,12 @@ gates de release do projeto.
 
 ## Prompt 12 — Produtos, Variações e Adicionais
 
-Estado: `IN PROGRESS` — checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 estão implementadas e
-verificadas no CI `31787020339`; falta a reauditoria independente final. Não declarar
-`MENU_COMMERCIALLY_USABLE` nem iniciar Prompt 13 antes do parecer.
+Estado: `IN PROGRESS` — checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 e as remediations A/B1/B2/C
+estão implementadas e verificadas; a primeira reauditoria independente retornou NO_GO e o release foi
+reconvergido no HEAD técnico `f663cecb96ef87f397376e29aee82cd24ba846df` (CI `31814657987` SUCCESS nos
+três jobs; migrations 22/22; DB 1409/1409; Edge 15/15; frontend 383/383; E2E 345/345 com 3 skips
+móveis intencionais). Falta a reauditoria independente final. Não declarar `MENU_COMMERCIALLY_USABLE`
+nem iniciar Prompt 13 antes do parecer.
 
 Objetivos:
 
@@ -73,8 +76,10 @@ Backend da Etapa 4 entregue na migration 20: snapshot de grupos/opções na publ
 `PED72..PED78`, `unit_price = base + SUM(price_delta)` e `order_item_options` (snapshot por linha).
 O cardápio público, carrinho configurável, checkout por IDs, tracking e detalhe administrativo estão
 integrados. A migration 21 fecha os blockers de `single`, coerência publicação/mutação e corrida de
-disponibilidade; notas livres do item permanecem somente em memória e recovery de voucher mantém a
-janela crítica PWA até a conclusão.
+disponibilidade; a migration 22 (Remediation A) serializa a publicação com writers estruturais via
+lock unit-scoped, exige regras satisfazíveis (PED73) e vincula `order_item_options` relacionalmente.
+Notas livres do item permanecem somente em memória (sanitização global de carrinhos legados no
+bootstrap) e o recovery ambíguo de voucher mantém a lease crítica PWA até a conclusão.
 
 Critério pendente de reauditoria: `MENU_COMMERCIALLY_USABLE`.
 

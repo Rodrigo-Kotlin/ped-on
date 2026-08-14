@@ -12,24 +12,24 @@
 | MODELO                 | Main-First monitorado                                                                                                                                                                                                                                                                      |
 | FASE ATUAL             | Fase 4A — Pilot Ready                                                                                                                                                                                                                                                                      |
 | PROMPT ATUAL           | Prompt 12 — Produtos, Variações e Adicionais                                                                                                                                                                                                                                               |
-| STATUS                 | `IN PROGRESS` — Etapa 5 concluída; reauditoria independente pendente                                                                                                                                                                                                                       |
-| CHECKPOINT             | `READY_FOR_REAUDIT` — blockers de domínio, concorrência, privacidade e PWA corrigidos; não equivale a `COMPLETED` ou `MENU_COMMERCIALLY_USABLE`                                                                                                                                              |
+| STATUS                 | `IN PROGRESS` — Remediation C concluída; reauditoria independente pendente                                                                                                                                                                                                                 |
+| CHECKPOINT             | `READY_FOR_REAUDIT` — reconvergência do release após NO_GO da primeira reauditoria; blockers originais revalidados como RESOLVED; não equivale a `COMPLETED`, `RELEASE_VERIFIED` ou `MENU_COMMERCIALLY_USABLE`                                                                               |
 | HEAD INICIAL DO PROMPT | `3a6cd42` — Prompt 11 encerrado (`RELEASE_VERIFIED`)                                                                                                                                                                                                                                       |
-| HEAD TÉCNICO VALIDADO  | `9139391ca418dc063cdd7366d6b8e447cccacc3a` — hardening da Etapa 5 e guard de histórico das 21 migrations                                                                                                                                                                                    |
-| BACKEND                | `IMPLEMENTED / VERIFIED` — migrations 20–21; `single => max_select=1`, writers estruturais serializados com publicação e checkout linearizado com disponibilidade; CI `31787020339` aprovou fresh rebuild das 21 migrations, DB lint e dez suítes DB com 1340/1340 checks                     |
-| FRONTEND               | `READY_FOR_REAUDIT` — fluxo público da Etapa 4 preservado; nota livre fica somente em memória e valores legados são purgados; recovery ambíguo de voucher permanece integralmente dentro da operação crítica PWA                                                                            |
+| HEAD TÉCNICO VALIDADO  | `f663cecb96ef87f397376e29aee82cd24ba846df` — B2 (lease de operação crítica até resolução de voucher ambíguo); HEAD técnico do release funcional                                                                                                                                              |
+| BACKEND                | `IMPLEMENTED / VERIFIED` — migrations 20–22; HIGH-1..HIGH-5 e MEDIUM BLOCKING-1 corrigidos; `_lock_unit_structure` unit-scoped, publicação com PED73 e sem versão parcial, `order_item_options` com vínculo relacional composto; CI `31814657987` aprovou fresh rebuild das 22 migrations, DB lint e DB 1409/1409 checks     |
+| FRONTEND               | `READY_FOR_REAUDIT` — lease `beginCriticalOperation` com release idempotente; recovery ambíguo de voucher mantém a lease até conclusão; recovery fail-closed de pedido/redemption antes de RPC; sanitizer global de carrinhos no bootstrap; PED73 no admin                                                                       |
 | OPÇÕES DE PRODUTO      | kinds `variation`/`addon`/`removal`; `single`/`multiple`; min/max validados no servidor; `price_delta` decimal exato com `unit_price = base + SUM(delta)` no checkout; snapshot imutável na publicação (`menu_version_*`) e por linha no pedido (`order_item_options`)                       |
-| TESTES VERIFICADOS     | Frontend 354/354; E2E 345/345 com 3 skips móveis intencionais; Prompt 12 4B 20/20; DB 1340/1340; Edge 15/15; format, lint, typecheck, build, precache, gitleaks e linked DB lint PASS                                                                                                          |
-| PWA                    | Atualização por prompt explícito; aplicação bloqueada durante checkout, order mutation, redemption, voucher consume e team assignment/removal; runtime cache de API `NONE`; precache sem duplicatas após audit estático                                                                      |
-| CLOUDFLARE             | deployment `40091196-3bdf-4f15-86fe-54d2816138a2`; imutável `https://40091196.ped-on.pages.dev`, estável `https://ped-on.pages.dev`, source/SHA `9139391`, assets iguais e fallbacks SPA 18/18                                                                                                  |
-| GITHUB ACTIONS         | CI `31787020339` aprovado para o HEAD técnico, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                             |
-| PENDÊNCIAS             | Reauditoria independente final do Prompt 12; não declarar `COMPLETED`, `RELEASE_VERIFIED` ou cardápio comercialmente utilizável antes do parecer                                                                                                                                             |
+| TESTES VERIFICADOS     | Frontend 383/383 (40 arquivos); E2E 345/345 com 3 skips móveis intencionais; DB 1409/1409; Edge 15/15; format, lint, typecheck, build, precache, gitleaks e `git diff --check` PASS                                                                                                            |
+| PWA                    | Atualização por prompt explícito; bloqueio por lease de operação crítica (checkout, order mutation, redemption, voucher consume e team assignment/removal) até desfecho conclusivo; runtime cache de API `NONE`; precache sem duplicatas após audit estático                                     |
+| CLOUDFLARE             | estável `https://ped-on.pages.dev` servindo o bundle do SHA `f663cecb96ef87f397376e29aee82cd24ba846df` (verificado no diagnóstico); rotas SPA 13/13, manifest e SW PASS; deployment id e immutable URL `UNVERIFIED` — sem credencial Cloudflare API no ambiente (limitação de evidência, INFO não bloqueante) |
+| GITHUB ACTIONS         | CI `31814657987` aprovado para o HEAD técnico, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                             |
+| PENDÊNCIAS             | Reauditoria independente final do Prompt 12, carregando a limitação de evidência Cloudflare (deployment id/immutable URL); não declarar `COMPLETED`, `RELEASE_VERIFIED` ou cardápio comercialmente utilizável antes do parecer                                                               |
 | NEXT_STEP              | Executar a reauditoria independente final do Prompt 12                                                                                                                                                                                                                                     |
 | FASE SEGUINTE          | Não iniciada                                                                                                                                                                                                                                                                               |
 | PROMPT SEGUINTE        | Prompt 13 — `NOT STARTED`; bloqueado até a reauditoria final do Prompt 12                                                                                                                                                                                                                   |
 | PROMPT 10              | `COMPLETED` — checkpoint `RELEASE_VERIFIED`; reauditoria independente concluída com `GO_WITH_NON_BLOCKING_FINDINGS`                                                                                                                                                              |
 | LOCAL DB REBUILD       | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                                                    |
-| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 21 migrations no CI `31787020339` (Prompt 12)                                                                                                                                                                                                                   |
+| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 22 migrations no CI `31814657987` (Prompt 12)                                                                                                                                                                                                                   |
 
 ---
 
@@ -152,6 +152,53 @@
   fallbacks SPA 18/18.
 - Próximo: reauditoria independente. Prompt 12 continua `IN PROGRESS`; Prompt 13 não foi iniciado.
 
+## Checkpoint Prompt 12 — `REMEDIATION_IN_PROGRESS` (Reauditoria #1 NO_GO → Remediation A/B1/B2)
+
+- Primeira reauditoria independente do Prompt 12 resultou em **NO_GO**: HIGH-1 (grupo obrigatório
+  insatisfazível na publicação), HIGH-2 (publicação não serializada com writers estruturais),
+  HIGH-3 (`signedDecimalToCents` errava descontos `-0.xx`), HIGH-4 (voucher ambíguo liberava a janela
+  crítica PWA cedo), HIGH-5 (order/redemption podiam iniciar RPC sem recovery durável) e
+  MEDIUM BLOCKING-1 (notas legadas de carrinho não saneadas globalmente).
+- Remediation A (`968d692`, migration 22 `20260814020000_prompt12_remediation_a_hardening.sql`):
+  `_lock_unit_structure` unit-scoped adquirido primeiro por todos os writers estruturais e pela
+  publicação; `publish_unit_menu` exige regras satisfazíveis (PED73 antes de qualquer versão, sem
+  versão parcial — HIGH-1/HIGH-2); `signedDecimalToCents` corrigido no browser (HIGH-3);
+  `order_item_options` passa a exigir vínculo relacional composto com `order_items` (validação
+  read-only + `unique (id, menu_version_id, menu_item_id)` + FK composta).
+- B1 (`1c1fff0`): recovery fail-closed de pedido e redemption — persistência durável com
+  leitura-de-volta antes de qualquer RPC; storage indisponível/corrompido nunca dispara mutação de
+  rede (HIGH-5); `order_item_options` com vínculo relacional composto (regressão de Remediation A).
+- B2 (`f663cec`): lease de operação crítica idempotente (`beginCriticalOperation`/
+  `runCriticalOperation`) e recovery ambíguo de voucher mantém a lease até desfecho conclusivo,
+  bloqueando o update do PWA (HIGH-4); `sanitizeStoredCarts()` global no bootstrap saneia todas as
+  chaves `pedon:cart:*` independente da rota (MEDIUM BLOCKING-1).
+- CI técnico `31814657987` (SUCCESS nos três jobs) validou o release funcional `f663cec`.
+
+## Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (Remediation C / Release Reconvergence)
+
+- HEAD inicial da etapa `1c1fff0`; HEAD final `f663cecb96ef87f397376e29aee82cd24ba846df` (B2),
+  igual a origin/main; worktree limpo.
+- Migrations: Git/filesystem 22/22; remoto 22/22 registrado na etapa B1. A checagem remota ao vivo
+  (`migration list --linked`, `db push --dry-run`, `db lint --linked`) **não pôde ser executada**
+  desta máquina nesta etapa: o pooler rejeitou a senha do `.env` e o host direto está com
+  IP-restrição/timeout (IPv6). Sem evidência de drift: nenhuma migration nova desde o registro 22/22 e
+  o CI Backend gates revalidou fresh rebuild das 22 migrations, alinhamento, DB lint, DB 1409/1409 e
+  Edge 15/15 no `31814657987`.
+- Revalidação dos seis blockers originais (read-only SQL + testes): HIGH-1, HIGH-2, HIGH-3, HIGH-4,
+  HIGH-5 e MEDIUM BLOCKING-1 — todos `RESOLVED`.
+- Regressão de Remediation A: `order_item_options` relacional, PED42 com options diferentes na mesma
+  chave, fingerprint de opções independente da ordem e earn de loyalty sobre subtotal
+  server-authoritative com deltas — `RESOLVED`.
+- Gates locais: format, lint, typecheck, test:run 383/383 (40 arquivos), build (33 precache entries),
+  e2e 345/345 com 3 skips móveis intencionais, audit:precache 33/33 duplicatas 0 `runtimeCaching:
+  NONE`, gitleaks exit 0 e `git diff --check` limpo.
+- Cloudflare: estável `https://ped-on.pages.dev` servindo o bundle do SHA completo
+  `f663cecb96ef87f397376e29aee82cd24ba846df` (verificado no chunk lazy de diagnóstico); rotas SPA
+  13/13, manifest e SW PASS. Deployment id e immutable URL **UNVERIFIED** (sem credencial Cloudflare
+  API no ambiente) — limitação de evidência INFO não bloqueante, carregada para a reauditoria.
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PASS`.
+- Próximo: reauditoria independente final. Prompt 12 permanece `IN PROGRESS`; Prompt 13 não iniciado.
+
 ## Histórico de execução
 
 | Etapa                             | Prompt                                                  | Status                          | Commit                                     | Data       |
@@ -168,4 +215,4 @@
 | Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED                       | `2013e8d`                                  | 2026-08-11 |
 | Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; encerramento oficial (`2a91711`, `453af65`) | 2026-08-12 |
 | Fase 4A — Pilot Ready             | Prompt 11 — Pilot Readiness e Product Hardening         | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; auditado `3a6cd42`, CI `31713901328`, deploy `8f7d42fd` | 2026-08-13 |
-| Fase 4A — Pilot Ready             | Prompt 12 — Produtos, Variações e Adicionais            | IN PROGRESS — READY_FOR_REAUDIT | Etapa 5 `9139391`, migrations 21/21, frontend 354/354, E2E 345/345, DB 1340/1340 | 2026-08-14 |
+| Fase 4A — Pilot Ready             | Prompt 12 — Produtos, Variações e Adicionais            | IN PROGRESS — READY_FOR_REAUDIT | Etapa 5 `9139391`, Remediation A/B1/B2 `f663cec`, migrations 22/22, frontend 383/383, E2E 345/345, DB 1409/1409 | 2026-08-14 |

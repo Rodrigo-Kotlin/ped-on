@@ -1,7 +1,7 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 12. Etapa 5
-> aprovada no HEAD `9139391ca418dc063cdd7366d6b8e447cccacc3a`, CI `31787020339`; base anterior
+> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 12. Reconvergência do
+> release aprovada no HEAD `f663cecb96ef87f397376e29aee82cd24ba846df`, CI `31814657987`; base anterior
 > auditada `3a6cd42eab24719e01505fc854d03c65ca9d9975` (Prompt 11, `RELEASE_VERIFIED`).
 
 ## 1. Pré-requisitos
@@ -57,12 +57,13 @@ gitleaks git --redact --log-level warn .
 
 Não executar Docker, `supabase start`, `supabase db reset` nem stack Supabase local na máquina de
 desenvolvimento. O GitHub Actions é o ambiente oficial e descartável para fresh rebuild, aplicação
-das 21 migrations, dez suítes DB, DB lint e Edge unit.
+das 22 migrations, dez suítes DB, DB lint e Edge unit.
 
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
-- `CI ISOLATED DB REBUILD: PASS` no run `31787020339`, com fresh rebuild das 21 migrations;
-- migration 21 aplicada remotamente; migration list em 21/21;
-- dry-run linked confirma que o remoto está up to date.
+- `CI ISOLATED DB REBUILD: PASS` no run `31814657987`, com fresh rebuild das 22 migrations e
+  DB 1409/1409;
+- migration 22 aplicada remotamente; migration list Git/filesystem em 22/22 (remoto 22/22 registrado
+  na etapa B1); dry-run linked confirma que o remoto está up to date.
 
 ## 4. Variáveis e secrets
 
@@ -402,7 +403,26 @@ Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (Etapa 3 do Prompt 12 concluída):
 - Supabase em 20/20, dry-run linked informa remote up to date e lint linked não encontrou erros;
 - rebuild local não executado por design.
 
-Release candidata do Prompt 12 — `READY_FOR_REAUDIT` (Etapa 5 concluída):
+Release candidata do Prompt 12 — `READY_FOR_REAUDIT` (Release Reconvergence, evidência atual):
+
+- source técnico / release funcional `f663cecb96ef87f397376e29aee82cd24ba846df`; etapa iniciada em
+  `1c1fff0`; worktree limpo e `main` alinhado;
+- CI `31814657987`: `Quality gates`, `Backend release gates` e `E2E smoke tests` SUCCESS;
+- backend: fresh rebuild isolado das 22 migrations, alinhamento, DB lint, dez suítes com 1409/1409
+  checks (0 FAIL, 0 SKIP) e Edge unit 15/15;
+- Frontend unit 383/383 (40 arquivos); E2E 345/345 com 3 skips móveis intencionais;
+- seis blockers originais revalidados como RESOLVED (HIGH-1..HIGH-5, MEDIUM BLOCKING-1);
+- migrations Git/filesystem 22/22; remoto 22/22 (registrado na etapa B1); checagem remota ao vivo
+  não executável nesta máquina na reconvergência (sem credencial de banco válida) — sem evidência de
+  drift;
+- Cloudflare estável `https://ped-on.pages.dev` servindo o bundle do SHA completo
+  `f663cecb96ef87f397376e29aee82cd24ba846df` (verificado no chunk lazy de diagnóstico); rotas SPA
+  13/13, manifest e SW PASS; deployment id e immutable URL `UNVERIFIED` — sem credencial Cloudflare
+  API no ambiente (limitação de evidência, INFO não bloqueante);
+- precache 33 entradas, 933164 bytes, sem duplicatas e `runtimeCaching: NONE`;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+
+Release candidata do Prompt 12 — `READY_FOR_REAUDIT` (Etapa 5 concluída, histórico técnico):
 
 - source técnico `9139391ca418dc063cdd7366d6b8e447cccacc3a`; implementação de hardening `c970381`;
 - CI `31787020339`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
@@ -486,6 +506,7 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 
 ## 13. Próximo passo
 
-Prompt 12 está em `IN PROGRESS`, checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 estão concluídas e
-verificadas; o próximo passo é a reauditoria independente final. Não declarar `COMPLETED`,
+Prompt 12 está em `IN PROGRESS`, checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 e as remediations
+A/B1/B2/C estão concluídas e verificadas no release funcional `f663cec` (CI `31814657987`); o
+próximo passo é a reauditoria independente final. Não declarar `COMPLETED`,
 `RELEASE_VERIFIED` ou `MENU_COMMERCIALLY_USABLE` e não iniciar Prompt 13 antes do parecer.

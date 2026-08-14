@@ -1041,6 +1041,57 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
   estruturais usam o advisory lock da publicação por produto, e a gravação do snapshot do pedido
   bloqueia a opção mutável disponível para linearizar checkout contra toggle/delete.
 
+### DEC-116 — Lock estrutural unit-scoped é a primeira disciplina de todo writer do catálogo
+
+- **Status:** APROVADA
+- **Data:** 2026-08-14
+- **Decisão:** `_lock_unit_structure(unit_id)` (advisory xact lock no namespace
+  `pedon:catalog:structure:<unit>`) é adquirido **sempre primeiro** por todos os writers estruturais
+  do catálogo (categorias, produtos, grupos/opções e `publish_unit_menu`) e somente depois vêm os
+  locks por categoria/produto em ordem canônica. A publicação adquire ainda os locks de publicação em
+  modo exclusivo; o checkout os adquire em modo **compartilhado**, permanecendo linearizável contra a
+  publicação sem bloquear leitores concorrentes. O trigger `a_*` de grupos/opções replica a mesma
+  ordem ascendente por produto para evitar deadlock.
+- **Justificativa:** serializar a publicação contra mutações estruturais (HIGH-2) com uma única
+  ordem canônica de locks por unidade, eliminando inversões de ordem e deadlocks entre publicação,
+  escritores estruturais e checkout.
+
+### DEC-117 — Recovery durável fail-closed antes de qualquer mutação de rede
+
+- **Status:** APROVADA
+- **Data:** 2026-08-14
+- **Decisão:** pedidos e redemptions só disparam a RPC após a persistência durável do registro de
+  recuperação com leitura-de-volta verificada (`pedon:pending-order:<slug>` /
+  `pedon:pending-redemption:<slug>`). Falha de storage (throw, leitura nula, dado corrompido,
+  `QuotaExceeded`, `SecurityError`) aborta a operação antes de qualquer chamada de rede; a mutação
+  de rede só ocorre dentro da janela de operação crítica PWA.
+- **Justificativa:** fechar HIGH-5 — nenhuma mutação idempotente começa sem prova de que o browser
+  consegue recuperá-la; a leitura-de-volta garante que a tentativa é realmente recuperável.
+
+### DEC-118 — Recovery ambíguo de voucher mantém a lease crítica até a conclusão
+
+- **Status:** APROVADA
+- **Data:** 2026-08-14
+- **Decisão:** a operação crítica PWA passa a usar uma lease explícita
+  (`beginCriticalOperation(): release` idempotente, `runCriticalOperation` sobre ela). No consumo de
+  voucher, a lease é liberada **somente** quando o desfecho é conclusivo (consumido ou issued com
+  confirmação); desfecho inconclusivo (`found=false` com incerteza de rede) mantém a lease ativa com
+  overlay "Verificação pendente" e nova tentativa, bloqueando o reload/update do PWA até a resolução.
+- **Justificativa:** fechar HIGH-4 — a janela crítica do PWA não pode ser liberada enquanto o consumo
+  do voucher ainda é ambíguo, pois um update intermediário perderia o estado de recovery.
+
+### DEC-119 — Higiene global de carrinhos legados no bootstrap
+
+- **Status:** APROVADA
+- **Data:** 2026-08-14
+- **Decisão:** no bootstrap do app (`AppProviders`), `sanitizeStoredCarts()` varre **todas** as chaves
+  `pedon:cart:*` independentemente da rota, normalizando registros válidos e substituindo registros
+  inválidos por carrinho vazio. Chaves de outros namespaces não são tocadas e falhas de storage
+  nunca lançam (o carrinho em memória permanece utilizável). O formato persistido continua sem `note`.
+- **Justificativa:** fechar MEDIUM BLOCKING-1 — registros legados de qualquer slug são saneados
+  globalmente na inicialização, não apenas quando o slug é acessado, eliminando notas privadas
+  residuais de sessões antigas.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

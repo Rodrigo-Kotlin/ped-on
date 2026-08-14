@@ -1,7 +1,7 @@
 # PED-ON — Database Schema
 
 > Referência cumulativa da Fase 4A — Prompt 12, checkpoint `READY_FOR_REAUDIT`.
-> Fonte autoritativa: 21 migrations versionadas; migration list local/remota em 21/21 e dry-run
+> Fonte autoritativa: 22 migrations versionadas; migration list local/remota em 22/22 e dry-run
 > linked confirmando que o remoto está up to date.
 
 ## 1. Estado das migrations
@@ -29,10 +29,13 @@
 | 19    | `20260813120000_prompt11_readiness_unit_coherence.sql`              | exige uma mesma unidade com todos os pré-requisitos de piloto                               |
 | 20    | `20260814000000_prompt12_product_options.sql`                       | grupos de opções (variações/adicionais/remoções) e opções por produto no catálogo mutável  |
 | 21    | `20260814010000_prompt12_final_hardening.sql`                       | regra `single`, locks de publicação/mutação e disponibilidade atômica no checkout           |
+| 22    | `20260814020000_prompt12_remediation_a_hardening.sql`               | lock estrutural unit-scoped, publicação PED73 sem versão parcial e vínculo relacional de `order_item_options` |
 
-Estado reconciliado de 2026-08-14: Git/filesystem e remoto apresentam 21/21 migrations. A migration
-21 foi aplicada e o dry-run linked informa remote up to date. `LOCAL DB REBUILD: NOT RUN — BY
-DESIGN / NO LOCAL DOCKER`; fresh rebuild isolado aprovado no CI `31787020339`.
+Estado reconciliado de 2026-08-14: Git/filesystem em 22/22; remoto em 22/22 (registrado na etapa B1,
+sem migrations novas desde então). `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; fresh
+rebuild isolado das 22 migrations aprovado no CI `31814657987`. A checagem remota ao vivo não pôde
+ser executada nesta máquina na reconvergência (pooler rejeitou a senha do `.env`; host direto com
+IP-restrição/timeout) — sem evidência de drift, conforme CI isolado.
 
 ## 2. Convenções
 
@@ -1072,7 +1075,21 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
-Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (evidência atual):
+Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (evidência atual — Release Reconvergence):
+
+- HEAD técnico (release funcional) `f663cecb96ef87f397376e29aee82cd24ba846df`; etapa iniciada em
+  `1c1fff0`;
+- CI `31814657987`: `Quality gates`, `Backend release gates` e `E2E smoke tests` SUCCESS;
+- fresh rebuild isolado das 22 migrations, alinhamento e DB lint aprovados;
+- suítes DB aprovadas com 1409/1409 PASS, 0 FAIL, 0 SKIP; Edge unit 15/15;
+- Frontend unit: 383/383 (40 arquivos); E2E smoke tests: 345/345, com 3 skips móveis intencionais;
+- migrations Git/filesystem 22/22; remoto 22/22 (registrado na etapa B1); checagem remota ao vivo
+  não executável nesta máquina na reconvergência (limitação de credencial/conexão), sem evidência de
+  drift;
+- seis blockers originais revalidados como RESOLVED (HIGH-1..HIGH-5, MEDIUM BLOCKING-1);
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+
+Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (Etapa 5, histórico técnico):
 
 - HEAD técnico `9139391ca418dc063cdd7366d6b8e447cccacc3a`;
 - CI `31787020339`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
@@ -1124,7 +1141,7 @@ Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 - CI `31598675826` (Quality gates, Backend release gates e E2E smoke tests) e Cloudflare deployment
   `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, source `2a91711`, aprovados.
 
-Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 21 migrations:
+Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 22 migrations:
 
 - migrations `20260810144145_orders_checkout.sql` e
   `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente naquele checkpoint;

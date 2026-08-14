@@ -178,20 +178,21 @@ supabase migration list
 supabase db lint --linked
 ```
 
-Git/filesystem e remoto estão em 21/21; o dry-run linked informa que o remoto está up to date.
+Git/filesystem e remoto estão em 22/22; o dry-run linked informa que o remoto está up to date.
 Somente o comando com `--dry-run` é não destrutivo; não executar o push real antes de CI verde e
 aprovação da migration. Não reaplicar migrations já aplicadas, editar migration existente ou usar
 `supabase db reset` localmente.
 
 ## Testes do Prompt 12
 
-- gates locais e do CI `31787020339`: frontend unit 354/354, E2E 345/345 com 3 skips móveis
-  intencionais, Prompt 12 4B 20/20 e Edge unit 15/15;
-- banco isolado: dez suítes, DB lint e baseline 1340/1340 checks
-  (`product_options_integrity` 158/158);
-- migrations Git/filesystem: 21; remote: 21; dry-run linked informa remote up to date;
-- Cloudflare source `9139391`: `https://40091196.ped-on.pages.dev` e
-  `https://ped-on.pages.dev`, com SHA no diagnóstico e fallbacks SPA 18/18.
+- gates locais e do CI `31814657987`: frontend unit 383/383 (40 arquivos), E2E 345/345 com 3 skips
+  móveis intencionais e Edge unit 15/15;
+- banco isolado: dez suítes, DB lint e baseline 1409/1409 checks;
+- migrations Git/filesystem: 22; remote: 22; dry-run linked informa remote up to date;
+- Cloudflare estável `https://ped-on.pages.dev` serve o bundle do SHA
+  `f663cecb96ef87f397376e29aee82cd24ba846df` (verificado no diagnóstico) com rotas SPA 13/13;
+  deployment id e immutable URL permanecem `UNVERIFIED` por ausência de credencial Cloudflare API no
+  ambiente (limitação de evidência, não bloqueante).
 
 ## Segurança e secrets
 
