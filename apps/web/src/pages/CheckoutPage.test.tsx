@@ -206,6 +206,23 @@ describe('CheckoutPage', () => {
     );
   });
 
+  it('bloqueia checkout offline sem chamar criação nem limpar o carrinho', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'get_public_menu' ? { data: menu, error: null } : { data: success, error: null },
+      ),
+    );
+    renderCheckout();
+    await fillCustomer(user);
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Você está offline');
+    expect(rpcCalls('create_public_order_v2')).toHaveLength(0);
+    expect(window.localStorage.getItem(cartStorageKey('abc'))).not.toBeNull();
+  });
+
   it('envia endereço, taxa, dinheiro e troco somente no fluxo delivery/cash', async () => {
     const user = userEvent.setup();
     supabaseMock.rpc.mockImplementation((name: string) =>

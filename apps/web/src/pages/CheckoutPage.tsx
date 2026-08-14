@@ -471,7 +471,12 @@ export function CheckoutPage() {
       const orderError =
         error instanceof PublicOrderError
           ? error
-          : new PublicOrderError('Não foi possível processar o pedido. Tente novamente.', null);
+          : new PublicOrderError(
+              error instanceof Error && error.message.startsWith('Você está offline.')
+                ? error.message
+                : 'Não foi possível processar o pedido. Tente novamente.',
+              null,
+            );
       setSubmitError({
         code: orderError.code,
         message:
