@@ -75,7 +75,9 @@ const trackingOrder = {
     status_updated_at: '2026-08-10T12:00:00Z',
     completed_at: null,
     cancelled_at: null,
-    items: [{ name: 'X-Salada', unit_price: '29.90', quantity: 2, line_total: '59.80' }],
+    items: [
+      { name: 'X-Salada', unit_price: '29.90', quantity: 2, line_total: '59.80', options: [] },
+    ],
   },
 };
 

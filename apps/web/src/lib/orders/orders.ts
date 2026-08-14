@@ -28,7 +28,14 @@ export type PublicOrderErrorCode =
   | 'PED49'
   | 'PED50'
   | 'PED51'
-  | 'PED52';
+  | 'PED52'
+  | 'PED72'
+  | 'PED73'
+  | 'PED74'
+  | 'PED75'
+  | 'PED76'
+  | 'PED77'
+  | 'PED78';
 
 export const SERVICE_MODE_LABELS: Record<ServiceMode, string> = {
   pickup: 'Retirada',
@@ -79,6 +86,13 @@ export const PUBLIC_ORDER_ERROR_MESSAGES: Record<PublicOrderErrorCode, string> =
   PED50: 'O valor do pedido excede o limite permitido.',
   PED51: 'O Clube Ped-On está indisponível. Seus dados foram preservados.',
   PED52: 'A consulta do Clube expirou. Identifique-se novamente para acumular pontos.',
+  PED72: 'Um grupo de opções não está mais disponível. Revise o carrinho.',
+  PED73: 'A configuração de um item não é mais válida. Revise o carrinho.',
+  PED74: 'Uma opção escolhida não foi encontrada. Revise o carrinho.',
+  PED75: 'Uma opção escolhida ficou indisponível. Revise o carrinho antes de continuar.',
+  PED76: 'Complete as opções obrigatórias antes de enviar o pedido.',
+  PED77: 'Revise a quantidade de opções selecionadas em cada item.',
+  PED78: 'Uma opção escolhida não pertence ao item ou cardápio atual. Revise o carrinho.',
 };
 
 export const ORDER_NETWORK_ERROR_MESSAGE =
@@ -97,6 +111,7 @@ export interface PublicOrderItemInput {
   menu_item_id: string;
   quantity: number;
   note?: string;
+  options?: string[];
 }
 
 export interface PublicDeliveryAddressInput {
@@ -136,11 +151,21 @@ export interface CreatePublicOrderResult {
   created_at: string;
 }
 
+export type OrderItemOptionKind = 'variation' | 'addon' | 'removal';
+
+export interface PublicOrderTrackingOption {
+  group_name: string;
+  group_kind: OrderItemOptionKind;
+  option_name: string;
+  price_delta: string;
+}
+
 export interface PublicOrderTrackingItem {
   name: string;
   unit_price: string;
   quantity: number;
   line_total: string;
+  options: PublicOrderTrackingOption[];
 }
 
 export interface PublicOrderTrackingFound {
@@ -208,6 +233,16 @@ export interface AdminDeliveryAddress {
   reference: string | null;
 }
 
+export interface AdminOrderItemOption {
+  id: string;
+  group_id: string;
+  group_name: string;
+  group_kind: OrderItemOptionKind;
+  option_id: string;
+  option_name: string;
+  price_delta: string;
+}
+
 export interface AdminOrderItem {
   id: string;
   menu_item_id: string;
@@ -216,7 +251,7 @@ export interface AdminOrderItem {
   quantity: number;
   line_total: string;
   note: string | null;
-  created_at: string;
+  options: AdminOrderItemOption[];
 }
 
 export interface AdminOrderEvent {
@@ -271,7 +306,7 @@ export class AdminOrderError extends Error {
 
 export function extractPublicOrderError(error: RpcError): PublicOrderError {
   const content = `${error.code ?? ''} ${error.message ?? ''}`;
-  const matched = content.match(/\bPED(?:3[3-9]|4\d|5[0-2])\b/)?.[0] as
+  const matched = content.match(/\bPED(?:3[3-9]|4\d|5[0-2]|7[2-8])\b/)?.[0] as
     PublicOrderErrorCode | undefined;
   if (matched !== undefined) {
     return new PublicOrderError(PUBLIC_ORDER_ERROR_MESSAGES[matched], matched);

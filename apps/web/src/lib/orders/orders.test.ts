@@ -49,6 +49,25 @@ describe('orders contract', () => {
     );
   });
 
+  it.each([
+    ['PED72', 'grupo de opções'],
+    ['PED73', 'configuração'],
+    ['PED74', 'não foi encontrada'],
+    ['PED75', 'indisponível'],
+    ['PED76', 'obrigatórias'],
+    ['PED77', 'quantidade de opções'],
+    ['PED78', 'não pertence'],
+  ] as const)('sanitiza %s sem expor SQLSTATE', (code, message) => {
+    const error = extractPublicOrderError({
+      code: 'P0001',
+      message: `${code} INTERNAL_DATABASE_MESSAGE`,
+      details: 'sensitive SQL details',
+    });
+    expect(error.code).toBe(code);
+    expect(error.message).toContain(message);
+    expect(error.message).not.toMatch(/INTERNAL|SQL|P0001/);
+  });
+
   it('sanitiza erros administrativos sem expor SQLSTATE ou detalhes internos', () => {
     const error = extractAdminOrderError({
       code: 'PED47',

@@ -21,6 +21,7 @@ import type {
   CreatePublicOrderPayload,
   PaymentMethodCode,
   PublicOrderErrorCode,
+  PublicOrderItemInput,
   ServiceMode,
 } from '../lib/orders/orders';
 import type { PublicMenuData } from '../lib/menu/menu';
@@ -388,11 +389,15 @@ export function CheckoutPage() {
       return;
     }
 
-    const payloadItems = cart.items.map((item) => {
+    const payloadItems: PublicOrderItemInput[] = cart.items.map((item) => {
       const note = optional(item.note);
-      return note === undefined
-        ? { menu_item_id: item.menu_item_id, quantity: item.quantity }
-        : { menu_item_id: item.menu_item_id, quantity: item.quantity, note };
+      const options = item.options.map((option) => option.menu_option_id).sort();
+      return {
+        menu_item_id: item.menu_item_id,
+        quantity: item.quantity,
+        ...(note === undefined ? {} : { note }),
+        ...(options.length === 0 ? {} : { options }),
+      };
     });
     const payload: CreatePublicOrderPayload = {
       menu_version_id: menu.menu.version_id,
@@ -477,7 +482,8 @@ export function CheckoutPage() {
       if (
         orderError.code === 'PED35' ||
         orderError.code === 'PED36' ||
-        orderError.code === 'PED38'
+        orderError.code === 'PED38' ||
+        (orderError.code !== null && /^PED7[2-8]$/.test(orderError.code))
       ) {
         await queryClient.invalidateQueries({
           queryKey: publicMenuQueryKey(publicSlug),
@@ -550,13 +556,19 @@ export function CheckoutPage() {
         </p>
 
         {submitError !== null && (
-          <p
-            role="alert"
-            aria-live="assertive"
-            className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700"
-          >
-            {submitError.message}
-          </p>
+          <div className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+            <p role="alert" aria-live="assertive">
+              {submitError.message}
+            </p>
+            {submitError.code !== null && /^PED7[2-8]$/.test(submitError.code) && (
+              <Link
+                to={`/menu/${publicSlug}/carrinho`}
+                className="mt-3 inline-flex min-h-11 items-center rounded-md border border-red-300 px-3 font-semibold"
+              >
+                Revisar carrinho
+              </Link>
+            )}
+          </div>
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-5 space-y-5">

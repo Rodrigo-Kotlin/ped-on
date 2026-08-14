@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { formatBRL } from '../lib/money';
+import { orderOptionLabel } from '../lib/orders/order-option-label';
 import {
   fetchPublicOrder,
   isTerminalOrderStatus,
@@ -122,6 +123,15 @@ export function TrackingPage() {
                   </p>
                   <p className="shrink-0 font-medium">{formatBRL(item.line_total)}</p>
                 </div>
+                {(item.options ?? []).length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-sm text-pedon-text/70">
+                    {(item.options ?? []).map((option, optionIndex) => (
+                      <li key={`${option.group_name}-${option.option_name}-${optionIndex}`}>
+                        {orderOptionLabel(option)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <p className="mt-1 text-xs text-pedon-text/60">{formatBRL(item.unit_price)} cada</p>
               </li>
             ))}

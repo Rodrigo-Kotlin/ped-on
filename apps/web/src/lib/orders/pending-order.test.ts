@@ -74,6 +74,27 @@ describe('pending order attempt', () => {
     );
   });
 
+  it('inclui a configuração de opções no fingerprint idempotente', async () => {
+    const payload: CreatePublicOrderPayload = {
+      menu_version_id: 'v1',
+      operation_revision: 'r1',
+      service_mode: 'pickup',
+      payment_method: 'pix',
+      customer: { name: 'Maria', phone: '11999999999' },
+      items: [{ menu_item_id: 'item-1', quantity: 1, options: ['option-a', 'option-b'] }],
+    };
+    const samePayload = structuredClone(payload);
+    const differentConfiguration: CreatePublicOrderPayload = {
+      ...payload,
+      items: [{ menu_item_id: 'item-1', quantity: 1, options: ['option-c'] }],
+    };
+
+    expect(await fingerprintOrderPayload(samePayload)).toBe(await fingerprintOrderPayload(payload));
+    expect(await fingerprintOrderPayload(differentConfiguration)).not.toBe(
+      await fingerprintOrderPayload(payload),
+    );
+  });
+
   it('gera segredo de recovery aleatório sem derivar PII do payload', () => {
     const first = createAttemptRecoveryHash();
     const second = createAttemptRecoveryHash();

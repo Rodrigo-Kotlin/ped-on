@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAdmin } from '../lib/admin/admin-context';
 import { formatBRL } from '../lib/money';
 import { assertOnline } from '../lib/offline/useOnline';
+import { orderOptionLabel } from '../lib/orders/order-option-label';
 import { useCriticalOperation } from '../lib/pwa/critical-operation';
 import {
   fetchOrderAdmin,
@@ -318,6 +319,14 @@ function OrderDetail({
                 </span>
                 <span className="shrink-0">{formatBRL(item.line_total)}</span>
               </div>
+              {(item.options ?? []).length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-pedon-text/70">
+                  {(item.options ?? []).map((option) => (
+                    <li key={option.id}>{orderOptionLabel(option)}</li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-1 text-xs text-pedon-text/60">{formatBRL(item.unit_price)} cada</p>
               {item.note && (
                 <p className="mt-1 break-words text-pedon-text/70">Obs.: {item.note}</p>
               )}

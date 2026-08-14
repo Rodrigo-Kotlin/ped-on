@@ -71,7 +71,35 @@ function makeDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrderDetail
         quantity: 2,
         line_total: '30.00',
         note: 'Sem cebola',
-        created_at: createdAt,
+        options: [
+          {
+            id: 'item-option-1',
+            group_id: 'group-1',
+            group_name: 'Tamanho',
+            group_kind: 'variation',
+            option_id: 'option-1',
+            option_name: 'Duplo',
+            price_delta: '5.00',
+          },
+          {
+            id: 'item-option-2',
+            group_id: 'group-2',
+            group_name: 'Adicionais',
+            group_kind: 'addon',
+            option_id: 'option-2',
+            option_name: 'Bacon',
+            price_delta: '4.00',
+          },
+          {
+            id: 'item-option-3',
+            group_id: 'group-3',
+            group_name: 'Sem',
+            group_kind: 'removal',
+            option_id: 'option-3',
+            option_name: 'Sem cebola',
+            price_delta: '0.00',
+          },
+        ],
       },
       {
         id: 'item-2',
@@ -81,7 +109,7 @@ function makeDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrderDetail
         quantity: 1,
         line_total: '5.00',
         note: null,
-        created_at: createdAt,
+        options: [],
       },
     ],
     events: [
@@ -187,6 +215,11 @@ describe('PedidosPage', () => {
     expect(screen.getByText(/Rua das Flores, 123, Apto 4/)).toBeInTheDocument();
     expect(screen.getByText(/Referência: Ao lado da praça/)).toBeInTheDocument();
     expect(screen.getByText('Obs.: Sem cebola')).toBeInTheDocument();
+    expect(screen.getByText('Tamanho: Duplo')).toBeInTheDocument();
+    expect(screen.getByText('+ Bacon')).toBeInTheDocument();
+    expect(screen.getByText('Sem cebola', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('R$ 15,00 cada')).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/item-option-1|group-1|option-1/);
     expect(screen.getByText('Observação: Sem talheres')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Confirmar' }));

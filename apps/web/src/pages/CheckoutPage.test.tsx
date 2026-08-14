@@ -79,6 +79,39 @@ function seedCart() {
   );
 }
 
+function seedConfiguredCart() {
+  window.localStorage.setItem(
+    cartStorageKey('abc'),
+    JSON.stringify({
+      slug: 'abc',
+      menuVersionId: 'version-1',
+      items: [
+        {
+          menu_item_id: 'item-1',
+          name: 'X-Tudo',
+          unit_price: '29.90',
+          quantity: 1,
+          note: '',
+          options: [
+            {
+              menu_group_id: 'group-addon',
+              menu_option_id: 'option-z',
+              name: 'Bacon',
+              price_delta: '4.00',
+            },
+            {
+              menu_group_id: 'group-size',
+              menu_option_id: 'option-a',
+              name: 'Duplo',
+              price_delta: '5.00',
+            },
+          ],
+        },
+      ],
+    }),
+  );
+}
+
 function renderCheckout() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
@@ -145,6 +178,32 @@ describe('CheckoutPage', () => {
     );
     expect(window.localStorage.getItem(cartStorageKey('abc'))).toBeNull();
     expect(window.localStorage.getItem(pendingOrderStorageKey('abc'))).toBeNull();
+  });
+
+  it('envia somente IDs ordenados das opções e mantém preço e snapshots fora do payload', async () => {
+    const user = userEvent.setup();
+    seedConfiguredCart();
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'get_public_menu' ? { data: menu, error: null } : { data: success, error: null },
+      ),
+    );
+    renderCheckout();
+    await fillCustomer(user);
+
+    expect(screen.getAllByText('R$ 38,90')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+    await screen.findByText('Tracking aberto');
+
+    const payload = (
+      rpcCalls('create_public_order_v2')[0]![1] as { p_payload: Record<string, unknown> }
+    ).p_payload;
+    expect(payload.items).toEqual([
+      { menu_item_id: 'item-1', quantity: 1, options: ['option-a', 'option-z'] },
+    ]);
+    expect(JSON.stringify(payload)).not.toMatch(
+      /unit_price|price_delta|menu_group_id|options_fingerprint|X-Tudo|Duplo|Bacon/,
+    );
   });
 
   it('envia endereço, taxa, dinheiro e troco somente no fluxo delivery/cash', async () => {
@@ -314,6 +373,38 @@ describe('CheckoutPage', () => {
     expect(window.localStorage.getItem(cartStorageKey('abc'))).not.toBeNull();
   });
 
+  it.each([
+    ['PED72', 'grupo de opções'],
+    ['PED73', 'configuração de um item'],
+    ['PED74', 'opção escolhida não foi encontrada'],
+    ['PED75', 'ficou indisponível'],
+    ['PED76', 'opções obrigatórias'],
+    ['PED77', 'quantidade de opções'],
+    ['PED78', 'não pertence ao item ou cardápio atual'],
+  ])('preserva o carrinho e oferece revisão no erro %s', async (code, message) => {
+    const user = userEvent.setup();
+    seedConfiguredCart();
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'get_public_menu'
+          ? { data: menu, error: null }
+          : { data: null, error: { code, message: 'SQL details must stay hidden' } },
+      ),
+    );
+    renderCheckout();
+    await fillCustomer(user);
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByRole('link', { name: 'Revisar carrinho' })).toHaveAttribute(
+      'href',
+      '/menu/abc/carrinho',
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/SQL|PED7/i);
+    await waitFor(() => expect(rpcCalls('get_public_menu').length).toBeGreaterThanOrEqual(2));
+    expect(window.localStorage.getItem(cartStorageKey('abc'))).not.toBeNull();
+  });
+
   it('trata PED35 como stale com ação explícita e PED41 como mínimo não atingido', async () => {
     const user = userEvent.setup();
     let code = 'PED35';
@@ -400,6 +491,7 @@ describe('CheckoutPage', () => {
 
     it('vincula o CPF e inclui o token do Clube no pedido', async () => {
       const user = userEvent.setup();
+      seedConfiguredCart();
       mockRpcWithLoyalty();
       vi.mocked(fetch).mockResolvedValue(edgeResponse(200, foundPayload));
       renderCheckout();
@@ -421,6 +513,9 @@ describe('CheckoutPage', () => {
         rpcCalls('create_public_order_v2')[0]![1] as { p_payload: Record<string, unknown> }
       ).p_payload;
       expect(payload.loyalty_token).toBe('a'.repeat(64));
+      expect(payload.items).toEqual([
+        { menu_item_id: 'item-1', quantity: 1, options: ['option-a', 'option-z'] },
+      ]);
       const identityBody = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body)) as Record<
         string,
         unknown

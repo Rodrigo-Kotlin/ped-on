@@ -53,7 +53,35 @@ function orderFixture(status: OrderStatus, paymentStatus: PaymentStatus) {
         quantity: 1,
         line_total: '25.00',
         note: null,
-        created_at: CREATED_AT,
+        options: [
+          {
+            id: '99999999-9999-4999-8999-999999999991',
+            group_id: '99999999-9999-4999-8999-999999999992',
+            group_name: 'Tamanho',
+            group_kind: 'variation',
+            option_id: '99999999-9999-4999-8999-999999999993',
+            option_name: 'Duplo',
+            price_delta: '5.00',
+          },
+          {
+            id: '99999999-9999-4999-8999-999999999994',
+            group_id: '99999999-9999-4999-8999-999999999995',
+            group_name: 'Adicionais',
+            group_kind: 'addon',
+            option_id: '99999999-9999-4999-8999-999999999996',
+            option_name: 'Bacon',
+            price_delta: '4.00',
+          },
+          {
+            id: '99999999-9999-4999-8999-999999999997',
+            group_id: '99999999-9999-4999-8999-999999999998',
+            group_name: 'Sem',
+            group_kind: 'removal',
+            option_id: '99999999-9999-4999-8999-999999999999',
+            option_name: 'Sem cebola',
+            price_delta: '0.00',
+          },
+        ],
       },
     ],
     events: [
@@ -197,6 +225,11 @@ test('owner percorre lifecycle new até completed na central', async ({ page }) 
   await expect(page.getByText('Novo pedido')).toBeVisible();
   await page.getByRole('button', { name: /Abrir pedido 81/ }).click();
   await expect(page.getByRole('heading', { name: 'Pedido #81' })).toBeFocused();
+  await expect(page.getByText('Tamanho: Duplo')).toBeVisible();
+  await expect(page.getByText('+ Bacon')).toBeVisible();
+  await expect(page.getByText('Sem cebola')).toBeVisible();
+  await expect(page.getByText('R$ 25,00 cada')).toBeVisible();
+  await expect(page.getByText(/99999999-9999/)).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Confirmar' }).click();
   await page.getByRole('button', { name: 'Iniciar preparo' }).click();
