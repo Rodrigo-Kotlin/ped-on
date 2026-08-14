@@ -1,5 +1,5 @@
 import { renderWithProviders } from '@pedon/test-utils';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { Route, Routes } from 'react-router';
@@ -16,6 +16,7 @@ import type { AdminContextValue, AdminRole, AdminUnit } from '../lib/admin/admin
 import { AuthContext } from '../lib/auth/auth-context';
 import type { AuthContextValue } from '../lib/auth/auth-context';
 import { resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
+import { CriticalOperationProvider, useCriticalOperation } from '../lib/pwa/critical-operation';
 import { VouchersPage } from './VouchersPage';
 
 const unitOne = { id: 'unit-1', name: 'Loja Centro', is_active: true };
@@ -96,10 +97,18 @@ function ShellHarness({ role }: { role: AdminRole }) {
 
 function renderPage(value = adminValue()) {
   return renderWithProviders(
-    <PageContext value={value}>
-      <VouchersPage />
-    </PageContext>,
+    <CriticalOperationProvider>
+      <CriticalOperationProbe />
+      <PageContext value={value}>
+        <VouchersPage />
+      </PageContext>
+    </CriticalOperationProvider>,
   );
+}
+
+function CriticalOperationProbe() {
+  const { activeOperations } = useCriticalOperation();
+  return <span aria-label="Operações críticas">{activeOperations}</span>;
 }
 
 describe('VouchersPage', () => {
@@ -253,15 +262,17 @@ describe('VouchersPage', () => {
   it('recupera resposta perdida do consumo por lookup seguro', async () => {
     const user = userEvent.setup();
     let lookupCount = 0;
+    let resolveRecovery!: (value: { data: typeof issuedVoucher; error: null }) => void;
+    const recovery = new Promise<{ data: typeof issuedVoucher; error: null }>((resolve) => {
+      resolveRecovery = resolve;
+    });
     supabaseMock.rpc.mockImplementation((name: string) => {
       if (name === 'consume_loyalty_voucher') {
         return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
       }
       lookupCount += 1;
-      return Promise.resolve({
-        data: lookupCount === 1 ? issuedVoucher : { ...issuedVoucher, status: 'consumed' },
-        error: null,
-      });
+      if (lookupCount === 1) return Promise.resolve({ data: issuedVoucher, error: null });
+      return recovery;
     });
     renderPage();
 
@@ -272,7 +283,12 @@ describe('VouchersPage', () => {
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
     );
 
+    await waitFor(() => expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('1'));
+    await act(async () =>
+      resolveRecovery({ data: { ...issuedVoucher, status: 'consumed' }, error: null }),
+    );
     expect(await screen.findByText('Voucher utilizado com sucesso.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('0');
     expect(supabaseMock.rpc).toHaveBeenCalledTimes(3);
   });
 

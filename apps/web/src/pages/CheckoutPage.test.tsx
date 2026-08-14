@@ -15,6 +15,7 @@ import { pendingOrderStorageKey } from '../lib/orders/pending-order';
 import type { PublicMenuData } from '../lib/menu/menu';
 import { resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
 import { CheckoutPage } from './CheckoutPage';
+import { CartPage } from './CartPage';
 
 const menu: PublicMenuData = {
   found: true,
@@ -131,6 +132,23 @@ function renderCheckout() {
   return render(<CheckoutPage />, { wrapper: Wrapper });
 }
 
+function renderCartToCheckout() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/menu/abc/carrinho']}>
+        <CartProvider publicSlug="abc">
+          <Routes>
+            <Route path="/menu/:publicSlug/carrinho" element={<CartPage />} />
+            <Route path="/menu/:publicSlug/checkout" element={<CheckoutPage />} />
+            <Route path="/pedido/:trackingToken" element={<p>Tracking aberto</p>} />
+          </Routes>
+        </CartProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 async function fillCustomer(user: ReturnType<typeof userEvent.setup>) {
   await user.type(await screen.findByLabelText('Nome'), 'Maria Silva');
   await user.type(screen.getByLabelText('Telefone com DDD'), '(11) 99999-9999');
@@ -171,13 +189,38 @@ describe('CheckoutPage', () => {
       service_mode: 'pickup',
       payment_method: 'pix',
       customer: { name: 'Maria Silva', phone: '(11) 99999-9999' },
-      items: [{ menu_item_id: 'item-1', quantity: 1, note: 'Sem cebola' }],
+      items: [{ menu_item_id: 'item-1', quantity: 1 }],
     });
     expect(JSON.stringify(args.p_payload)).not.toMatch(
       /unit_price|price|total|organization|unit_id|name":"X-Salada/,
     );
     expect(window.localStorage.getItem(cartStorageKey('abc'))).toBeNull();
     expect(window.localStorage.getItem(pendingOrderStorageKey('abc'))).toBeNull();
+  });
+
+  it('leva a observação em memória do carrinho ao checkout sem persistir no navegador', async () => {
+    const user = userEvent.setup();
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'get_public_menu' ? { data: menu, error: null } : { data: success, error: null },
+      ),
+    );
+    renderCartToCheckout();
+
+    const note = await screen.findByLabelText('Observação do item');
+    expect(note).toHaveValue('');
+    await user.type(note, 'Sem cebola');
+    expect(window.localStorage.getItem(cartStorageKey('abc'))).not.toContain('Sem cebola');
+    expect(window.localStorage.getItem(cartStorageKey('abc'))).not.toContain('note');
+    await user.click(screen.getByRole('link', { name: 'Ir para checkout' }));
+    await fillCustomer(user);
+    await user.click(screen.getByRole('button', { name: 'Enviar pedido' }));
+
+    expect(await screen.findByText('Tracking aberto')).toBeInTheDocument();
+    const args = rpcCalls('create_public_order_v2')[0]![1] as Record<string, unknown>;
+    expect(args.p_payload).toMatchObject({
+      items: [{ menu_item_id: 'item-1', quantity: 1, note: 'Sem cebola' }],
+    });
   });
 
   it('envia somente IDs ordenados das opções e mantém preço e snapshots fora do payload', async () => {

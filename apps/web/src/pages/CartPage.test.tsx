@@ -85,9 +85,10 @@ describe('CartPage', () => {
     expect(screen.getAllByText('R$ 20,20')).toHaveLength(2);
 
     await user.type(screen.getByLabelText('Observação do item'), 'Sem cebola');
-    expect(JSON.parse(window.localStorage.getItem(cartStorageKey('abc'))!).items[0].note).toBe(
-      'Sem cebola',
-    );
+    expect(screen.getByLabelText('Observação do item')).toHaveValue('Sem cebola');
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('abc'))!).items[0].note,
+    ).toBeUndefined();
 
     await user.click(screen.getByRole('button', { name: 'Remover' }));
     expect(screen.getByText('Seu carrinho está vazio.')).toBeInTheDocument();

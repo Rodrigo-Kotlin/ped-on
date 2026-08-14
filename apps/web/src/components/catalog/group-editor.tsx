@@ -59,6 +59,13 @@ function groupSchema() {
           message: 'O mínimo não pode ser maior que o máximo.',
         });
       }
+      if (values.selection_mode === 'single' && values.max_select !== 1) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['max_select'],
+          message: 'Escolha única permite selecionar no máximo 1 opção.',
+        });
+      }
       if (values.kind === 'variation' && values.selection_mode !== 'single') {
         ctx.addIssue({
           code: 'custom',
@@ -126,6 +133,7 @@ export function GroupEditor({ submitLabel, initial, onSubmit, onCancel }: GroupE
   });
 
   const kind = useWatch({ control, name: 'kind' });
+  const selectionMode = useWatch({ control, name: 'selection_mode' });
 
   function handleKindChange(nextKind: OptionGroupKind) {
     setValue('kind', nextKind, { shouldValidate: true });
@@ -139,6 +147,13 @@ export function GroupEditor({ submitLabel, initial, onSubmit, onCancel }: GroupE
     } else if (nextKind === 'addon' && kind === 'variation') {
       setValue('selection_mode', 'multiple');
       setValue('max_select', 5);
+    }
+  }
+
+  function handleSelectionModeChange(nextMode: OptionSelectionMode) {
+    setValue('selection_mode', nextMode, { shouldValidate: true });
+    if (nextMode === 'single') {
+      setValue('max_select', 1, { shouldValidate: true });
     }
   }
 
@@ -202,6 +217,9 @@ export function GroupEditor({ submitLabel, initial, onSubmit, onCancel }: GroupE
               errors.selection_mode !== undefined ? `group-mode-error-${formId}` : undefined
             }
             {...register('selection_mode')}
+            onChange={(event) =>
+              handleSelectionModeChange(event.target.value as OptionSelectionMode)
+            }
           >
             <option value="single">{SELECTION_MODE_LABELS.single}</option>
             <option value="multiple">{SELECTION_MODE_LABELS.multiple}</option>
@@ -255,7 +273,7 @@ export function GroupEditor({ submitLabel, initial, onSubmit, onCancel }: GroupE
             inputMode="numeric"
             min={1}
             max={50}
-            disabled={isVariation}
+            disabled={isVariation || selectionMode === 'single'}
             className={inputClass}
             aria-invalid={errors.max_select !== undefined}
             aria-describedby={

@@ -657,6 +657,7 @@ async function run() {
       ['addon', 'multiple', -1, 1],
       ['addon', 'multiple', 0, 51],
       ['addon', 'multiple', 2, 1],
+      ['addon', 'single', 0, 2],
       ['variation', 'multiple', 1, 1],
       ['variation', 'single', 1, 2],
       ['removal', 'single', 0, 1],
@@ -1581,6 +1582,19 @@ async function run() {
     );
     ok(!constraintNames.has('order_items_order_menu_item_key'), '9.4 unicidade legada removida');
 
+    const singleConstraints = await admin.query(
+      `select conname
+       from pg_constraint
+       where conrelid = any($1::regclass[])`,
+      [['public.catalog_product_option_groups', 'public.menu_version_option_groups']],
+    );
+    const singleConstraintNames = new Set(singleConstraints.rows.map((row) => row.conname));
+    ok(
+      singleConstraintNames.has('catalog_product_option_groups_single_check') &&
+        singleConstraintNames.has('menu_version_option_groups_single_check'),
+      '9.4a single implica max_select 1 no catalogo e snapshot',
+    );
+
     const helperGrants = await admin.query(
       `select routine_name, grantee
        from information_schema.role_routine_grants
@@ -1593,6 +1607,9 @@ async function run() {
           '_options_fingerprint',
           '_validate_option_delta_by_kind',
           '_guard_option_group_kind_change',
+          '_guard_option_group_single_rule',
+          '_lock_product_option_structure',
+          '_guard_order_item_option_live_selection',
           '_order_tracking_json',
           '_order_admin_json',
         ],
@@ -1691,6 +1708,77 @@ async function run() {
       )
     ).rows[0].count;
     ok(remainingOptions > 0, '10.2 snapshot preserva historico mesmo com fonte removida');
+
+    scenario(11, 'hardening concorrente de checkout e publicacao');
+    const raceProduct = productByName(currentMenu, 'Configuravel Alterado');
+    const raceSize = optionByName(groupByName(raceProduct, 'Tamanho'), 'Grande');
+    const raceAddon = optionByName(groupByName(raceProduct, 'Adicionais'), 'Bacon Especial');
+    const raceKey = randomUUID();
+    const rejectedRaceKey = randomUUID();
+    const racePayload = makePayload(currentMenu, [
+      {
+        menu_item_id: raceProduct.id,
+        quantity: 1,
+        note: null,
+        options: [raceSize.id, raceAddon.id],
+      },
+    ]);
+    const raceAnon = await anonClient();
+    openClients.push(raceAnon);
+
+    await raceAnon.query('begin');
+    const raceCreation = await checkout(raceAnon, slugA1, raceKey, racePayload);
+    await operatorAS.query(`set lock_timeout = '200ms'`);
+    await expectError(
+      operatorAS,
+      'select public.set_catalog_product_option_available($1, false)',
+      [bacon.id],
+      '55P03',
+      '11.0 toggle aguarda checkout que bloqueou a opcao disponivel',
+    );
+    await raceAnon.query('commit');
+    await operatorAS.query(`set lock_timeout = '0'`);
+    await setOptionAvailable(operatorAS, bacon.id, false);
+    ok(
+      (await tracking(anon, raceCreation.tracking_token)).found === true,
+      '11.1 checkout vencedor persiste integralmente antes do toggle',
+    );
+    await expectError(
+      anon,
+      'select public.create_public_order($1, $2, $3::jsonb)',
+      [slugA1, rejectedRaceKey, JSON.stringify(racePayload)],
+      'PED75',
+      '11.2 checkout posterior ao toggle recebe PED75',
+    );
+    const rejectedRaceOrders = await admin.query(
+      'select count(*)::int as count from public.orders where idempotency_key = $1',
+      [rejectedRaceKey],
+    );
+    ok(rejectedRaceOrders.rows[0].count === 0, '11.3 falha PED75 nao deixa pedido parcial');
+    await setOptionAvailable(operatorAS, bacon.id, true);
+
+    const publisherS = await sessionFor(ownerA.id);
+    openClients.push(publisherS);
+    await ownerAS.query('begin');
+    await updateOption(ownerAS, bacon.id, 'Bacon Serializado', '9.99');
+    await publisherS.query(`set lock_timeout = '200ms'`);
+    await expectError(
+      publisherS,
+      'select public.publish_unit_menu($1)',
+      [unitA1],
+      '55P03',
+      '11.4 publicacao aguarda mutacao estrutural do produto',
+    );
+    await ownerAS.query('commit');
+    await publisherS.query(`set lock_timeout = '0'`);
+    await publish(publisherS, unitA1);
+    const serializedMenu = await publicMenu(anon, slugA1);
+    const serializedProduct = productByName(serializedMenu, 'Configuravel Alterado');
+    const serializedAddon = optionByName(
+      groupByName(serializedProduct, 'Adicionais'),
+      'Bacon Serializado',
+    );
+    ok(serializedAddon !== undefined, '11.5 snapshot publicado observa mutacao completa');
 
     ok(passed + failed >= 100, '11.0 suite planeja ao menos 100 checks executados');
   } finally {

@@ -70,7 +70,55 @@ describe('cart storage', () => {
     ).toEqual([]);
     expect(parseStoredCart(JSON.stringify(cart), 'outro').items).toEqual([]);
     persistCart({ ...cart, items: [{ ...cart.items[0]!, note: '<script>' }] });
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('abc'))!).items[0].note,
+    ).toBeUndefined();
+  });
+
+  it('mantém observação somente em memória e purga valores legados de todos os slugs', () => {
+    const withNote: PublicCart = {
+      ...cart,
+      items: [{ ...cart.items[0]!, note: 'Sem cebola para Maria' }],
+    };
+
+    persistCart(withNote);
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('abc'))!).items[0].note,
+    ).toBeUndefined();
+    expect(loadCart('abc').items[0]?.note).toBe('');
+
+    const legacyWithNote = JSON.stringify(withNote);
+    window.localStorage.setItem(cartStorageKey('abc'), legacyWithNote);
+    window.localStorage.setItem(
+      cartStorageKey('outro'),
+      JSON.stringify({
+        ...withNote,
+        slug: 'outro',
+        items: [{ ...withNote.items[0]!, note: 'PII' }],
+      }),
+    );
+    expect(loadCart('abc').items[0]?.note).toBe('');
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('abc'))!).items[0].note,
+    ).toBeUndefined();
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('outro'))!).items[0].note,
+    ).toBeUndefined();
+  });
+
+  it('remove o payload legado se a regravação saneada falhar', () => {
+    const legacyWithNote = JSON.stringify({
+      ...cart,
+      items: [{ ...cart.items[0]!, note: 'Dado privado legado' }],
+    });
+    window.localStorage.setItem(cartStorageKey('abc'), legacyWithNote);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Full', 'QuotaExceededError');
+    });
+
+    expect(loadCart('abc').items).toEqual([]);
     expect(window.localStorage.getItem(cartStorageKey('abc'))).toBeNull();
+    setItem.mockRestore();
   });
 
   it('marca stale sem alterar versão, preço, nome ou itens', () => {

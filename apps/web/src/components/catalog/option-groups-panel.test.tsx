@@ -249,6 +249,32 @@ describe('OptionGroupsPanel', () => {
     );
   });
 
+  it('fixa o máximo em 1 para qualquer grupo de escolha única', async () => {
+    const user = userEvent.setup();
+    const { rpc } = renderPanel({ groups: [], optionsList: [] });
+
+    await waitForLoadedEmptyPanel();
+    await openNewGroupForm();
+    await user.type(screen.getByLabelText('Nome do grupo'), 'Molho principal');
+    await user.selectOptions(screen.getByLabelText('Modo de seleção'), 'single');
+
+    expect(screen.getByLabelText('Máximo')).toBeDisabled();
+    expect(screen.getByLabelText('Máximo')).toHaveValue(1);
+    await user.click(screen.getByRole('button', { name: 'Criar grupo' }));
+
+    await waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith('create_catalog_product_option_group', {
+        p_unit_id: 'unit-1',
+        p_product_id: 'product-1',
+        p_name: 'Molho principal',
+        p_kind: 'addon',
+        p_selection_mode: 'single',
+        p_min_select: 0,
+        p_max_select: 1,
+      }),
+    );
+  });
+
   it('cria um grupo de remoções com mínimo fixo em 0 e sem acréscimo', async () => {
     const user = userEvent.setup();
     const { rpc } = renderPanel({ groups: [], optionsList: [] });

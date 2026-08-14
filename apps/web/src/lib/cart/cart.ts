@@ -4,6 +4,7 @@ import { isPlainText } from '../plain-text';
 export const CART_ITEM_LIMIT = 50;
 export const CART_QUANTITY_LIMIT = 99;
 export const CART_ITEM_OPTIONS_LIMIT = 50;
+const CART_STORAGE_PREFIX = 'pedon:cart:';
 
 export interface CartItemOption {
   menu_group_id: string;
@@ -31,7 +32,7 @@ const moneyPattern = /^(0|[1-9]\d*)(?:\.\d{1,2})?$/;
 const signedMoneyPattern = /^-?(0|[1-9]\d*)(?:\.\d{1,2})?$/;
 
 export function cartStorageKey(publicSlug: string): string {
-  return `pedon:cart:${publicSlug}`;
+  return `${CART_STORAGE_PREFIX}${publicSlug}`;
 }
 
 export function emptyCart(publicSlug: string): PublicCart {
@@ -75,9 +76,12 @@ function isValidOptions(value: unknown): value is CartItemOption[] {
 export function isValidCartItem(value: unknown): value is CartItem {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
+  const keysWithoutNote = ['menu_item_id', 'name', 'unit_price', 'quantity'];
   if (
-    !isExactKeys(item, ['menu_item_id', 'name', 'unit_price', 'quantity', 'note', 'options']) &&
-    !isExactKeys(item, ['menu_item_id', 'name', 'unit_price', 'quantity', 'note'])
+    !isExactKeys(item, [...keysWithoutNote, 'options']) &&
+    !isExactKeys(item, [...keysWithoutNote, 'note', 'options']) &&
+    !isExactKeys(item, keysWithoutNote) &&
+    !isExactKeys(item, [...keysWithoutNote, 'note'])
   ) {
     return false;
   }
@@ -95,9 +99,8 @@ export function isValidCartItem(value: unknown): value is CartItem {
     Number.isInteger(item.quantity) &&
     item.quantity >= 1 &&
     item.quantity <= CART_QUANTITY_LIMIT &&
-    typeof item.note === 'string' &&
-    item.note.length <= 300 &&
-    isPlainText(item.note) &&
+    (item.note === undefined ||
+      (typeof item.note === 'string' && item.note.length <= 300 && isPlainText(item.note))) &&
     (item.options === undefined || isValidOptions(item.options))
   );
 }
@@ -109,7 +112,7 @@ function normalizeCartItem(value: unknown): CartItem {
     name: String(item.name),
     unit_price: String(item.unit_price),
     quantity: Number(item.quantity),
-    note: String(item.note),
+    note: '',
     options: Array.isArray(item.options) ? (item.options as CartItemOption[]) : [],
   };
 }
@@ -146,6 +149,16 @@ export function parseStoredCart(raw: string | null, publicSlug: string): PublicC
 export function loadCart(publicSlug: string): PublicCart {
   if (typeof window === 'undefined') return emptyCart(publicSlug);
   try {
+    const storedKeys = Array.from({ length: window.localStorage.length }, (_, index) =>
+      window.localStorage.key(index),
+    ).filter((key): key is string => key?.startsWith(CART_STORAGE_PREFIX) === true);
+
+    for (const key of storedKeys) {
+      const slug = key.slice(CART_STORAGE_PREFIX.length);
+      const raw = window.localStorage.getItem(key);
+      if (raw !== null) persistCart(parseStoredCart(raw, slug));
+    }
+
     return parseStoredCart(window.localStorage.getItem(cartStorageKey(publicSlug)), publicSlug);
   } catch {
     return emptyCart(publicSlug);
@@ -154,19 +167,34 @@ export function loadCart(publicSlug: string): PublicCart {
 
 export function persistCart(cart: PublicCart): void {
   if (typeof window === 'undefined') return;
+  const key = cartStorageKey(cart.slug);
   try {
     if (cart.items.length === 0) {
-      window.localStorage.removeItem(cartStorageKey(cart.slug));
+      window.localStorage.removeItem(key);
       return;
     }
-    const serialized = JSON.stringify(cart);
+    const serialized = JSON.stringify({
+      ...cart,
+      items: cart.items.map(({ menu_item_id, name, unit_price, quantity, options }) => ({
+        menu_item_id,
+        name,
+        unit_price,
+        quantity,
+        options,
+      })),
+    });
     if (parseStoredCart(serialized, cart.slug).items.length !== cart.items.length) {
-      window.localStorage.removeItem(cartStorageKey(cart.slug));
+      window.localStorage.removeItem(key);
       return;
     }
-    window.localStorage.setItem(cartStorageKey(cart.slug), serialized);
+    window.localStorage.setItem(key, serialized);
   } catch {
-    // Storage may be blocked or full. The in-memory cart remains usable.
+    // Never retain an older payload that may contain a free-form note.
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Storage may be completely blocked. The in-memory cart remains usable.
+    }
   }
 }
 

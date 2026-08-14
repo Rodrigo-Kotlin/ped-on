@@ -137,7 +137,7 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
   const consumeMutation = useMutation({
     mutationFn: (voucherCode: string) => {
       assertOnline();
-      return runCriticalOperation(() => consumeLoyaltyVoucher(unitId, voucherCode));
+      return consumeLoyaltyVoucher(unitId, voucherCode);
     },
   });
 
@@ -174,36 +174,38 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
     if (voucher === null || voucher.status !== 'issued') return;
     setError(null);
     setMessage(null);
-    try {
-      const consumed = await consumeMutation.mutateAsync(voucher.code);
-      setVoucher(consumed);
-      setMessage(CONSUMED_SUCCESS_MESSAGE);
-      closeConfirmation(false);
-    } catch (caught) {
-      if (caught instanceof StaffVoucherError && caught.code === 'PED61') {
-        setVoucher({ ...voucher, status: 'consumed' });
-        setMessage(ALREADY_CONSUMED_MESSAGE);
+    await runCriticalOperation(async () => {
+      try {
+        const consumed = await consumeMutation.mutateAsync(voucher.code);
+        setVoucher(consumed);
+        setMessage(CONSUMED_SUCCESS_MESSAGE);
         closeConfirmation(false);
-        return;
-      }
-
-      if (caught instanceof StaffVoucherError && caught.ambiguous) {
-        try {
-          const recovered = await getLoyaltyVoucherStaff(unitId, voucher.code);
-          if (recovered.found && recovered.status === 'consumed') {
-            setVoucher(recovered);
-            setMessage(CONSUMED_SUCCESS_MESSAGE);
-            closeConfirmation(false);
-            return;
-          }
-        } catch {
-          // Preserve the original consume error when recovery cannot prove success.
+      } catch (caught) {
+        if (caught instanceof StaffVoucherError && caught.code === 'PED61') {
+          setVoucher({ ...voucher, status: 'consumed' });
+          setMessage(ALREADY_CONSUMED_MESSAGE);
+          closeConfirmation(false);
+          return;
         }
-      }
 
-      setError(caught instanceof Error ? caught.message : 'Não foi possível utilizar o voucher.');
-      closeConfirmation();
-    }
+        if (caught instanceof StaffVoucherError && caught.ambiguous) {
+          try {
+            const recovered = await getLoyaltyVoucherStaff(unitId, voucher.code);
+            if (recovered.found && recovered.status === 'consumed') {
+              setVoucher(recovered);
+              setMessage(CONSUMED_SUCCESS_MESSAGE);
+              closeConfirmation(false);
+              return;
+            }
+          } catch {
+            // Preserve the original consume error when recovery cannot prove success.
+          }
+        }
+
+        setError(caught instanceof Error ? caught.message : 'Não foi possível utilizar o voucher.');
+        closeConfirmation();
+      }
+    });
   }
 
   return (
