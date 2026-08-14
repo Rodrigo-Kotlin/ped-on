@@ -15,11 +15,11 @@
 | STATUS                 | `IN PROGRESS` — Etapa 4 concluída                                                                                                                                                                                                                                                          |
 | CHECKPOINT             | `PUBLIC FLOW IMPLEMENTED` — cardápio, personalização, carrinho, checkout, pedido, tracking e detalhe administrativo integrados; Etapa 5 pendente                                                                                                                                             |
 | HEAD INICIAL DO PROMPT | `3a6cd42` — Prompt 11 encerrado (`RELEASE_VERIFIED`)                                                                                                                                                                                                                                       |
-| HEAD TÉCNICO VALIDADO  | `a8afcb1a0e3f8f05df8086c61ab6e2652b910cef` — integração pública de options no checkout/order/tracking/admin                                                                                                                                                                                 |
+| HEAD TÉCNICO VALIDADO  | `3610be50e27014751b825f8b67740d118041591a` — integração pública de options e bloqueio offline explícito no checkout                                                                                                                                                                          |
 | BACKEND                | `IMPLEMENTED / VERIFIED` — migration 20 (`catalog_product_option_groups`/`catalog_product_options`, snapshot de publicação, `order_item_options` e validação de seleção no checkout); CI `31761944228` aprovou fresh rebuild das 20 migrations, DB lint e dez suítes DB com 1332/1332 checks  |
 | FRONTEND               | `PUBLIC FLOW IMPLEMENTED` — personalizador público, linhas canônicas no carrinho, IDs de snapshot no checkout, UX `PED72`–`PED78`, snapshots no tracking e detalhe administrativo; backend e cálculo autoritativo preservados                                                               |
 | OPÇÕES DE PRODUTO      | kinds `variation`/`addon`/`removal`; `single`/`multiple`; min/max validados no servidor; `price_delta` decimal exato com `unit_price = base + SUM(delta)` no checkout; snapshot imutável na publicação (`menu_version_*`) e por linha no pedido (`order_item_options`)                       |
-| TESTES VERIFICADOS     | Etapa 4 local: frontend 349/349; E2E 345/345 com 3 skips móveis intencionais; Prompt 12 4B 20/20; build, lint, typecheck, precache e gitleaks PASS; baseline DB/Edge anterior preservado em 1332/1332 e 15/15                                                                                |
+| TESTES VERIFICADOS     | Etapa 4 local: frontend 350/350; E2E 345/345 com 3 skips móveis intencionais; Prompt 12 4B 20/20; build, lint, typecheck, precache e gitleaks PASS; baseline DB/Edge anterior preservado em 1332/1332 e 15/15                                                                                |
 | PWA                    | Atualização por prompt explícito; aplicação bloqueada durante checkout, order mutation, redemption, voucher consume e team assignment/removal; runtime cache de API `NONE`; precache sem duplicatas após audit estático                                                                      |
 | CLOUDFLARE             | URLs vigentes do Prompt 11 mantidas: imutável `https://8f7d42fd.ped-on.pages.dev` e estável `https://ped-on.pages.dev`; sem alteração de deploy nesta etapa                                                                                                                                  |
 | GITHUB ACTIONS         | CI `31761944228` aprovado para o HEAD técnico, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                             |
@@ -116,7 +116,7 @@
 
 ## Checkpoint Prompt 12 — `PUBLIC FLOW IMPLEMENTED` (Etapa 4)
 
-- HEAD técnico: `a8afcb1a0e3f8f05df8086c61ab6e2652b910cef` — checkout envia somente `menu_item_id`, `quantity`, nota opcional e
+- HEAD técnico: `3610be50e27014751b825f8b67740d118041591a` — checkout envia somente `menu_item_id`, `quantity`, nota opcional e
   `options` com IDs de snapshot ordenados; não envia preço, delta, nomes, grupos ou fingerprint.
 - `create_public_order_v2`, idempotência, recovery, Clube e limpeza do carrinho após confirmação
   permanecem inalterados; preço final e snapshots continuam autoritativos no PostgreSQL.
@@ -124,7 +124,7 @@
   remapeia IDs antigos e mantém a revisão explícita do carrinho stale.
 - Tracking público e detalhe administrativo exibem variação, adicionais e remoções a partir de
   `order_item_options`; IDs técnicos não são apresentados e pedidos simples antigos seguem legíveis.
-- Gates locais: frontend 349/349; E2E 345/345 com 3 skips móveis intencionais; suíte 4B 20/20;
+- Gates locais: frontend 350/350; E2E 345/345 com 3 skips móveis intencionais; suíte 4B 20/20;
   format, lint, typecheck, build, precache, gitleaks e `git diff --check` aprovados.
 - Backend sem alteração; migrations permanecem 20/20. Próximo: Etapa 5 e reauditoria independente.
 
@@ -144,4 +144,4 @@
 | Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED                       | `2013e8d`                                  | 2026-08-11 |
 | Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; encerramento oficial (`2a91711`, `453af65`) | 2026-08-12 |
 | Fase 4A — Pilot Ready             | Prompt 11 — Pilot Readiness e Product Hardening         | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; auditado `3a6cd42`, CI `31713901328`, deploy `8f7d42fd` | 2026-08-13 |
-| Fase 4A — Pilot Ready             | Prompt 12 — Produtos, Variações e Adicionais            | IN PROGRESS — PUBLIC FLOW IMPLEMENTED | Etapa 4 `a8afcb1`, migrations 20/20, frontend 349/349, E2E 345/345 | 2026-08-14 |
+| Fase 4A — Pilot Ready             | Prompt 12 — Produtos, Variações e Adicionais            | IN PROGRESS — PUBLIC FLOW IMPLEMENTED | Etapa 4 `3610be5`, migrations 20/20, frontend 350/350, E2E 345/345 | 2026-08-14 |
