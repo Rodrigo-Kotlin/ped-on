@@ -40,6 +40,17 @@ describe('extractMenuError', () => {
     expect(parsed.message).toContain('cardápio está vazio');
   });
 
+  it('mapeia PED73 como erro explícito de grupo sem opções ativas suficientes', () => {
+    const parsed = extractMenuError({
+      code: 'P0001',
+      message: 'PED73: INVALID_SELECTION_RULE: must have at least one active option',
+    });
+    expect(parsed.code).toBe('PED73');
+    expect(parsed.message).toContain('grupo obrigatório não possui opções ativas suficientes');
+    expect(parsed.message).not.toContain('INVALID_SELECTION_RULE');
+    expect(parsed.message).not.toContain('P0001');
+  });
+
   it('cai na mensagem bruta quando não há código conhecido', () => {
     const parsed = extractMenuError({ code: 'P9999', message: 'Falha inesperada' });
     expect(parsed.code).toBe('P9999');

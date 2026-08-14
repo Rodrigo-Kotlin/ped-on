@@ -14,6 +14,9 @@ import type { StaffVoucher } from '../lib/loyalty/staff-vouchers';
 
 const ALREADY_CONSUMED_MESSAGE = 'Este voucher já foi utilizado.';
 const CONSUMED_SUCCESS_MESSAGE = 'Voucher utilizado com sucesso.';
+const RECOVERY_PENDING_MESSAGE =
+  'Não foi possível confirmar se o voucher foi utilizado. Verifique novamente antes de continuar.';
+const RECOVERY_ISSUED_MESSAGE = 'O consumo não foi confirmado. Tente novamente.';
 
 function formatPoints(value: string): string {
   try {
@@ -118,14 +121,17 @@ function ConfirmationDialog({
 }
 
 function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string }) {
-  const { runCriticalOperation } = useCriticalOperation();
+  const { beginCriticalOperation } = useCriticalOperation();
   const [code, setCode] = useState('');
   const [voucher, setVoucher] = useState<StaffVoucher | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [recoveryPending, setRecoveryPending] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const deliveryButtonRef = useRef<HTMLButtonElement>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
+  const recoveryLeaseRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (message !== null) statusRef.current?.focus();
@@ -148,8 +154,16 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
     }
   }
 
+  function releaseRecoveryLease() {
+    if (recoveryLeaseRef.current !== null) {
+      recoveryLeaseRef.current();
+      recoveryLeaseRef.current = null;
+    }
+  }
+
   async function handleLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (recoveryPending) return;
     setVoucher(null);
     setMessage(null);
     setError(null);
@@ -170,42 +184,68 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
     }
   }
 
+  async function resolveAmbiguousConsumption(voucherCode: string) {
+    closeConfirmation(false);
+    try {
+      const recovered = await getLoyaltyVoucherStaff(unitId, voucherCode);
+      if (recovered.found && recovered.status === 'consumed') {
+        setVoucher(recovered);
+        setMessage(CONSUMED_SUCCESS_MESSAGE);
+        releaseRecoveryLease();
+        setRecoveryPending(false);
+        return;
+      }
+      if (recovered.found && recovered.status === 'issued') {
+        setMessage(RECOVERY_ISSUED_MESSAGE);
+        releaseRecoveryLease();
+        setRecoveryPending(false);
+        return;
+      }
+    } catch {
+      // Inconclusive: keep the critical-operation lease until a conclusive result.
+    }
+    setRecoveryPending(true);
+  }
+
+  async function retryRecovery() {
+    if (voucher === null || recoveryLeaseRef.current === null || recovering) return;
+    setRecovering(true);
+    try {
+      await resolveAmbiguousConsumption(voucher.code);
+    } finally {
+      setRecovering(false);
+    }
+  }
+
   async function confirmConsumption() {
-    if (voucher === null || voucher.status !== 'issued') return;
+    if (voucher === null || voucher.status !== 'issued' || recoveryPending) return;
     setError(null);
     setMessage(null);
-    await runCriticalOperation(async () => {
-      try {
-        const consumed = await consumeMutation.mutateAsync(voucher.code);
-        setVoucher(consumed);
-        setMessage(CONSUMED_SUCCESS_MESSAGE);
+    recoveryLeaseRef.current = beginCriticalOperation();
+    try {
+      const consumed = await consumeMutation.mutateAsync(voucher.code);
+      setVoucher(consumed);
+      setMessage(CONSUMED_SUCCESS_MESSAGE);
+      closeConfirmation(false);
+      releaseRecoveryLease();
+    } catch (caught) {
+      if (caught instanceof StaffVoucherError && caught.code === 'PED61') {
+        setVoucher({ ...voucher, status: 'consumed' });
+        setMessage(ALREADY_CONSUMED_MESSAGE);
         closeConfirmation(false);
-      } catch (caught) {
-        if (caught instanceof StaffVoucherError && caught.code === 'PED61') {
-          setVoucher({ ...voucher, status: 'consumed' });
-          setMessage(ALREADY_CONSUMED_MESSAGE);
-          closeConfirmation(false);
-          return;
-        }
-
-        if (caught instanceof StaffVoucherError && caught.ambiguous) {
-          try {
-            const recovered = await getLoyaltyVoucherStaff(unitId, voucher.code);
-            if (recovered.found && recovered.status === 'consumed') {
-              setVoucher(recovered);
-              setMessage(CONSUMED_SUCCESS_MESSAGE);
-              closeConfirmation(false);
-              return;
-            }
-          } catch {
-            // Preserve the original consume error when recovery cannot prove success.
-          }
-        }
-
-        setError(caught instanceof Error ? caught.message : 'Não foi possível utilizar o voucher.');
-        closeConfirmation();
+        releaseRecoveryLease();
+        return;
       }
-    });
+
+      if (caught instanceof StaffVoucherError && caught.ambiguous) {
+        await resolveAmbiguousConsumption(voucher.code);
+        return;
+      }
+
+      setError(caught instanceof Error ? caught.message : 'Não foi possível utilizar o voucher.');
+      closeConfirmation();
+      releaseRecoveryLease();
+    }
   }
 
   return (
@@ -228,7 +268,9 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
             inputMode="text"
             autoComplete="off"
             spellCheck={false}
-            disabled={lookupMutation.isPending || consumeMutation.isPending}
+            disabled={
+              lookupMutation.isPending || consumeMutation.isPending || recoveryPending || recovering
+            }
             value={code}
             onChange={(event) => {
               setCode(formatVoucherCodeInput(event.target.value));
@@ -245,7 +287,9 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
           />
           <button
             type="submit"
-            disabled={lookupMutation.isPending || consumeMutation.isPending}
+            disabled={
+              lookupMutation.isPending || consumeMutation.isPending || recoveryPending || recovering
+            }
             className="min-h-11 rounded-md bg-pedon-navy px-5 font-semibold text-white transition hover:bg-pedon-navy/90 disabled:opacity-50"
           >
             {lookupMutation.isPending ? 'Validando…' : 'Validar'}
@@ -331,7 +375,7 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
               ref={deliveryButtonRef}
               type="button"
               onClick={() => setConfirmationOpen(true)}
-              disabled={consumeMutation.isPending}
+              disabled={consumeMutation.isPending || recoveryPending || recovering}
               className="mt-5 min-h-11 w-full rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-50 sm:w-auto"
             >
               Confirmar entrega
@@ -347,6 +391,33 @@ function VoucherForUnit({ unitId, unitName }: { unitId: string; unitName: string
           onCancel={() => closeConfirmation()}
           onConfirm={() => void confirmConsumption()}
         />
+      )}
+
+      {recoveryPending && voucher !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-pedon-navy/55 p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="voucher-recovery-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h3 id="voucher-recovery-title" className="text-lg font-bold text-pedon-navy">
+              Verificação pendente
+            </h3>
+            <p className="mt-2 text-sm text-pedon-text/70">{RECOVERY_PENDING_MESSAGE}</p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => void retryRecovery()}
+                disabled={recovering}
+                className="min-h-11 rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-50"
+              >
+                {recovering ? 'Verificando…' : 'Verificar novamente'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

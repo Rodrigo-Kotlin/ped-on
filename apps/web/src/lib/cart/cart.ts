@@ -146,8 +146,8 @@ export function parseStoredCart(raw: string | null, publicSlug: string): PublicC
   }
 }
 
-export function loadCart(publicSlug: string): PublicCart {
-  if (typeof window === 'undefined') return emptyCart(publicSlug);
+export function sanitizeStoredCarts(): void {
+  if (typeof window === 'undefined') return;
   try {
     const storedKeys = Array.from({ length: window.localStorage.length }, (_, index) =>
       window.localStorage.key(index),
@@ -158,7 +158,15 @@ export function loadCart(publicSlug: string): PublicCart {
       const raw = window.localStorage.getItem(key);
       if (raw !== null) persistCart(parseStoredCart(raw, slug));
     }
+  } catch {
+    // Storage may be blocked entirely; the in-memory cart remains usable.
+  }
+}
 
+export function loadCart(publicSlug: string): PublicCart {
+  if (typeof window === 'undefined') return emptyCart(publicSlug);
+  try {
+    sanitizeStoredCarts();
     return parseStoredCart(window.localStorage.getItem(cartStorageKey(publicSlug)), publicSlug);
   } catch {
     return emptyCart(publicSlug);

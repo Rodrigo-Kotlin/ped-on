@@ -3,28 +3,42 @@ import type { ReactNode } from 'react';
 
 interface CriticalOperationContextValue {
   activeOperations: number;
+  beginCriticalOperation: () => () => void;
   runCriticalOperation: <T>(operation: () => Promise<T>) => Promise<T>;
 }
 
 const CriticalOperationContext = createContext<CriticalOperationContextValue>({
   activeOperations: 0,
+  beginCriticalOperation: () => () => undefined,
   runCriticalOperation: (operation) => operation(),
 });
 
 export function CriticalOperationProvider({ children }: { children: ReactNode }) {
   const [activeOperations, setActiveOperations] = useState(0);
 
-  async function runCriticalOperation<T>(operation: () => Promise<T>): Promise<T> {
+  function beginCriticalOperation() {
     setActiveOperations((current) => current + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      setActiveOperations((current) => Math.max(0, current - 1));
+    };
+  }
+
+  async function runCriticalOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const release = beginCriticalOperation();
     try {
       return await operation();
     } finally {
-      setActiveOperations((current) => Math.max(0, current - 1));
+      release();
     }
   }
 
   return (
-    <CriticalOperationContext value={{ activeOperations, runCriticalOperation }}>
+    <CriticalOperationContext
+      value={{ activeOperations, beginCriticalOperation, runCriticalOperation }}
+    >
       {children}
     </CriticalOperationContext>
   );

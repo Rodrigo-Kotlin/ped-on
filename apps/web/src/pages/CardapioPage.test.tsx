@@ -243,6 +243,24 @@ describe('CardapioPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/cardápio está vazio/);
   });
 
+  it('mapeia PED73 para feedback amigável sem vazar detalhes da regra', async () => {
+    const user = userEvent.setup();
+    renderCardapio({
+      publishError: {
+        code: 'P0001',
+        message: 'PED73: INVALID_SELECTION_RULE: must have at least one active option',
+      },
+    });
+
+    await screen.findByText('Este cardápio ainda não foi publicado.');
+    await user.click(screen.getByRole('button', { name: 'Publicar cardápio' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/grupo obrigatório não possui opções ativas suficientes/);
+    expect(alert).not.toHaveTextContent('INVALID_SELECTION_RULE');
+    expect(alert).not.toHaveTextContent('P0001');
+  });
+
   it('manager com publicação existente vê o link e pode republicar', async () => {
     const user = userEvent.setup();
     vi.spyOn(window, 'confirm').mockReturnValue(true);

@@ -128,6 +128,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   PED12: 'Unidade não encontrada.',
   PED31: 'O cardápio está vazio. Ative ao menos uma categoria com produtos para publicar.',
   PED32: 'Não foi possível gerar o link público. Tente publicar novamente.',
+  PED73:
+    'Não é possível publicar o cardápio porque um grupo obrigatório não possui opções ativas suficientes. Revise as opções do produto e tente novamente.',
 };
 
 type RpcError = {
@@ -138,7 +140,7 @@ type RpcError = {
 
 export function extractMenuError(error: RpcError): MenuError {
   const content = [error.code, error.message, error.details].filter(Boolean).join(' ');
-  const matchedCode = content.match(/\bPED(?:1[0-2]|3[12])\b/)?.[0] ?? null;
+  const matchedCode = content.match(/\bPED(?:1[0-2]|3[12]|7[3])\b/)?.[0] ?? null;
   const code = matchedCode ?? error.code ?? null;
   return {
     code,

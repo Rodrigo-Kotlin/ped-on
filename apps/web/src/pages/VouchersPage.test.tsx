@@ -257,6 +257,7 @@ describe('VouchersPage', () => {
 
     expect(await screen.findByText('Este voucher já foi utilizado.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Confirmar entrega' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('0');
   });
 
   it('recupera resposta perdida do consumo por lookup seguro', async () => {
@@ -290,6 +291,183 @@ describe('VouchersPage', () => {
     expect(await screen.findByText('Voucher utilizado com sucesso.')).toBeInTheDocument();
     expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('0');
     expect(supabaseMock.rpc).toHaveBeenCalledTimes(3);
+  });
+
+  it('libera a janela crítica após consumo conclusivo', async () => {
+    const user = userEvent.setup();
+    let resolveConsume!: (value: { data: typeof issuedVoucher; error: null }) => void;
+    const consumePromise = new Promise<{ data: typeof issuedVoucher; error: null }>((resolve) => {
+      resolveConsume = resolve;
+    });
+    supabaseMock.rpc.mockImplementation((name: string) =>
+      name === 'consume_loyalty_voucher'
+        ? consumePromise
+        : Promise.resolve({ data: issuedVoucher, error: null }),
+    );
+    renderPage();
+
+    await user.type(screen.getByLabelText('Código do voucher'), issuedVoucher.code);
+    await user.click(screen.getByRole('button', { name: 'Validar' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirmar entrega' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('1'));
+    await act(async () =>
+      resolveConsume({ data: { ...issuedVoucher, status: 'consumed' }, error: null }),
+    );
+    expect(await screen.findByText('Voucher utilizado com sucesso.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('0');
+  });
+
+  it('libera a janela quando a verificação conclui que o voucher não foi consumido e permite nova tentativa', async () => {
+    const user = userEvent.setup();
+    let consumeCount = 0;
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'consume_loyalty_voucher') {
+        consumeCount += 1;
+        if (consumeCount === 1) {
+          return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
+        }
+        return Promise.resolve({ data: { ...issuedVoucher, status: 'consumed' }, error: null });
+      }
+      return Promise.resolve({ data: issuedVoucher, error: null });
+    });
+    renderPage();
+
+    await user.type(screen.getByLabelText('Código do voucher'), issuedVoucher.code);
+    await user.click(screen.getByRole('button', { name: 'Validar' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirmar entrega' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
+    );
+
+    expect(
+      await screen.findByText('O consumo não foi confirmado. Tente novamente.'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: 'Confirmar entrega' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar entrega' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Voucher utilizado com sucesso.');
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('0');
+  });
+
+  it('mantém a janela crítica quando a verificação falha por rede', async () => {
+    const user = userEvent.setup();
+    let lookupCount = 0;
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'consume_loyalty_voucher') {
+        return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
+      }
+      lookupCount += 1;
+      if (lookupCount === 1) return Promise.resolve({ data: issuedVoucher, error: null });
+      return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
+    });
+    renderPage();
+
+    await user.type(screen.getByLabelText('Código do voucher'), issuedVoucher.code);
+    await user.click(screen.getByRole('button', { name: 'Validar' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirmar entrega' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
+    );
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Verificação pendente' });
+    expect(dialog).toHaveTextContent('Não foi possível confirmar se o voucher foi utilizado.');
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: 'Verificar novamente' })).toBeInTheDocument();
+    expect(screen.queryByText('Voucher utilizado com sucesso.')).not.toBeInTheDocument();
+  });
+
+  it('mantém a janela crítica quando a verificação não encontra o voucher', async () => {
+    const user = userEvent.setup();
+    let lookupCount = 0;
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'consume_loyalty_voucher') {
+        return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
+      }
+      lookupCount += 1;
+      if (lookupCount === 1) return Promise.resolve({ data: issuedVoucher, error: null });
+      return Promise.resolve({ data: { found: false }, error: null });
+    });
+    renderPage();
+
+    await user.type(screen.getByLabelText('Código do voucher'), issuedVoucher.code);
+    await user.click(screen.getByRole('button', { name: 'Validar' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirmar entrega' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
+    );
+
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Verificação pendente' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('1');
+  });
+
+  it('mantém a janela crítica após nova verificação inconclusiva', async () => {
+    const user = userEvent.setup();
+    let lookupCount = 0;
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'consume_loyalty_voucher') {
+        return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
+      }
+      lookupCount += 1;
+      if (lookupCount === 1) return Promise.resolve({ data: issuedVoucher, error: null });
+      return Promise.resolve({ data: { found: false }, error: null });
+    });
+    renderPage();
+
+    await user.type(screen.getByLabelText('Código do voucher'), issuedVoucher.code);
+    await user.click(screen.getByRole('button', { name: 'Validar' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirmar entrega' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
+    );
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Verificação pendente' });
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('1');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Verificar novamente' }));
+    await waitFor(() => expect(supabaseMock.rpc).toHaveBeenCalledTimes(4));
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('1');
+    expect(screen.getByRole('alertdialog', { name: 'Verificação pendente' })).toBeInTheDocument();
+  });
+
+  it('resolve a janela crítica quando nova verificação encontra o consumo', async () => {
+    const user = userEvent.setup();
+    let lookupCount = 0;
+    supabaseMock.rpc.mockImplementation((name: string) => {
+      if (name === 'consume_loyalty_voucher') {
+        return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
+      }
+      lookupCount += 1;
+      if (lookupCount === 1) return Promise.resolve({ data: issuedVoucher, error: null });
+      if (lookupCount === 2) return Promise.resolve({ data: { found: false }, error: null });
+      return Promise.resolve({ data: { ...issuedVoucher, status: 'consumed' }, error: null });
+    });
+    renderPage();
+
+    await user.type(screen.getByLabelText('Código do voucher'), issuedVoucher.code);
+    await user.click(screen.getByRole('button', { name: 'Validar' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirmar entrega' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar entrega' }),
+    );
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Verificação pendente' });
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('1');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Verificar novamente' }));
+
+    expect(await screen.findByText('Voucher utilizado com sucesso.')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Operações críticas')).toHaveTextContent('0');
   });
 
   it('fecha o diálogo com Escape e devolve o foco ao botão de entrega', async () => {

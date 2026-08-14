@@ -8,6 +8,7 @@ import {
   loadCart,
   parseStoredCart,
   persistCart,
+  sanitizeStoredCarts,
 } from './cart';
 import type { CartItem, PublicCart } from './cart';
 
@@ -119,6 +120,56 @@ describe('cart storage', () => {
     expect(loadCart('abc').items).toEqual([]);
     expect(window.localStorage.getItem(cartStorageKey('abc'))).toBeNull();
     setItem.mockRestore();
+  });
+
+  it('saneia notas legadas de todos os slugs sem tocar outras chaves do storage', () => {
+    const legacyWithNote = JSON.stringify({
+      ...cart,
+      items: [{ ...cart.items[0]!, note: 'Sem cebola para Maria' }],
+    });
+    window.localStorage.setItem(cartStorageKey('abc'), legacyWithNote);
+    window.localStorage.setItem(
+      cartStorageKey('outro'),
+      JSON.stringify({
+        ...cart,
+        slug: 'outro',
+        items: [{ ...cart.items[0]!, note: 'PII' }],
+      }),
+    );
+    window.localStorage.setItem('pedon:other:key', '{"note":"intocada"}');
+    window.localStorage.setItem('unrelated', 'value');
+
+    sanitizeStoredCarts();
+
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('abc'))!).items[0].note,
+    ).toBeUndefined();
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('outro'))!).items[0].note,
+    ).toBeUndefined();
+    expect(window.localStorage.getItem('pedon:other:key')).toBe('{"note":"intocada"}');
+    expect(window.localStorage.getItem('unrelated')).toBe('value');
+  });
+
+  it('é idempotente e nunca lança quando o storage está bloqueado', () => {
+    const legacyWithNote = JSON.stringify({
+      ...cart,
+      items: [{ ...cart.items[0]!, note: 'PII' }],
+    });
+    window.localStorage.setItem(cartStorageKey('abc'), legacyWithNote);
+
+    sanitizeStoredCarts();
+    sanitizeStoredCarts();
+
+    expect(
+      JSON.parse(window.localStorage.getItem(cartStorageKey('abc'))!).items[0].note,
+    ).toBeUndefined();
+
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    expect(() => sanitizeStoredCarts()).not.toThrow();
+    getItem.mockRestore();
   });
 
   it('marca stale sem alterar versão, preço, nome ou itens', () => {
