@@ -91,6 +91,10 @@ async function expectError(client, sql, params, expectedCode, label) {
   }
 }
 
+async function expectDenied(client, sql, params, label) {
+  return expectError(client, sql, params, '42501', label);
+}
+
 async function createCategory(client, unitId, name) {
   return (
     await client.query('select * from public.create_catalog_category($1, $2)', [unitId, name])
@@ -417,11 +421,10 @@ async function run() {
     createdOrders = ordersRows.rows;
 
     scenario(1, 'v2: auth e ACL');
-    await expectError(
+    await expectDenied(
       anon,
       'select public.get_unit_orders_admin_v2($1, $2::jsonb)',
       [unitA1, '{}'],
-      'PED10',
       '1.0 anon bloqueado',
     );
     await expectError(
@@ -492,14 +495,16 @@ async function run() {
       v2Pending.orders.every((entry) => entry.payment_status === 'pending'),
       '3.3 filtro payment_status=pending aplicado',
     );
-    const firstOrder = createdOrders[0];
+    const historyOrder = createdOrders.find((entry) =>
+      ['completed', 'cancelled'].includes(entry.status),
+    );
     const v2ByNumber = await adminV2(ownerAS, unitA1, {
       view: 'history',
-      order_number: firstOrder.order_number,
+      order_number: historyOrder?.order_number,
     });
     ok(
       v2ByNumber.total_count === 1 &&
-        v2ByNumber.orders[0]?.order_number === firstOrder.order_number,
+        v2ByNumber.orders[0]?.order_number === historyOrder?.order_number,
       '3.4 filtro order_number aplicado',
     );
     const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -643,10 +648,25 @@ async function run() {
       ok(v2HistFirst.orders.length <= 5, '6.0 history limit respeitado');
       ok(v2HistFirst.page_info.has_more === true, '6.1 history has_more=true quando > limit');
       if (v2HistFirst.page_info.next_cursor) {
+        const cursorValue = v2HistFirst.page_info.next_cursor;
         const v2HistSecond = await adminV2(ownerAS, unitA1, {
           view: 'history',
           limit: 5,
-          cursor: v2HistFirst.page_info.next_cursor,
+          cursor: cursorValue,
+        }).catch((e) => {
+          let decoded = 'n/a';
+          try {
+            decoded = Buffer.from(
+              cursorValue.replace(/-/g, '+').replace(/_/g, '/'),
+              'base64',
+            ).toString('utf8');
+          } catch {
+            /* ignore */
+          }
+          console.log(`    DIAG history cursor=${cursorValue}`);
+          console.log(`    DIAG history cursor decoded=${decoded}`);
+          console.log(`    DIAG history cursor error code=${e.code} msg=${e.message}`);
+          throw e;
         });
         const idsFirst = new Set(v2HistFirst.orders.map((entry) => entry.id));
         const dup = v2HistSecond.orders.find((entry) => idsFirst.has(entry.id));
@@ -694,11 +714,10 @@ async function run() {
     }
 
     scenario(8, 'KDS: auth e ACL');
-    await expectError(
+    await expectDenied(
       anon,
       'select public.get_kds_orders_minimal($1)',
       [unitA1],
-      'PED10',
       '8.0 anon bloqueado',
     );
     await expectError(

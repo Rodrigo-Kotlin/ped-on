@@ -372,7 +372,15 @@ begin
     raise exception 'INVALID_ORDER_FILTER' using errcode = 'PED79';
   end if;
 
-  v_limit := coalesce((v_filters ->> 'limit')::integer, 50);
+  if v_filters ? 'limit' then
+    begin
+      v_limit := (v_filters ->> 'limit')::integer;
+    exception when others then
+      raise exception 'INVALID_ORDER_FILTER' using errcode = 'PED79';
+    end;
+  else
+    v_limit := 50;
+  end if;
   if v_limit < 1 or v_limit > 100 then
     raise exception 'INVALID_ORDER_FILTER' using errcode = 'PED79';
   end if;
