@@ -703,7 +703,12 @@ begin
   -- Detecta has_more e fatia em v_limit rows.
   v_has_more := jsonb_array_length(v_orders) > v_limit;
   if v_has_more then
-    v_orders := jsonb_path_query_array(v_orders, '$[0 to ' || (v_limit - 1)::text || ']');
+    select coalesce(jsonb_agg(value), '[]'::jsonb) into v_orders
+    from (
+      select value
+      from jsonb_array_elements(v_orders) with ordinality as t(value, ord)
+      where ord <= v_limit
+    ) sliced;
   end if;
 
   -- Constroi next_cursor a partir da ultima linha retornada.
@@ -883,17 +888,15 @@ begin
                   select coalesce(
                     jsonb_agg(
                       jsonb_build_object(
-                        'group_name', g.name,
-                        'group_kind', g.kind,
-                        'option_name', opt.name
+                        'group_name', oio.group_name,
+                        'group_kind', oio.group_kind,
+                        'option_name', oio.option_name
                       )
-                      order by g.sort_order, opt.sort_order
+                      order by oio.created_at, oio.id
                     ),
                     '[]'::jsonb
                   )
                   from public.order_item_options as oio
-                  join public.catalog_product_options as opt on opt.id = oio.option_id
-                  join public.catalog_product_option_groups as g on g.id = oio.group_id
                   where oio.order_item_id = oi.id
                 )
               )
