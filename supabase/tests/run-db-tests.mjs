@@ -8,6 +8,7 @@ const suites = [
   'menu_publication_integrity.test.mjs',
   'orders_integrity.test.mjs',
   'product_options_integrity.test.mjs',
+  'product_options_remediation_integrity.test.mjs',
   'loyalty_integrity.test.mjs',
   'loyalty_rewards_integrity.test.mjs',
   'pilot_readiness_team_integrity.test.mjs',
