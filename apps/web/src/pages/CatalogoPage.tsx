@@ -16,6 +16,7 @@ import {
   updateCatalogProduct,
 } from '../lib/catalog/catalog';
 import type { CatalogCategory, CatalogProduct } from '../lib/catalog/catalog';
+import { OptionGroupsPanel } from '../components/catalog/option-groups-panel';
 
 const categorySchema = z.object({
   name: z
@@ -278,6 +279,7 @@ function CatalogForUnit({ unitId, unitName }: { unitId: string; unitName: string
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [creatingProductCategoryId, setCreatingProductCategoryId] = useState<string | null>(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [optionsProductId, setOptionsProductId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null,
   );
@@ -386,7 +388,7 @@ function CatalogForUnit({ unitId, unitName }: { unitId: string; unitName: string
       <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">{unitName}</p>
       <h2 className="mt-1 text-2xl font-bold text-pedon-navy">Catálogo</h2>
       <p className="mt-1 text-sm text-pedon-text/70">
-        Gerencie as categorias e produtos desta unidade.
+        Gerencie as categorias, produtos, variações, adicionais e remoções desta unidade.
       </p>
       <p className="mt-3 rounded-md border border-pedon-orange/20 bg-pedon-surface px-3 py-2 text-sm text-pedon-text/80">
         Este é o catálogo administrativo. A publicação do cardápio será configurada em uma etapa
@@ -646,6 +648,14 @@ function CatalogForUnit({ unitId, unitName }: { unitId: string; unitName: string
                       )}
 
                       <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className={secondaryButtonClass}
+                          onClick={() => setOptionsProductId(product.id)}
+                        >
+                          Opções e adicionais
+                          <span className="sr-only">: {product.name}</span>
+                        </button>
                         {canManageCatalog && (
                           <>
                             <button
@@ -704,6 +714,16 @@ function CatalogForUnit({ unitId, unitName }: { unitId: string; unitName: string
                             );
                           }}
                           onCancel={() => setEditingProductId(null)}
+                        />
+                      )}
+
+                      {optionsProductId === product.id && (
+                        <OptionGroupsPanel
+                          unitId={unitId}
+                          productId={product.id}
+                          productName={product.name}
+                          canManage={canManageCatalog}
+                          onClose={() => setOptionsProductId(null)}
                         />
                       )}
                     </li>

@@ -25,14 +25,17 @@ export function mockFromQuery<T>(result: QueryResult<T>) {
     select: ReturnType<typeof vi.fn>;
     eq: ReturnType<typeof vi.fn>;
     maybeSingle: ReturnType<typeof vi.fn>;
+    order: ReturnType<typeof vi.fn>;
   } = {
     select: vi.fn(),
     eq: vi.fn(),
     maybeSingle: vi.fn(),
+    order: vi.fn(),
   };
   chain.select.mockImplementation(() => chain);
   chain.eq.mockImplementation(() => chain);
   chain.maybeSingle.mockImplementation(async () => result);
+  chain.order.mockImplementation(async () => result);
   return chain;
 }
 
