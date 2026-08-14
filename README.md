@@ -6,12 +6,12 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 4A — Pilot Ready, Prompt 11: Pilot Readiness, Observabilidade e Product Hardening.
-Status `COMPLETED`, checkpoint `RELEASE_VERIFIED` — reauditoria independente
-`GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL 0, HIGH 0, MEDIUM BLOCKING 0).
+Fase 4A — Pilot Ready, Prompt 12: Produtos, Variações e Adicionais.
+Status `IN PROGRESS`, checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 estão implementadas; a
+reauditoria independente final permanece pendente.
 
 `PILOT_READY: ACHIEVED`.
-`PROMPT 12: NOT STARTED`.
+`PROMPT 12: READY_FOR_REAUDIT`; Prompt 13 não iniciado.
 
 `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 `CI ISOLATED DB REBUILD: PASS` (GitHub Actions; nenhum Docker local).
@@ -20,6 +20,8 @@ O produto atual inclui:
 
 - Supabase Auth, onboarding, tenant e RBAC `owner`/`manager`/`operator` por unidade;
 - configuração operacional, catálogo mutável e publicação de cardápio por snapshot imutável;
+- grupos de variações/adicionais/remoções, personalização pública, preço autoritativo e snapshots de
+  opções no pedido;
 - carrinho local sem PII, checkout guest idempotente e recuperação segura de tentativa pendente;
 - tracking público por token opaco, com resposta minimizada e sem notas livres dos itens;
 - Central de Pedidos, lifecycle, pagamento operacional separado, auditoria e Realtime para refetch;
@@ -70,7 +72,7 @@ ped-on/
 │       └── src/                   # app, componentes, domínio web e páginas
 ├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # 20 migrations versionadas até o Prompt 12
+│   ├── migrations/                # 21 migrations versionadas até o Prompt 12
 │   ├── tests/                     # dez suítes DB e smoke remoto da Edge
 │   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
 │   └── seed.example.sql           # seed de exemplo, sem dados reais
@@ -141,7 +143,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O filesystem versionado possui 20 migrations ordenadas:
+O filesystem versionado possui 21 migrations ordenadas:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -163,27 +165,33 @@ O filesystem versionado possui 20 migrations ordenadas:
 18. `20260812120000_prompt11_pilot_readiness_team.sql`
 19. `20260813120000_prompt11_readiness_unit_coherence.sql`
 20. `20260814000000_prompt12_product_options.sql`
+21. `20260814010000_prompt12_final_hardening.sql`
 
 Fluxo linked não destrutivo:
 
 ```bash
 supabase migration list
+supabase db push --linked --dry-run
+# Somente após CI verde e aprovação explícita da migration:
 supabase db push --linked
 supabase migration list
 supabase db lint --linked
 ```
 
-Git/filesystem e remoto estão em 20/20; o dry-run linked informa que o remoto está up to date. Não
-reaplicar migrations já aplicadas nem editar migration existente. Não usar `supabase db reset`
-localmente.
+Git/filesystem e remoto estão em 21/21; o dry-run linked informa que o remoto está up to date.
+Somente o comando com `--dry-run` é não destrutivo; não executar o push real antes de CI verde e
+aprovação da migration. Não reaplicar migrations já aplicadas, editar migration existente ou usar
+`supabase db reset` localmente.
 
 ## Testes do Prompt 12
 
-- gates locais e do CI `31761944228`: frontend unit 312/312, E2E 288/288 (dos quais 52 são os 13
-  cenários do Prompt 12 em 4 viewports) e Edge unit 15/15;
-- banco isolado: dez suítes, DB lint e baseline 1332/1332 checks (inclui
-  `product_options_integrity`);
-- migrations Git/filesystem: 20; remote: 20; dry-run linked informa remote up to date.
+- gates locais e do CI `31787020339`: frontend unit 354/354, E2E 345/345 com 3 skips móveis
+  intencionais, Prompt 12 4B 20/20 e Edge unit 15/15;
+- banco isolado: dez suítes, DB lint e baseline 1340/1340 checks
+  (`product_options_integrity` 158/158);
+- migrations Git/filesystem: 21; remote: 21; dry-run linked informa remote up to date;
+- Cloudflare source `9139391`: `https://40091196.ped-on.pages.dev` e
+  `https://ped-on.pages.dev`, com SHA no diagnóstico e fallbacks SPA 18/18.
 
 ## Segurança e secrets
 
@@ -212,4 +220,4 @@ localmente.
 - `docs/PEDON_POST_MVP_ROADMAP.md`: roadmap oficial pós-Core MVP
 
 Prompt 11: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `PILOT_READY: ACHIEVED`.
-Prompt 12: `IN PROGRESS` / checkpoint `ADMIN_CHECKPOINT` (Etapa 3 concluída; Etapa 4 pendente).
+Prompt 12: `IN PROGRESS` / checkpoint `READY_FOR_REAUDIT`; reauditoria independente final pendente.

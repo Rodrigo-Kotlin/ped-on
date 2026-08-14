@@ -12,24 +12,24 @@
 | MODELO                 | Main-First monitorado                                                                                                                                                                                                                                                                      |
 | FASE ATUAL             | Fase 4A — Pilot Ready                                                                                                                                                                                                                                                                      |
 | PROMPT ATUAL           | Prompt 12 — Produtos, Variações e Adicionais                                                                                                                                                                                                                                               |
-| STATUS                 | `IN PROGRESS` — Etapa 4 concluída                                                                                                                                                                                                                                                          |
-| CHECKPOINT             | `PUBLIC FLOW IMPLEMENTED` — cardápio, personalização, carrinho, checkout, pedido, tracking e detalhe administrativo integrados; Etapa 5 pendente                                                                                                                                             |
+| STATUS                 | `IN PROGRESS` — Etapa 5 concluída; reauditoria independente pendente                                                                                                                                                                                                                       |
+| CHECKPOINT             | `READY_FOR_REAUDIT` — blockers de domínio, concorrência, privacidade e PWA corrigidos; não equivale a `COMPLETED` ou `MENU_COMMERCIALLY_USABLE`                                                                                                                                              |
 | HEAD INICIAL DO PROMPT | `3a6cd42` — Prompt 11 encerrado (`RELEASE_VERIFIED`)                                                                                                                                                                                                                                       |
-| HEAD TÉCNICO VALIDADO  | `3610be50e27014751b825f8b67740d118041591a` — integração pública de options e bloqueio offline explícito no checkout                                                                                                                                                                          |
-| BACKEND                | `IMPLEMENTED / VERIFIED` — migration 20 (`catalog_product_option_groups`/`catalog_product_options`, snapshot de publicação, `order_item_options` e validação de seleção no checkout); CI `31761944228` aprovou fresh rebuild das 20 migrations, DB lint e dez suítes DB com 1332/1332 checks  |
-| FRONTEND               | `PUBLIC FLOW IMPLEMENTED` — personalizador público, linhas canônicas no carrinho, IDs de snapshot no checkout, UX `PED72`–`PED78`, snapshots no tracking e detalhe administrativo; backend e cálculo autoritativo preservados                                                               |
+| HEAD TÉCNICO VALIDADO  | `9139391ca418dc063cdd7366d6b8e447cccacc3a` — hardening da Etapa 5 e guard de histórico das 21 migrations                                                                                                                                                                                    |
+| BACKEND                | `IMPLEMENTED / VERIFIED` — migrations 20–21; `single => max_select=1`, writers estruturais serializados com publicação e checkout linearizado com disponibilidade; CI `31787020339` aprovou fresh rebuild das 21 migrations, DB lint e dez suítes DB com 1340/1340 checks                     |
+| FRONTEND               | `READY_FOR_REAUDIT` — fluxo público da Etapa 4 preservado; nota livre fica somente em memória e valores legados são purgados; recovery ambíguo de voucher permanece integralmente dentro da operação crítica PWA                                                                            |
 | OPÇÕES DE PRODUTO      | kinds `variation`/`addon`/`removal`; `single`/`multiple`; min/max validados no servidor; `price_delta` decimal exato com `unit_price = base + SUM(delta)` no checkout; snapshot imutável na publicação (`menu_version_*`) e por linha no pedido (`order_item_options`)                       |
-| TESTES VERIFICADOS     | Etapa 4 local: frontend 350/350; E2E 345/345 com 3 skips móveis intencionais; Prompt 12 4B 20/20; build, lint, typecheck, precache e gitleaks PASS; baseline DB/Edge anterior preservado em 1332/1332 e 15/15                                                                                |
+| TESTES VERIFICADOS     | Frontend 354/354; E2E 345/345 com 3 skips móveis intencionais; Prompt 12 4B 20/20; DB 1340/1340; Edge 15/15; format, lint, typecheck, build, precache, gitleaks e linked DB lint PASS                                                                                                          |
 | PWA                    | Atualização por prompt explícito; aplicação bloqueada durante checkout, order mutation, redemption, voucher consume e team assignment/removal; runtime cache de API `NONE`; precache sem duplicatas após audit estático                                                                      |
-| CLOUDFLARE             | URLs vigentes do Prompt 11 mantidas: imutável `https://8f7d42fd.ped-on.pages.dev` e estável `https://ped-on.pages.dev`; sem alteração de deploy nesta etapa                                                                                                                                  |
-| GITHUB ACTIONS         | CI `31761944228` aprovado para o HEAD técnico, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                             |
-| PENDÊNCIAS             | Etapa 5 do Prompt 12 e reauditoria independente; não declarar `COMPLETED`, `RELEASE_VERIFIED` ou cardápio comercialmente utilizável antes dessas etapas                                                                                                                                      |
-| NEXT_STEP              | Executar a Etapa 5 do Prompt 12 e, depois, a reauditoria independente                                                                                                                                                                                                                       |
+| CLOUDFLARE             | deployment `40091196-3bdf-4f15-86fe-54d2816138a2`; imutável `https://40091196.ped-on.pages.dev`, estável `https://ped-on.pages.dev`, source/SHA `9139391`, assets iguais e fallbacks SPA 18/18                                                                                                  |
+| GITHUB ACTIONS         | CI `31787020339` aprovado para o HEAD técnico, com `Quality gates`, `Backend release gates` e `E2E smoke tests`                                                                                                                                                                             |
+| PENDÊNCIAS             | Reauditoria independente final do Prompt 12; não declarar `COMPLETED`, `RELEASE_VERIFIED` ou cardápio comercialmente utilizável antes do parecer                                                                                                                                             |
+| NEXT_STEP              | Executar a reauditoria independente final do Prompt 12                                                                                                                                                                                                                                     |
 | FASE SEGUINTE          | Não iniciada                                                                                                                                                                                                                                                                               |
-| PROMPT SEGUINTE        | Prompt 12 — `IN PROGRESS` (Etapa 5 não iniciada)                                                                                                                                                                                                                                           |
+| PROMPT SEGUINTE        | Prompt 13 — `NOT STARTED`; bloqueado até a reauditoria final do Prompt 12                                                                                                                                                                                                                   |
 | PROMPT 10              | `COMPLETED` — checkpoint `RELEASE_VERIFIED`; reauditoria independente concluída com `GO_WITH_NON_BLOCKING_FINDINGS`                                                                                                                                                              |
 | LOCAL DB REBUILD       | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                                                    |
-| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 20 migrations no CI `31761944228` (Prompt 12)                                                                                                                                                                                                                   |
+| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 21 migrations no CI `31787020339` (Prompt 12)                                                                                                                                                                                                                   |
 
 ---
 
@@ -65,8 +65,15 @@
   `order_item_options` (snapshot append-only por linha).
 - Erros de opções: `PED72`–`PED78`; o tracking público expõe opções com nome/tipo/delta sem IDs
   técnicos, e o detalhe administrativo mantém os IDs de snapshot.
-- Opção de `removal` exige `price_delta = 0`; `variation` exige seleção única obrigatória
-  (`single`, `max_select = 1`); `addon`/`removal` não podem ter preço negativo.
+- Opção de `removal` exige `price_delta = 0`; `variation` exige escolha única (`single`,
+  `max_select = 1`) e só é obrigatória quando `min_select > 0`; `addon`/`removal` não podem ter
+  preço negativo.
+- Todo grupo `single`, independentemente do `kind`, exige `max_select = 1`; constraints autoritativas
+  existem no catálogo e no snapshot publicado.
+- Writers de grupos/opções e publicação usam o mesmo advisory lock por produto. O snapshot final do
+  pedido bloqueia a opção de catálogo disponível, serializando checkout contra toggle/delete.
+- O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
+  carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
 
 ## Reauditoria independente do Prompt 10 — resultado histórico
 
@@ -128,6 +135,23 @@
   format, lint, typecheck, build, precache, gitleaks e `git diff --check` aprovados.
 - Backend sem alteração; migrations permanecem 20/20. Próximo: Etapa 5 e reauditoria independente.
 
+## Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (Etapa 5)
+
+- HEAD técnico validado `9139391ca418dc063cdd7366d6b8e447cccacc3a`; implementação de hardening
+  `c970381a70da16c23140604e2da355c29f2c1974`; CI `31787020339` SUCCESS nos três jobs.
+- Migration 21 aditiva aplicada: `single => max_select=1`, locks estruturais coerentes com publicação
+  e row lock de disponibilidade no snapshot final do pedido; Git/filesystem/remoto 21/21, dry-run up
+  to date e linked lint sem erros.
+- Privacidade: `CartItem.note` não entra no formato persistido, valores legados de todos os slugs são
+  purgados e o fluxo cart→checkout preserva a nota apenas sob o mesmo provider em memória.
+- PWA: consumo de voucher e recovery ambíguo permanecem na mesma janela de `runCriticalOperation`.
+- Gates: frontend 354/354; E2E 345/345 com 3 skips móveis intencionais; 4B 20/20; DB 1340/1340;
+  Edge 15/15; precache 33 entradas, 929032 bytes, `runtimeCaching: NONE`; gitleaks PASS.
+- Cloudflare: deployment `40091196-3bdf-4f15-86fe-54d2816138a2`, source `9139391`, imutável
+  `https://40091196.ped-on.pages.dev`, stable `https://ped-on.pages.dev`, SHA no diagnóstico e
+  fallbacks SPA 18/18.
+- Próximo: reauditoria independente. Prompt 12 continua `IN PROGRESS`; Prompt 13 não foi iniciado.
+
 ## Histórico de execução
 
 | Etapa                             | Prompt                                                  | Status                          | Commit                                     | Data       |
@@ -144,4 +168,4 @@
 | Fase 3B — Clientes e Fidelidade   | Prompt 09 — Clube Ped-On e release hardening            | COMPLETED                       | `2013e8d`                                  | 2026-08-11 |
 | Fase 3C — Recompensas e Vouchers  | Prompt 10 — Recompensas, resgate atômico e vouchers     | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; encerramento oficial (`2a91711`, `453af65`) | 2026-08-12 |
 | Fase 4A — Pilot Ready             | Prompt 11 — Pilot Readiness e Product Hardening         | COMPLETED — RELEASE_VERIFIED    | reauditoria GO; auditado `3a6cd42`, CI `31713901328`, deploy `8f7d42fd` | 2026-08-13 |
-| Fase 4A — Pilot Ready             | Prompt 12 — Produtos, Variações e Adicionais            | IN PROGRESS — PUBLIC FLOW IMPLEMENTED | Etapa 4 `3610be5`, migrations 20/20, frontend 350/350, E2E 345/345 | 2026-08-14 |
+| Fase 4A — Pilot Ready             | Prompt 12 — Produtos, Variações e Adicionais            | IN PROGRESS — READY_FOR_REAUDIT | Etapa 5 `9139391`, migrations 21/21, frontend 354/354, E2E 345/345, DB 1340/1340 | 2026-08-14 |

@@ -1,7 +1,7 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa da Fase 4A — Prompt 12, checkpoint `ADMIN_CHECKPOINT`.
-> Fonte autoritativa: 20 migrations versionadas; migration list local/remota em 20/20 e dry-run
+> Referência cumulativa da Fase 4A — Prompt 12, checkpoint `READY_FOR_REAUDIT`.
+> Fonte autoritativa: 21 migrations versionadas; migration list local/remota em 21/21 e dry-run
 > linked confirmando que o remoto está up to date.
 
 ## 1. Estado das migrations
@@ -28,10 +28,11 @@
 | 18    | `20260812120000_prompt11_pilot_readiness_team.sql`                  | readiness derivada, listagem de equipe e gestão owner-only dos vínculos por unidade        |
 | 19    | `20260813120000_prompt11_readiness_unit_coherence.sql`              | exige uma mesma unidade com todos os pré-requisitos de piloto                               |
 | 20    | `20260814000000_prompt12_product_options.sql`                       | grupos de opções (variações/adicionais/remoções) e opções por produto no catálogo mutável  |
+| 21    | `20260814010000_prompt12_final_hardening.sql`                       | regra `single`, locks de publicação/mutação e disponibilidade atômica no checkout           |
 
-Estado reconciliado de 2026-08-14: Git/filesystem e remoto apresentam 20/20 migrations. A migration
-20 foi aplicada e o dry-run linked informa remote up to date. `LOCAL DB REBUILD: NOT RUN — BY
-DESIGN / NO LOCAL DOCKER`; fresh rebuild isolado aprovado no CI `31761944228`.
+Estado reconciliado de 2026-08-14: Git/filesystem e remoto apresentam 21/21 migrations. A migration
+21 foi aplicada e o dry-run linked informa remote up to date. `LOCAL DB REBUILD: NOT RUN — BY
+DESIGN / NO LOCAL DOCKER`; fresh rebuild isolado aprovado no CI `31787020339`.
 
 ## 2. Convenções
 
@@ -337,6 +338,7 @@ As RPCs reutilizam `PED10`, `PED11` e `PED12` para autenticação, autorização
 Regras estruturais (CHECK + triggers):
 
 - `variation` exige `selection_mode = 'single'` e `max_select = 1`.
+- Todo `selection_mode = 'single'` exige `max_select = 1`, independentemente do `kind`.
 - `removal` exige `selection_mode = 'multiple'` e `min_select = 0`.
 - unique composto `catalog_product_option_groups_organization_unit_product_id_key
   (organization_id,unit_id,product_id,id)`, alvo da FK das opções;
@@ -344,6 +346,8 @@ Regras estruturais (CHECK + triggers):
   (organization_id,unit_id,product_id,sort_order,id)`;
 - trigger `catalog_product_option_groups_kind_guard` rejeita mudança de `kind` que deixaria opções
   existentes em violação (sem correção silenciosa).
+- triggers de grupos e opções adquirem
+  `pedon:catalog:option-groups:product:<product_id>`, o mesmo advisory lock usado na publicação.
 
 ### 6.6 `public.catalog_product_options`
 
@@ -369,7 +373,7 @@ composta do grupo impede IDOR de opção de outro grupo/unidade/organização.
 
 Regra de `price_delta` por `kind` (trigger `catalog_product_options_delta_by_kind`):
 
-- `variation` e `addon` aceitam acréscimo (`>= 0`); variação pode reduzir o preço base (desconto).
+- `addon` exige `price_delta >= 0`; `variation` aceita delta assinado, inclusive desconto.
 - `removal` exige `price_delta = 0` (remoção nunca altera o preço).
 - A mudança de `kind` do grupo é validada contra as opções existentes.
 
@@ -509,9 +513,10 @@ IDs e preços vêm exclusivamente do snapshot; `is_available` é overlay dinâmi
 `catalog_products.is_available` via `source_product_id` (fonte ausente/deletada ⇒ `false`).
 `option_groups[]` traz `id`, `name`, `kind`, `selection_mode`, `min_select`, `max_select` e
 `options[]` com `id`, `name`, `price_delta` (texto) e `is_available` (overlay via
-`source_option_id`). `is_configurable` é `true` quando existem grupos com `min_select > 0` e opções
-disponíveis suficientes; grupos de `variation` com seleção obrigatória tornam o produto
-configurável. `anon` nunca lê as tabelas de menu/catálogo diretamente.
+`source_option_id`). `is_configurable` é `true` quando não existe grupo obrigatório insatisfazível,
+isto é, nenhum grupo com `min_select > 0` possui menos opções disponíveis que o mínimo. Por esse
+contrato, produtos sem grupos e produtos com somente grupos opcionais também retornam `true`.
+`anon` nunca lê as tabelas de menu/catálogo diretamente.
 
 ### 7.7 Erros do cardápio publicado
 
@@ -548,8 +553,9 @@ configurável. `anon` nunca lê as tabelas de menu/catálogo diretamente.
 
 Cada linha carrega `organization_id`, `unit_id`, `order_id`, `menu_version_id`, `menu_item_id`,
 `product_name`, `unit_price numeric(12,2)`, `quantity 1..99`, `line_total numeric(12,2)`, nota
-opcional segura e `created_at`. FKs compostas garantem que pedido, versão e item pertençam ao mesmo
-tenant/unidade; `(order_id,menu_item_id)` é único e `line_total = unit_price * quantity`.
+opcional segura, `options_fingerprint` e `created_at`. FKs compostas garantem que pedido, versão e
+item pertençam ao mesmo tenant/unidade; `(order_id,menu_item_id,options_fingerprint)` é único e
+`line_total = unit_price * quantity`.
 
 Nome e preço são copiados de `menu_version_products`, não do payload nem do catálogo mutável. O
 preço unitário final (`unit_price`) passa a incluir a soma dos `price_delta` das opções selecionadas
@@ -561,7 +567,9 @@ Snapshot append-only das opções escolhidas por linha: `order_item_id` (FK comp
 `order_items`), `menu_group_id`/`menu_option_id` (FKs do snapshot com `ON DELETE RESTRICT`),
 `group_name`, `group_kind`, `option_name` e `price_delta numeric(12,2)`. Índices cobrem pedido,
 item e unidade; única escrita é o checkout transacional, preservando nome, tipo e delta no momento
-da compra — o catálogo mutável pode mudar depois sem afetar o pedido.
+da compra — o catálogo mutável pode mudar depois sem afetar o pedido. O trigger
+`order_item_options_live_selection_guard` bloqueia a opção de catálogo disponível antes do insert,
+linearizando checkout contra toggle/delete e protegendo grupos `single` contra segunda seleção.
 
 ### 8.3 `public.order_events`
 
@@ -575,7 +583,7 @@ estado são geradas pelas RPCs com ator staff. Nenhum cliente recebe escrita dir
 `create_public_order(text,uuid,jsonb)` é executável por `anon`/`authenticated` e:
 
 - aceita somente versão/revisão, modalidade, pagamento, cliente, endereço, itens, notas e troco;
-  cada item pode carregar `selected_option_ids` (IDs do snapshot `menu_version_options`);
+  cada item pode carregar `options` (IDs do snapshot `menu_version_options`);
 - rejeita preço, nome ou total autoritativo enviado pelo navegador;
 - valida unidade ativa, aceite, horário, modalidade, pagamento, versão publicada, revisão
   operacional, disponibilidade, mínimo, endereço e troco;
@@ -831,8 +839,9 @@ mais recentes do extrato, ordenadas por `created_at DESC, id DESC`. Cada entrada
 ### 9.11 Regra de pontos (DEC-090)
 
 `points = floor(orders.subtotal * points_per_real)` (1 ponto por R$ 1,00 elegível com
-`points_per_real = 1.00`). `delivery_fee` e centavos não geram pontos; pedido `< R$ 1,00`gera 0
-pontos e nenhuma entrada de ledger. Earn acontece somente na 1ª transição`status → completed`com`payment_status <> 'refunded'`; `payment_status → refunded` após o earn gera reversal completo.
+`points_per_real = 1.00`). `delivery_fee` e centavos não geram pontos; pedido `< R$ 1,00` gera 0
+pontos e nenhuma entrada de ledger. Earn acontece somente na 1ª transição `status → completed` com
+`payment_status <> 'refunded'`; `payment_status → refunded` após o earn gera reversal completo.
 
 ### 9.12 Erros do Prompt 09
 
@@ -1063,15 +1072,15 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
-Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (evidência atual):
+Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (evidência atual):
 
-- HEAD técnico `df2cee31fa4afb288ab5d7bb08ae54d07aff1572`;
-- CI `31761944228`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
-- fresh rebuild isolado das 20 migrations, alinhamento e DB lint aprovados;
-- dez suítes DB aprovadas com baseline 1332/1332 checks (inclui `product_options_integrity`);
-- Frontend unit: 312/312; Edge unit: 15/15; E2E smoke tests: 288/288 (13 cenários do Prompt 12
-  em 4 viewports);
-- migration list local/remota: 20/20; dry-run linked: remote up to date; lint linked sem erros;
+- HEAD técnico `9139391ca418dc063cdd7366d6b8e447cccacc3a`;
+- CI `31787020339`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
+- fresh rebuild isolado das 21 migrations, alinhamento e DB lint aprovados;
+- dez suítes DB aprovadas com baseline 1340/1340 checks (`product_options_integrity` 158/158);
+- Frontend unit: 354/354; Edge unit: 15/15; E2E smoke tests: 345/345, com 3 skips móveis
+  intencionais; Prompt 12 4B: 20/20;
+- migration list local/remota: 21/21; dry-run linked: remote up to date; lint linked sem erros;
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
 Checkpoint Prompt 11 — `READY_FOR_REAUDIT` (histórico técnico):
@@ -1115,7 +1124,7 @@ Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 - CI `31598675826` (Quality gates, Backend release gates e E2E smoke tests) e Cloudflare deployment
   `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, source `2a91711`, aprovados.
 
-Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 20 migrations:
+Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 21 migrations:
 
 - migrations `20260810144145_orders_checkout.sql` e
   `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente naquele checkpoint;

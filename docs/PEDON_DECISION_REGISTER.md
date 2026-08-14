@@ -601,6 +601,9 @@
   apresentação) e pertence à versão do cardápio aberta pelo usuário. Nenhuma PII de checkout é
   persistida localmente.
 - **Justificativa:** carrinho offline tolerável; PII do checkout fica somente em memória (DEC-028).
+- **Atualização (2026-08-14):** observações livres de item também ficam somente em memória. O formato
+  persistido omite `note`; ao carregar o carrinho, valores legados de todos os slugs são saneados ou
+  removidos, inclusive em falha de regravação.
 
 ### DEC-075 — Criação de pedido é idempotente
 
@@ -1034,6 +1037,9 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
   nome/tipo/delta sem IDs técnicos; erros `PED72..PED78`.
 - **Justificativa:** preservar snapshots corretos no pedido (DEC-008) e manter o preço
   server-authoritative (DEC-010), mesmo com produtos configuráveis.
+- **Atualização (2026-08-14):** `single` implica `max_select = 1` para qualquer `kind`; writers
+  estruturais usam o advisory lock da publicação por produto, e a gravação do snapshot do pedido
+  bloqueia a opção mutável disponível para linearizar checkout contra toggle/delete.
 
 ## Decisões em Aberto (OPEN)
 

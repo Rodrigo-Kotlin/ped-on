@@ -1,7 +1,7 @@
 # PED-ON — RLS Security
 
 > Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 12, checkpoint
-> `ADMIN_CHECKPOINT`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
+> `READY_FOR_REAUDIT`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
 > nega por padrão e o Clube usa superfícies públicas minimizadas e RPCs internas restritas.
 
 ## 1. Princípios
@@ -19,8 +19,9 @@
 - Catálogo administrativo mutável não é cardápio publicado. Leitura pública do cardápio ocorre
   exclusivamente via `get_public_menu` (snapshot imutável + overlay de disponibilidade); `anon` não
   lê nenhuma tabela diretamente.
-- Checkout e tracking públicos passam exclusivamente por `create_public_order` e `get_public_order`;
-  respostas anônimas não expõem PII, endereço, IDs internos ou idempotência.
+- Checkout e tracking públicos passam exclusivamente por `create_public_order`/`create_public_order_v2`,
+  `get_public_order` e `get_public_order_by_attempt`; respostas anônimas não expõem PII, endereço,
+  IDs internos ou idempotência.
 - Identidade do Clube v2 exige CPF + telefone; o PostgreSQL recebe somente fingerprints HMAC
   tenant-bound, e desconhecido/telefone divergente são indistinguíveis no contrato HTTP.
 - As 13 tabelas do Clube não possuem grants de navegador. Edge identity/rate limit usam RPCs
@@ -43,12 +44,17 @@
 | `unit_payment_methods`      | ON  | nenhuma                                      | acesso exclusivamente via RPC operacional          |
 | `catalog_categories`        | ON  | `catalog_categories_select_unit_access`      | authenticated com `can_access_unit(unit_id)`       |
 | `catalog_products`          | ON  | `catalog_products_select_unit_access`        | authenticated com `can_access_unit(unit_id)`       |
+| `catalog_product_option_groups` | ON | `catalog_product_option_groups_select_unit_access` | authenticated com `can_access_unit(unit_id)` |
+| `catalog_product_options`   | ON  | `catalog_product_options_select_unit_access` | authenticated com `can_access_unit(unit_id)`       |
 | `menu_versions`             | ON  | `menu_versions_select_unit_access`           | authenticated com `can_access_unit(unit_id)`       |
 | `menu_version_categories`   | ON  | `menu_version_categories_select_unit_access` | authenticated com `can_access_unit(unit_id)`       |
 | `menu_version_products`     | ON  | `menu_version_products_select_unit_access`   | authenticated com `can_access_unit(unit_id)`       |
+| `menu_version_option_groups` | ON | `menu_version_option_groups_select_unit_access` | authenticated com `can_access_unit(unit_id)`    |
+| `menu_version_options`      | ON  | `menu_version_options_select_unit_access`    | authenticated com `can_access_unit(unit_id)`       |
 | `menu_publications`         | ON  | `menu_publications_select_unit_access`       | authenticated com `can_access_unit(unit_id)`       |
 | `orders`                    | ON  | `orders_select_unit_access`                  | authenticated com `can_access_unit(unit_id)`       |
 | `order_items`               | ON  | `order_items_select_unit_access`             | authenticated com `can_access_unit(unit_id)`       |
+| `order_item_options`        | ON  | `order_item_options_select_unit_access`      | authenticated com `can_access_unit(unit_id)`       |
 | `order_events`              | ON  | `order_events_select_unit_access`            | authenticated com `can_access_unit(unit_id)`       |
 | `loyalty_programs`          | ON  | nenhuma                                      | acesso somente por RPC                             |
 | `customers`                 | ON  | nenhuma                                      | acesso somente por RPC interna/admin minimizada    |
@@ -92,6 +98,8 @@ role sem escopo.
 | Criar/editar/mover produto                                   |   Sim |               Sim |                Não |
 | Alterar `product.is_active`                                  |   Sim |               Sim |                Não |
 | Alterar `product.is_available`                               |   Sim |               Sim |                Sim |
+| Criar/editar/desativar grupo ou opção                        |   Sim |               Sim |                Não |
+| Alterar `option.is_available`                                |   Sim |               Sim |                Sim |
 | Publicar cardápio (`publish_unit_menu`)                      |   Sim |               Sim |                Não |
 | Ler publicação/histórico (`get_unit_menu_publication_admin`) |   Sim |               Sim |                Sim |
 | Ler Central e detalhe de pedidos                             |   Sim |               Sim |                Sim |
@@ -119,14 +127,14 @@ publicação.
   policies; `profiles` concede também `UPDATE(full_name)`.
 - As três tabelas operacionais não têm policy de leitura nem grants diretos para o cliente; getters
   e saves passam pelas RPCs.
-- O catálogo e as quatro tabelas de cardápio executam `REVOKE ALL` de `PUBLIC`, `anon` e
-  `authenticated`, depois concedem somente `SELECT` (a `authenticated`; a `anon` também no caso das
-  duas tabelas do catálogo mutável). Assim, I/U/D permanecem revogados.
+- As quatro tabelas do catálogo e as seis tabelas de cardápio executam `REVOKE ALL` de `PUBLIC`,
+  `anon` e `authenticated`, depois concedem somente `SELECT` a `authenticated`; `anon` recebe o
+  privilégio apenas nas duas tabelas-base do catálogo mutável, sem policy. I/U/D permanecem revogados.
 - `anon` tem privilégio SQL de `SELECT` em `catalog_categories` e `catalog_products`, mas não é alvo
   de nenhuma policy. O resultado é sempre zero linhas, não publicação pública. As tabelas de menu
   não concedem `SELECT` ao `anon` de forma alguma.
 - `get_public_menu(text)` é a única leitura anônima efetiva do cardápio.
-- As três tabelas de pedidos concedem `SELECT` somente a `authenticated`, filtrado por
+- As quatro tabelas de pedidos concedem `SELECT` somente a `authenticated`, filtrado por
   `can_access_unit`; `anon` não possui acesso direto e nenhum papel cliente recebe I/U/D.
 - As 13 tabelas do Clube executam `REVOKE ALL` de `PUBLIC`, `anon` e `authenticated`; não há
   leitura nem escrita direta efetiva por navegador. Isso inclui `loyalty_rate_limits`, que contém
@@ -136,19 +144,18 @@ publicação.
 
 RPCs de catálogo, publicação e leitura administrativa têm `EXECUTE` apenas para `authenticated`:
 
-- oito RPCs do catálogo (Seção 6.4 do schema);
+- oito RPCs do catálogo-base (Seção 6.4 do schema) e sete RPCs de grupos/opções (Seção 6.7);
 - `publish_unit_menu(uuid)`;
 - `get_unit_menu_publication_admin(uuid)`.
 
 `get_public_menu(text)` tem `EXECUTE` para `anon` e `authenticated`.
 
-`create_public_order(text,uuid,jsonb)` e `get_public_order(text)` também têm `EXECUTE` para `anon` e
-`authenticated`. As quatro RPCs administrativas de pedidos têm `EXECUTE` apenas para
-`authenticated`; helpers internos de pedidos são revogados de todos os papéis cliente.
-
+`create_public_order(text,uuid,jsonb)`, `get_public_order(text)`,
 `create_public_order_v2(text,uuid,jsonb,text)` e
 `get_public_order_by_attempt(text,uuid,text)` têm `EXECUTE` para `anon`/`authenticated` e retornos
-minimizados. `get_public_loyalty_account(text)` é a única leitura pública de conta/extrato.
+minimizados. As quatro RPCs administrativas de pedidos têm `EXECUTE` apenas para `authenticated`;
+helpers internos de pedidos são revogados de todos os papéis cliente.
+`get_public_loyalty_account(text)` é a única leitura pública de conta/extrato.
 `get_loyalty_program_admin`, `set_loyalty_program_enabled` e `get_loyalty_members_admin` exigem
 `authenticated` e validam `is_org_owner` no servidor. `get_loyalty_public_context_internal`,
 `resolve_loyalty_identity_internal_v2` e `consume_loyalty_rate_limit_internal` têm execute somente
@@ -202,10 +209,10 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 ### 6.4 Cardápio publicado
 
 - Publicação exige `can_manage_unit` (owner/manager); operator não publica.
-- O snapshot é capturado sob advisory locks do catálogo e da publicação, garantindo coerência e
-  ausência de `version_number` duplicado.
+- O snapshot é capturado sob advisory locks do catálogo e da publicação. Writers de grupos/opções
+  participam do mesmo lock por produto, evitando mistura entre estados estruturais.
 - O snapshot é imutável por construção: sem policies de escrita e sem grants de I/U/D em nenhuma
-  das quatro tabelas; nenhuma coluna é alterada depois da criação.
+  das cinco tabelas `menu_version_*`; nenhuma coluna é alterada depois da criação.
 - O slug público é opaco (24 hex) e estável; nunca expõe `unit_id`, `menu_version_id` ou IDs do
   catálogo.
 
@@ -218,6 +225,10 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 - `get_public_order` devolve somente o contrato público minimizado. PII completa fica disponível
   apenas no detalhe administrativo protegido por `can_access_unit`.
 - Tracking público não inclui a nota livre de item; ela permanece apenas no detalhe administrativo.
+- O carrinho persistido contém somente dados públicos e omite `note`. Observações de item ficam em
+  memória até o checkout; cargas posteriores saneiam ou removem registros legados de todos os slugs.
+- Antes de gravar `order_item_options`, o checkout bloqueia a opção mutável disponível; toggle/delete
+  concorrente espera o pedido ou vence antes e causa `PED75`, sem pedido parcial.
 - Recuperação por tentativa exige slug + UUID de idempotência + hash de 64 hex e devolve a mesma
   resposta pública de criação ou `found=false`, sem PII/IDs internos.
 - Lista, detalhe e transições administrativas validam sessão e acesso à unidade. Refund exige
@@ -283,9 +294,11 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 | Authenticated tenta I/U/D direto                      | grants revogados/ausência de policy: bloqueado                         |
 | Corrida calcula mesma ordem                           | advisory lock por unidade/categoria e ordem server-side                |
 | Publicações concorrentes                              | locks `pedon:menu:publish:<unit>` serializam e preservam o slug        |
+| Publicação concorre com mutação de grupo/opção        | advisory lock compartilhado por produto serializa o snapshot          |
 | Escrita direta no snapshot                            | sem policy/grant: bloqueado; imutabilidade é estrutural                |
 | Anon consulta tabelas de pedidos                      | sem grant de SELECT: `42501`                                           |
 | Checkout envia preço/total/nome                       | payload estrito + snapshot e cálculo server-authoritative: `PED37`     |
+| Toggle de opção concorre com checkout                 | row lock da fonte lineariza sucesso ou `PED75`; transação é atômica    |
 | Checkout reutiliza chave com payload diferente        | hash canônico + unique/lock por unidade: `PED42`                       |
 | Tracking tenta enumerar pedido                        | token opaco de 32 hex; desconhecido retorna `found=false`              |
 | Staff tenta pedido de outra unidade                   | `can_access_unit` nas RPCs e RLS filtra leitura direta                 |
@@ -354,7 +367,7 @@ payload/nome/estoque inválidos. O contrato completo está no schema, Seção 10
 
 ## 9. Testes executados
 
-As nove suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
+As dez suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
 oficial não substitui esse ambiente destrutivo:
 
 | Script                                       | Resultado oficial | Cobertura principal                                                                       |
@@ -365,11 +378,12 @@ oficial não substitui esse ambiente destrutivo:
 | `catalog_integrity.test.mjs`                 |           123/123 | RLS/ACL, matriz RBAC, IDOR, FKs, flags, preço e locks                                     |
 | `menu_publication_integrity.test.mjs`        |           121/121 | publicação, imutabilidade, slug, overlay, API pública e isolamento                        |
 | `orders_integrity.test.mjs`                  |           318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência       |
+| `product_options_integrity.test.mjs`         |           158/158 | opções, snapshots, checkout, RLS/ACL e concorrência de publicação/disponibilidade          |
 | `loyalty_integrity.test.mjs`                 |           148/148 | identidade v2, consent auditável, ACL legado, TTL, rate limit, recovery e ledger           |
 | `loyalty_rewards_integrity.test.mjs`         |           254/254 | rewards, replay secret, FKs, estoque, vouchers e concorrência real                         |
 | `pilot_readiness_team_integrity.test.mjs`    |             84/84 | readiness, grants, owner-only, IDOR, vínculos e configuração segura das RPCs               |
 
-O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das quatro tabelas, escrita
+O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das seis tabelas de cardápio, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
 slug estável/opaco e único, republicação preservando histórico, API pública sem sessão,
 disponibilidade em overlay (inclusive fonte deletada), unidade inativa, isolamento entre
@@ -380,15 +394,16 @@ uniforme, consentimento, token repetível/consumido, disable explícito, rate li
 máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
 concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108.
 
-O CI `31761944228` aprovou fresh rebuild das 20 migrations, alinhamento, DB lint, as dez suítes
-sequenciais com 1332/1332 checks (inclui `product_options_integrity`) e Edge unit 15/15. O remote
+O CI `31787020339` aprovou fresh rebuild das 21 migrations, alinhamento, DB lint, as dez suítes
+sequenciais com 1340/1340 checks (`product_options_integrity` 158/158) e Edge unit 15/15. O remote
 smoke 36/36 permanece evidência histórica do Prompt 10. `LOCAL DB REBUILD: NOT RUN — BY DESIGN /
 NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PASS`.
 
 Opções de produto seguem o mesmo modelo: leitura por policy `can_access_unit` com SELECT concedido
 somente a `authenticated`; escrita exclusiva por RPCs `SECURITY DEFINER`; snapshot imutável na
 publicação e `order_item_options` no checkout preservam nomes/deltas sem depender do catálogo
-mutável. Nenhuma escrita de opção por grant de navegador.
+mutável. `single => max_select=1` é constraint do catálogo e do snapshot. Nenhuma escrita de opção
+por grant de navegador.
 
 Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contagem global de
 `membership_units` durante um cenário e é frágil se outra suíte inserir vínculos em paralelo.

@@ -1,7 +1,7 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint `ADMIN_CHECKPOINT` do Prompt 12. Etapa administrativa
-> aprovada no HEAD `df2cee31fa4afb288ab5d7bb08ae54d07aff1572`, CI `31761944228`; base anterior
+> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 12. Etapa 5
+> aprovada no HEAD `9139391ca418dc063cdd7366d6b8e447cccacc3a`, CI `31787020339`; base anterior
 > auditada `3a6cd42eab24719e01505fc854d03c65ca9d9975` (Prompt 11, `RELEASE_VERIFIED`).
 
 ## 1. Pré-requisitos
@@ -57,11 +57,11 @@ gitleaks git --redact --log-level warn .
 
 Não executar Docker, `supabase start`, `supabase db reset` nem stack Supabase local na máquina de
 desenvolvimento. O GitHub Actions é o ambiente oficial e descartável para fresh rebuild, aplicação
-das 20 migrations, dez suítes DB, DB lint e Edge unit.
+das 21 migrations, dez suítes DB, DB lint e Edge unit.
 
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
-- `CI ISOLATED DB REBUILD: PASS` no run `31761944228`, com fresh rebuild das 20 migrations;
-- migration 20 aplicada remotamente; migration list em 20/20;
+- `CI ISOLATED DB REBUILD: PASS` no run `31787020339`, com fresh rebuild das 21 migrations;
+- migration 21 aplicada remotamente; migration list em 21/21;
 - dry-run linked confirma que o remoto está up to date.
 
 ## 4. Variáveis e secrets
@@ -124,12 +124,15 @@ $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
 18. `20260812120000_prompt11_pilot_readiness_team.sql`
 19. `20260813120000_prompt11_readiness_unit_coherence.sql`
 20. `20260814000000_prompt12_product_options.sql`
+21. `20260814010000_prompt12_final_hardening.sql`
 
-### 5.2 Fluxo linked não destrutivo
+### 5.2 Fluxo linked controlado
 
 ```bash
 supabase projects list
 supabase migration list
+supabase db push --linked --dry-run
+# Somente após CI verde e aprovação explícita da migration:
 supabase db push --linked
 supabase migration list
 supabase db lint --linked
@@ -140,14 +143,15 @@ Regras:
 - criar e revisar migration versionada antes de alterar o banco;
 - nunca editar/apagar migration já aplicada;
 - nunca aplicar SQL silencioso pelo Dashboard;
-- confirmar Git/filesystem e remote em 20/20; o dry-run linked deve informar que o remoto está up to
+- executar o dry-run antes do push real; somente o comando com `--dry-run` é não destrutivo;
+- confirmar Git/filesystem e remote em 21/21; o dry-run linked deve informar que o remoto está up to
   date;
 - não usar `supabase db reset` no projeto oficial.
 
 ## 6. Testes DB e Edge
 
 Os testes DB usam conexão PostgreSQL administrativa para setup/cleanup e sessões dedicadas com
-`SET ROLE`/claims. As nove suítes destrutivas rodam sequencialmente apenas no banco descartável do
+`SET ROLE`/claims. As dez suítes destrutivas rodam sequencialmente apenas no banco descartável do
 GitHub Actions:
 
 ```powershell
@@ -175,13 +179,13 @@ node supabase/tests/product_options_integrity.test.mjs
 | `loyalty_integrity.test.mjs`                 | 148/148 PASS |
 | `loyalty_rewards_integrity.test.mjs`         | 254/254 PASS |
 | `pilot_readiness_team_integrity.test.mjs`    |   84/84 PASS |
-| `product_options_integrity.test.mjs`         | 150/150 PASS |
+| `product_options_integrity.test.mjs`         | 158/158 PASS |
 
 A execução sequencial evita interferência na contagem global herdada de `membership_units`. Cada
 script cria fixtures sintéticas e faz cleanup. Nunca limpar registros reais ao recuperar uma
 execução interrompida.
 
-Baseline oficial do CI `31761944228`: dez suítes, 1332/1332 checks.
+Baseline oficial do CI `31787020339`: dez suítes, 1340/1340 checks.
 
 ### 6.1 Edge unit
 
@@ -373,6 +377,11 @@ continua autorizado a exibi-las.
 | Repositório       | `https://github.com/Rodrigo-Kotlin/ped-on` |
 | Branch            | `main`                                     |
 | Workflow          | `.github/workflows/ci.yml`, nome `CI`      |
+| Pages project     | `ped-on`                                   |
+| Production branch | `main`                                     |
+| Build             | `pnpm build`                               |
+| Output            | `apps/web/dist`                            |
+| URL estável       | `https://ped-on.pages.dev`                 |
 
 Jobs obrigatórias atuais: `Quality gates`, `E2E smoke tests` e `Backend release gates`. Backend
 reconstrói o Supabase local exclusivamente pelas migrations versionadas, valida alinhamento local,
@@ -380,11 +389,6 @@ executa `supabase db lint --local --level error --fail-on error`, as dez suítes
 Edge unit. O job
 não usa service role, senha ou banco remoto. Edge smoke remoto e Cloudflare smoke permanecem gates
 manuais de release por dependerem de ambiente implantado.
-| Pages project     | `ped-on`                                   |
-| Production branch | `main`                                     |
-| Build             | `pnpm build`                               |
-| Output            | `apps/web/dist`                            |
-| URL estável       | `https://ped-on.pages.dev`                 |
 
 Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (Etapa 3 do Prompt 12 concluída):
 
@@ -396,6 +400,20 @@ Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (Etapa 3 do Prompt 12 concluída):
   (grupos variação/adicional/remoção, min/max, opções com preço/desconto, edição, desativação,
   operator view-only e offline) em 4 viewports;
 - Supabase em 20/20, dry-run linked informa remote up to date e lint linked não encontrou erros;
+- rebuild local não executado por design.
+
+Release candidata do Prompt 12 — `READY_FOR_REAUDIT` (Etapa 5 concluída):
+
+- source técnico `9139391ca418dc063cdd7366d6b8e447cccacc3a`; implementação de hardening `c970381`;
+- CI `31787020339`: `Quality gates`, `Backend release gates` e `E2E smoke tests` aprovados;
+- backend: fresh rebuild isolado das 21 migrations, alinhamento, DB lint, dez suítes com 1340/1340
+  checks (`product_options_integrity` 158/158) e Edge unit 15/15;
+- Frontend unit 354/354; E2E 345/345 com 3 skips móveis intencionais; Prompt 12 4B 20/20;
+- Supabase em 21/21, dry-run linked up to date e linked lint sem erros;
+- Cloudflare deployment `40091196-3bdf-4f15-86fe-54d2816138a2`, source `9139391`, imutável
+  `https://40091196.ped-on.pages.dev` e estável `https://ped-on.pages.dev`; assets iguais, SHA no
+  diagnóstico e fallbacks SPA 18/18;
+- precache 33 entradas, 929032 bytes, sem duplicatas e `runtimeCaching: NONE`;
 - rebuild local não executado por design.
 
 Release candidata do Prompt 11 — `READY_FOR_REAUDIT` (histórico):
@@ -468,9 +486,6 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 
 ## 13. Próximo passo
 
-Prompt 12 está em `IN PROGRESS`, checkpoint `ADMIN_CHECKPOINT`. A Etapa 3 (painel administrativo de
-variações, adicionais e remoções em `/app/catalogo`) está concluída e verificada. A Etapa 4
-(seleção de opções no cardápio público e no checkout) permanece pendente, com o backend da migration
-20 já pronto (snapshot na publicação e validação de seleção no servidor).
-
-Prompt 12: `IN PROGRESS — ADMIN_CHECKPOINT`; Etapa 4 pendente.
+Prompt 12 está em `IN PROGRESS`, checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 estão concluídas e
+verificadas; o próximo passo é a reauditoria independente final. Não declarar `COMPLETED`,
+`RELEASE_VERIFIED` ou `MENU_COMMERCIALLY_USABLE` e não iniciar Prompt 13 antes do parecer.

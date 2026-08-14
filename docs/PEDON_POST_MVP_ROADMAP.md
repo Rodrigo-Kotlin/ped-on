@@ -49,9 +49,9 @@ gates de release do projeto.
 
 ## Prompt 12 — Produtos, Variações e Adicionais
 
-Estado: `IN PROGRESS` — checkpoint `ADMIN_CHECKPOINT` (Etapa 3 concluída: painel administrativo de
-variações, adicionais e remoções em `/app/catalogo`, CI `31761944228`, E2E 288/288). Etapa 4
-pendente: seleção de opções no cardápio público e no checkout.
+Estado: `IN PROGRESS` — checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 estão implementadas e
+verificadas no CI `31787020339`; falta a reauditoria independente final. Não declarar
+`MENU_COMMERCIALLY_USABLE` nem iniciar Prompt 13 antes do parecer.
 
 Objetivos:
 
@@ -65,16 +65,18 @@ Objetivos:
 - snapshots corretos no pedido.
 
 Concluído na Etapa 3 (admin): criação/edição/desativação de grupos e opções, regras por `kind`
-(`variation` única obrigatória; `removal` múltipla sem preço), `price_delta` decimal exato, operator
-somente disponibilidade, offline pausa mutações.
+(`variation` de escolha única, obrigatória somente se `min_select > 0`; `removal` múltipla sem
+preço), `price_delta` decimal exato, operator somente disponibilidade, offline pausa mutações.
 
-Backend da Etapa 4 já entregue na migration 20: snapshot de grupos/opções na publicação
+Backend da Etapa 4 entregue na migration 20: snapshot de grupos/opções na publicação
 (`menu_version_option_groups`/`menu_version_options`), validação de seleção no checkout com
 `PED72..PED78`, `unit_price = base + SUM(price_delta)` e `order_item_options` (snapshot por linha).
-Falta a experiência de cardápio público (seleção por produto, carrinho e envio de
-`selected_option_ids` no checkout).
+O cardápio público, carrinho configurável, checkout por IDs, tracking e detalhe administrativo estão
+integrados. A migration 21 fecha os blockers de `single`, coerência publicação/mutação e corrida de
+disponibilidade; notas livres do item permanecem somente em memória e recovery de voucher mantém a
+janela crítica PWA até a conclusão.
 
-Critério: `MENU_COMMERCIALLY_USABLE`.
+Critério pendente de reauditoria: `MENU_COMMERCIALLY_USABLE`.
 
 ## Prompt 13 — Operação de Pedidos 2.0
 
