@@ -49,12 +49,13 @@ gates de release do projeto.
 
 ## Prompt 12 — Produtos, Variações e Adicionais
 
-Estado: `IN PROGRESS` — checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 e as remediations A/B1/B2/C
-estão implementadas e verificadas; a primeira reauditoria independente retornou NO_GO e o release foi
-reconvergido no HEAD técnico `f663cecb96ef87f397376e29aee82cd24ba846df` (CI `31814657987` SUCCESS nos
-três jobs; migrations 22/22; DB 1409/1409; Edge 15/15; frontend 383/383; E2E 345/345 com 3 skips
-móveis intencionais). Falta a reauditoria independente final. Não declarar `MENU_COMMERCIALLY_USABLE`
-nem iniciar Prompt 13 antes do parecer.
+Estado: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco **`MENU_COMMERCIALLY_USABLE — ACHIEVED`**.
+Reauditoria final #2 concluída com `PASS_WITH_FINDINGS` e release recommendation
+`GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL 0, HIGH 0, MEDIUM BLOCKING 0; MEDIUM NON-BLOCKING 1) sobre
+o HEAD técnico `f663cecb96ef87f397376e29aee82cd24ba846df` (CI técnico `31814657987` SUCCESS; CI
+documental `31823617636` SUCCESS). A primeira reauditoria retornou NO_GO e o release foi reconvergido
+(migrations 22/22; DB 1409/1409 em 11 suítes; Edge 15/15; frontend 383/383; E2E 345/345 com 3 skips
+móveis intencionais).
 
 Objetivos:
 
@@ -81,9 +82,14 @@ lock unit-scoped, exige regras satisfazíveis (PED73) e vincula `order_item_opti
 Notas livres do item permanecem somente em memória (sanitização global de carrinhos legados no
 bootstrap) e o recovery ambíguo de voucher mantém a lease crítica PWA até a conclusão.
 
-Critério pendente de reauditoria: `MENU_COMMERCIALLY_USABLE`.
+Marco alcançado: `MENU_COMMERCIALLY_USABLE`. Dívida técnica carregada (MEDIUM NON-BLOCKING,
+follow-up Prompt 13+): lock-order inversion nos dois CREATE de product options (`NEW-MEDIUM-1`,
+detalhes na atualização da DEC-116 e no Decision Register).
 
 ## Prompt 13 — Operação de Pedidos 2.0
+
+Estado: `NOT STARTED — UNBLOCKED` (próximo passo após o fechamento do Prompt 12; não iniciar nesta
+sessão).
 
 Objetivos:
 
@@ -255,6 +261,7 @@ real e estratégia comercial.
 ```
 Core MVP — COMPLETED
 ↓ Pilot Ready — ACHIEVED (Prompt 11)
+↓ Menu Commercially Usable — ACHIEVED (Prompt 12)
 ↓ Operation Ready
 ↓ Pilot Gate
 ↓ Commercial Ready

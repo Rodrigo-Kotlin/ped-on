@@ -57,7 +57,7 @@ gitleaks git --redact --log-level warn .
 
 Não executar Docker, `supabase start`, `supabase db reset` nem stack Supabase local na máquina de
 desenvolvimento. O GitHub Actions é o ambiente oficial e descartável para fresh rebuild, aplicação
-das 22 migrations, dez suítes DB, DB lint e Edge unit.
+das 22 migrations, onze suítes DB, DB lint e Edge unit.
 
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
 - `CI ISOLATED DB REBUILD: PASS` no run `31814657987`, com fresh rebuild das 22 migrations e
@@ -145,14 +145,14 @@ Regras:
 - nunca editar/apagar migration já aplicada;
 - nunca aplicar SQL silencioso pelo Dashboard;
 - executar o dry-run antes do push real; somente o comando com `--dry-run` é não destrutivo;
-- confirmar Git/filesystem e remote em 21/21; o dry-run linked deve informar que o remoto está up to
+- confirmar Git/filesystem e remote em 22/22; o dry-run linked deve informar que o remoto está up to
   date;
 - não usar `supabase db reset` no projeto oficial.
 
 ## 6. Testes DB e Edge
 
 Os testes DB usam conexão PostgreSQL administrativa para setup/cleanup e sessões dedicadas com
-`SET ROLE`/claims. As dez suítes destrutivas rodam sequencialmente apenas no banco descartável do
+`SET ROLE`/claims. As onze suítes destrutivas rodam sequencialmente apenas no banco descartável do
 GitHub Actions:
 
 ```powershell
@@ -386,7 +386,7 @@ continua autorizado a exibi-las.
 
 Jobs obrigatórias atuais: `Quality gates`, `E2E smoke tests` e `Backend release gates`. Backend
 reconstrói o Supabase local exclusivamente pelas migrations versionadas, valida alinhamento local,
-executa `supabase db lint --local --level error --fail-on error`, as dez suítes DB sequenciais e
+executa `supabase db lint --local --level error --fail-on error`, as onze suítes DB sequenciais e
 Edge unit. O job
 não usa service role, senha ou banco remoto. Edge smoke remoto e Cloudflare smoke permanecem gates
 manuais de release por dependerem de ambiente implantado.
@@ -403,22 +403,50 @@ Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (Etapa 3 do Prompt 12 concluída):
 - Supabase em 20/20, dry-run linked informa remote up to date e lint linked não encontrou erros;
 - rebuild local não executado por design.
 
-Release candidata do Prompt 12 — `READY_FOR_REAUDIT` (Release Reconvergence, evidência atual):
+Fechamento oficial do Prompt 12 — `COMPLETED` / `RELEASE_VERIFIED` / `MENU_COMMERCIALLY_USABLE`
+(evidência atual):
+
+- reauditoria final #2: `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS` — CRITICAL 0, HIGH 0,
+  MEDIUM BLOCKING 0, MEDIUM NON-BLOCKING 1 (`NEW-MEDIUM-1`, lock-order inversion nos dois CREATE de
+  product options — follow-up Prompt 13+), INFO 1 (limitação de evidência Cloudflare);
+- HEAD técnico (release funcional) `f663cecb96ef87f397376e29aee82cd24ba846df`; o novo HEAD
+  documental de fechamento não substitui o SHA técnico;
+- CI técnico `31814657987` e CI documental `31823617636` SUCCESS nos três jobs; CI final de
+  fechamento registrado abaixo;
+- backend: fresh rebuild isolado das 22 migrations, alinhamento, DB lint, onze suítes com 1409/1409
+  checks (0 FAIL, 0 SKIP) e Edge unit 15/15;
+- Frontend unit 383/383 (40 arquivos); E2E 345/345 com 3 skips móveis intencionais;
+- migrations Git/filesystem 22/22; remoto 22/22 (último estado verificado); `LIVE SQL RECHECK
+  DURING FINAL REAUDIT: UNAVAILABLE` — limitação de credencial/rede do ambiente de execução, sem
+  evidência de drift; nenhum teste destrutivo no banco oficial;
+- Cloudflare stable `https://ped-on.pages.dev` responsiva. **Distinção intencional:**
+  `FUNCTIONAL SOURCE HEAD` = `f663cec…`; `CLOUDFLARE BUILD SOURCE SHA` = SHA docs/current main do
+  deploy (na reauditoria final, o stable servia o bundle com `CF_PAGES_COMMIT_SHA` `7e351a4`,
+  redeployado pelos commits docs-only; após o commit de fechamento, passa a servir o novo HEAD
+  documental). Não afirmar que o stable "serve f663cec" se o `CF_PAGES_COMMIT_SHA` indicar outro
+  commit. Commits intermediários são docs-only — sem mudança funcional;
+- deployment id e immutable URL `UNVERIFIED` — sem credencial Cloudflare API no ambiente
+  (limitação de evidência, INFO não bloqueante);
+- precache 33 entradas, 933164 bytes, sem duplicatas e `runtimeCaching: NONE`;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PASS`.
+
+Release candidata do Prompt 12 — `READY_FOR_REAUDIT` (Release Reconvergence, histórico):
 
 - source técnico / release funcional `f663cecb96ef87f397376e29aee82cd24ba846df`; etapa iniciada em
   `1c1fff0`; worktree limpo e `main` alinhado;
 - CI `31814657987`: `Quality gates`, `Backend release gates` e `E2E smoke tests` SUCCESS;
-- backend: fresh rebuild isolado das 22 migrations, alinhamento, DB lint, dez suítes com 1409/1409
+- backend: fresh rebuild isolado das 22 migrations, alinhamento, DB lint, onze suítes com 1409/1409
   checks (0 FAIL, 0 SKIP) e Edge unit 15/15;
 - Frontend unit 383/383 (40 arquivos); E2E 345/345 com 3 skips móveis intencionais;
 - seis blockers originais revalidados como RESOLVED (HIGH-1..HIGH-5, MEDIUM BLOCKING-1);
 - migrations Git/filesystem 22/22; remoto 22/22 (registrado na etapa B1); checagem remota ao vivo
   não executável nesta máquina na reconvergência (sem credencial de banco válida) — sem evidência de
   drift;
-- Cloudflare estável `https://ped-on.pages.dev` servindo o bundle do SHA completo
-  `f663cecb96ef87f397376e29aee82cd24ba846df` (verificado no chunk lazy de diagnóstico); rotas SPA
-  13/13, manifest e SW PASS; deployment id e immutable URL `UNVERIFIED` — sem credencial Cloudflare
-  API no ambiente (limitação de evidência, INFO não bloqueante);
+- Cloudflare estável `https://ped-on.pages.dev` responsiva na reconvergência; verificação de SHA
+  registrada na seção de fechamento final acima (o stable redeploya por commits docs-only e o
+  `CF_PAGES_COMMIT_SHA` reflete o build source, não o HEAD funcional); deployment id e immutable URL
+  `UNVERIFIED` — sem credencial Cloudflare API no ambiente (limitação de evidência, INFO não
+  bloqueante);
 - precache 33 entradas, 933164 bytes, sem duplicatas e `runtimeCaching: NONE`;
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
@@ -502,11 +530,13 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 | Checkout retorna `PED78`                 | opção selecionada pertence a outro cardápio publicado                       |
 | Dados antigos após troca de login        | confirmar `queryClient.clear()` em mudança de user ID                      |
 | Migration ausente                        | `supabase migration list`; revisar antes de `db push --linked`             |
-| DB test falha por contagem               | confirmar execução sequencial das dez suítes                              |
+| DB test falha por contagem               | confirmar execução sequencial das onze suítes                              |
 
 ## 13. Próximo passo
 
-Prompt 12 está em `IN PROGRESS`, checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 e as remediations
-A/B1/B2/C estão concluídas e verificadas no release funcional `f663cec` (CI `31814657987`); o
-próximo passo é a reauditoria independente final. Não declarar `COMPLETED`,
-`RELEASE_VERIFIED` ou `MENU_COMMERCIALLY_USABLE` e não iniciar Prompt 13 antes do parecer.
+Prompt 12 está `COMPLETED`, checkpoint `RELEASE_VERIFIED`, marco `MENU_COMMERCIALLY_USABLE — ACHIEVED`
+(parecer final `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS` sobre o release funcional
+`f663cec`, CI `31814657987` e CI documental `31823617636`). O próximo passo é o **Prompt 13 —
+Operação de Pedidos 2.0** (`NOT STARTED — UNBLOCKED`). Não iniciar o Prompt 13 sem novo parecer de
+etapa; a dívida técnica `NEW-MEDIUM-1` (lock-order inversion nos dois CREATE de product options) é
+follow-up Prompt 13+ e não bloqueia o fechamento.

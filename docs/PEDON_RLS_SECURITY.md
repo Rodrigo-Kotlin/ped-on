@@ -367,7 +367,7 @@ payload/nome/estoque inválidos. O contrato completo está no schema, Seção 10
 
 ## 9. Testes executados
 
-As dez suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
+As onze suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
 oficial não substitui esse ambiente destrutivo:
 
 | Script                                       | Resultado oficial | Cobertura principal                                                                       |
@@ -394,16 +394,23 @@ uniforme, consentimento, token repetível/consumido, disable explícito, rate li
 máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
 concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108.
 
-O CI `31814657987` aprovou fresh rebuild das 22 migrations, alinhamento, DB lint, as dez suítes
-sequenciais com 1409/1409 checks e Edge unit 15/15. O remote
+O CI `31814657987` (técnico) e o CI documental `31823617636` aprovaram fresh rebuild das 22
+migrations, alinhamento, DB lint, as onze suítes sequenciais com 1409/1409 checks e Edge unit 15/15
+(Prompt 12 encerrado como `RELEASE_VERIFIED` / `MENU_COMMERCIALLY_USABLE` com
+`PASS_WITH_FINDINGS`). O remote
 smoke 36/36 permanece evidência histórica do Prompt 10. `LOCAL DB REBUILD: NOT RUN — BY DESIGN /
 NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PASS`.
 
 A publicação passou a exigir regras de seleção satisfazíveis (grupo obrigatório ativo com menos
 opções ativas que `min_select` aborta a publicação com `PED73`, sem versão parcial) e todo writer
-estrutural do catálogo (categorias, produtos, grupos/opções e publicação) adquire primeiro o
-advisory lock unit-scoped `_lock_unit_structure(unit_id)`, revogado de `PUBLIC`/`anon`/`authenticated`
-e usado somente por RPCs `SECURITY DEFINER`.
+estrutural do catálogo (categorias, produtos, grupos/opções e publicação) adquire o
+advisory lock unit-scoped `_lock_unit_structure(unit_id)` como **contrato arquitetural desejado**,
+revogado de `PUBLIC`/`anon`/`authenticated`
+e usado somente por RPCs `SECURITY DEFINER`. **Exceção implementacional conhecida (reauditoria
+final #2, MEDIUM NON-BLOCKING, follow-up Prompt 13+):** `create_catalog_product_option_group` e
+`create_catalog_product_option` podem adquirir o lock de produto no corpo da função antes do trigger
+unit-scoped; sob concorrência estreita o PostgreSQL detecta o deadlock (40P01) e aborta uma
+transação com rollback atômico, sem impacto de integridade.
 
 Opções de produto seguem o mesmo modelo: leitura por policy `can_access_unit` com SELECT concedido
 somente a `authenticated`; escrita exclusiva por RPCs `SECURITY DEFINER`; snapshot imutável na
@@ -421,6 +428,6 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial das dez suítes DB e DB lint no CI isolado.
+- Alterações de autorização exigem execução sequencial das onze suítes DB e DB lint no CI isolado.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.

@@ -1056,6 +1056,31 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
   ordem canônica de locks por unidade, eliminando inversões de ordem e deadlocks entre publicação,
   escritores estruturais e checkout.
 
+**Atualização — Reauditoria final #2 (2026-08-14):**
+
+A disciplina arquitetural permanece unit-first como **contrato desejado**: `_lock_unit_structure`
+deve ser o primeiro lock de todo writer estrutural e da publicação. A auditoria identificou uma
+**exceção implementacional conhecida e não bloqueante** em `create_catalog_product_option_group` e
+`create_catalog_product_option`, que podem adquirir o advisory lock de produto
+(`pedon:catalog:option-groups:product:<product_id>`) no corpo da função **antes** do trigger
+unit-scoped `_lock_product_option_structure`. Sob concorrência estreita (publicação simultânea a
+criação de grupo/opção do mesmo produto), isso pode produzir inversão de ordem
+(publish: unit → espera produto; create: produto → espera unit), que o PostgreSQL detecta (40P01) e
+resolve com rollback atômico de uma das transações — sem corrupção, sem snapshot híbrido, sem
+cross-tenant e sem perda de atomicidade; impacto limitado a erro administrativo esporádico sob
+concorrência.
+
+- Classificação: **MEDIUM NON-BLOCKING** (registrado como `NEW-MEDIUM-1`).
+- Follow-up técnico: **Prompt 13+** — alinhar os dois CREATE à disciplina unit-first (adquirir
+  `_lock_unit_structure` como primeiro lock também nesses dois CREATE) **ou** reavaliar/remover o
+  lock de produto antecipado no corpo da função e utilizar exclusivamente a disciplina do trigger.
+- Não implementado nesta etapa de fechamento (documentation-only, por decisão do fechamento do
+  Prompt 12).
+
+A partir desta atualização, qualquer frase que afirme que a implementação atual "elimina deadlocks"
+ou que "todos os writers sempre adquirem unit primeiro" deve ser lida como **CONTRATO ARQUITETURAL
+DESEJADO**, salvo a **EXCEÇÃO IMPLEMENTACIONAL CONHECIDA** acima.
+
 ### DEC-117 — Recovery durável fail-closed antes de qualquer mutação de rede
 
 - **Status:** APROVADA
@@ -1095,3 +1120,21 @@ completed`, com cancelamento permitido enquanto não `completed`; `completed` e 
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.
+
+## Achados em aberto (não bloqueantes)
+
+### NEW-MEDIUM-1 — Lock-order inversion nos CREATE de product options (follow-up Prompt 13+)
+
+- **Severidade:** MEDIUM NON-BLOCKING.
+- **Origem:** Reauditoria final #2 do Prompt 12 (parecer `PASS_WITH_FINDINGS` /
+  `GO_WITH_NON_BLOCKING_FINDINGS`).
+- **Descrição:** `create_catalog_product_option_group` e `create_catalog_product_option`
+  (migration 20) adquirem o advisory lock `pedon:catalog:option-groups:product:<product_id>` antes
+  do `INSERT`, cujo trigger estrutural (`_lock_product_option_structure`, migration 22) adquire em
+  seguida `_lock_unit_structure(unit_id)`. `publish_unit_menu` segue unit → produto. Existe janela
+  estreita de deadlock detectado pelo PostgreSQL (40P01) com rollback atômico; sem corrupção,
+  snapshot híbrido, cross-tenant ou perda de atomicidade.
+- **Detalhe:** detalhes completos na atualização da DEC-116 (Reauditoria final #2).
+- **Follow-up:** Prompt 13+ — prioridade `MEDIUM NON-BLOCKING HARDENING`. Não incorporar ao escopo
+  funcional obrigatório do Prompt 13 se não fizer sentido arquiteturalmente; apenas garantir que não
+  seja esquecido.

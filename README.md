@@ -7,11 +7,13 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 ## Estado atual
 
 Fase 4A — Pilot Ready, Prompt 12: Produtos, Variações e Adicionais.
-Status `IN PROGRESS`, checkpoint `READY_FOR_REAUDIT`. As Etapas 3–5 estão implementadas; a
-reauditoria independente final permanece pendente.
+Status `COMPLETED`, checkpoint `RELEASE_VERIFIED`, marco `MENU_COMMERCIALLY_USABLE — ACHIEVED`.
+Reauditoria final #2: `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL 0, HIGH 0,
+MEDIUM BLOCKING 0; MEDIUM NON-BLOCKING 1 — follow-up Prompt 13+).
 
 `PILOT_READY: ACHIEVED`.
-`PROMPT 12: READY_FOR_REAUDIT`; Prompt 13 não iniciado.
+`MENU_COMMERCIALLY_USABLE: ACHIEVED`.
+`PROMPT 12: COMPLETED / RELEASE_VERIFIED`; Prompt 13 `NOT STARTED — UNBLOCKED`.
 
 `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 `CI ISOLATED DB REBUILD: PASS` (GitHub Actions; nenhum Docker local).
@@ -72,8 +74,8 @@ ped-on/
 │       └── src/                   # app, componentes, domínio web e páginas
 ├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # 21 migrations versionadas até o Prompt 12
-│   ├── tests/                     # dez suítes DB e smoke remoto da Edge
+│   ├── migrations/                # 22 migrations versionadas até o Prompt 12
+│   ├── tests/                     # onze suítes DB e smoke remoto da Edge
 │   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
 │   └── seed.example.sql           # seed de exemplo, sem dados reais
 ├── docs/                          # continuidade, schema, RLS e operação
@@ -143,7 +145,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O filesystem versionado possui 21 migrations ordenadas:
+O filesystem versionado possui 22 migrations ordenadas:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -166,6 +168,7 @@ O filesystem versionado possui 21 migrations ordenadas:
 19. `20260813120000_prompt11_readiness_unit_coherence.sql`
 20. `20260814000000_prompt12_product_options.sql`
 21. `20260814010000_prompt12_final_hardening.sql`
+22. `20260814020000_prompt12_remediation_a_hardening.sql`
 
 Fluxo linked não destrutivo:
 
@@ -185,14 +188,16 @@ aprovação da migration. Não reaplicar migrations já aplicadas, editar migrat
 
 ## Testes do Prompt 12
 
-- gates locais e do CI `31814657987`: frontend unit 383/383 (40 arquivos), E2E 345/345 com 3 skips
-  móveis intencionais e Edge unit 15/15;
-- banco isolado: dez suítes, DB lint e baseline 1409/1409 checks;
+- gates locais e do CI `31814657987` + CI documental `31823617636`: frontend unit 383/383 (40
+  arquivos), E2E 345/345 com 3 skips móveis intencionais e Edge unit 15/15;
+- banco isolado: onze suítes, DB lint e baseline 1409/1409 checks;
 - migrations Git/filesystem: 22; remote: 22; dry-run linked informa remote up to date;
-- Cloudflare estável `https://ped-on.pages.dev` serve o bundle do SHA
-  `f663cecb96ef87f397376e29aee82cd24ba846df` (verificado no diagnóstico) com rotas SPA 13/13;
-  deployment id e immutable URL permanecem `UNVERIFIED` por ausência de credencial Cloudflare API no
-  ambiente (limitação de evidência, não bloqueante).
+- Cloudflare estável `https://ped-on.pages.dev` responsiva. **Distinção intencional:**
+  `FUNCTIONAL SOURCE HEAD` = `f663cecb96ef87f397376e29aee82cd24ba846df`;
+  `CLOUDFLARE BUILD SOURCE SHA` = SHA docs/current main de cada deploy (`CF_PAGES_COMMIT_SHA`); os
+  commits entre o HEAD técnico e o build source são docs-only, sem mudança funcional. Deployment id
+  e immutable URL permanecem `UNVERIFIED` por ausência de credencial Cloudflare API no ambiente
+  (limitação de evidência, não bloqueante).
 
 ## Segurança e secrets
 
@@ -221,4 +226,6 @@ aprovação da migration. Não reaplicar migrations já aplicadas, editar migrat
 - `docs/PEDON_POST_MVP_ROADMAP.md`: roadmap oficial pós-Core MVP
 
 Prompt 11: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `PILOT_READY: ACHIEVED`.
-Prompt 12: `IN PROGRESS` / checkpoint `READY_FOR_REAUDIT`; reauditoria independente final pendente.
+Prompt 12: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `MENU_COMMERCIALLY_USABLE: ACHIEVED`
+(reauditoria final `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS`).
+Prompt 13: `NOT STARTED — UNBLOCKED` (próximo passo).

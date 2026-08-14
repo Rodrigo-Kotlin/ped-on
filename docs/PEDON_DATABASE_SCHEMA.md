@@ -1075,7 +1075,25 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
 
-Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (evidência atual — Release Reconvergence):
+Checkpoint Prompt 12 — `COMPLETED` / `RELEASE_VERIFIED` / `MENU_COMMERCIALLY_USABLE` (evidência
+atual — fechamento final):
+
+- parecer da reauditoria final #2: `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS` —
+  CRITICAL 0, HIGH 0, MEDIUM BLOCKING 0, MEDIUM NON-BLOCKING 1 (`NEW-MEDIUM-1`), INFO 1;
+- HEAD técnico (release funcional) `f663cecb96ef87f397376e29aee82cd24ba846df`; novo HEAD documental
+  de fechamento não substitui o SHA técnico;
+- CI técnico `31814657987` e CI documental `31823617636` SUCCESS nos três jobs;
+- fresh rebuild isolado das 22 migrations, alinhamento e DB lint aprovados;
+- suítes DB aprovadas com 1409/1409 PASS, 0 FAIL, 0 SKIP, em 11 suítes; Edge unit 15/15;
+- Frontend unit: 383/383 (40 arquivos); E2E smoke tests: 345/345, com 3 skips móveis intencionais;
+- migrations Git/filesystem 22/22; remoto 22/22 (último estado verificado); `LIVE SQL RECHECK
+  DURING FINAL REAUDIT: UNAVAILABLE` — limitação de credencial/rede, sem evidência de drift;
+- seis blockers originais revalidados como RESOLVED (HIGH-1..HIGH-5, MEDIUM BLOCKING-1);
+- Cloudflare stable responsiva; `FUNCTIONAL SOURCE HEAD` `f663cec…` ≠ `CLOUDFLARE BUILD SOURCE SHA`
+  (docs/current main de cada deploy); deployment id/immutable URL `UNVERIFIED` (INFO);
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+
+Checkpoint Prompt 12 — `READY_FOR_REAUDIT` (Release Reconvergence, histórico técnico):
 
 - HEAD técnico (release funcional) `f663cecb96ef87f397376e29aee82cd24ba846df`; etapa iniciada em
   `1c1fff0`;
