@@ -70,7 +70,10 @@
   preço negativo.
 - Todo grupo `single`, independentemente do `kind`, exige `max_select = 1`; constraints autoritativas
   existem no catálogo e no snapshot publicado.
-- Writers de grupos/opções e publicação usam o mesmo advisory lock por produto. O snapshot final do
+- Todo writer estrutural do catálogo (categorias, produtos, grupos/opções e publicação) adquire
+  primeiro o advisory lock unit-scoped `_lock_unit_structure(unit_id)`; a publicação adquire os locks
+  de publicação em modo exclusivo e o checkout em modo compartilhado (`pg_advisory_xact_lock_shared`),
+  serializando publicação contra mutações estruturais sem bloquear leitores. O snapshot final do
   pedido bloqueia a opção de catálogo disponível, serializando checkout contra toggle/delete.
 - O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
   carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
