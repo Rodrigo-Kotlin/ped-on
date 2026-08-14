@@ -341,6 +341,9 @@ async function run() {
     categoryA1 = await createCategory(ownerAS, unitA1, `Categoria P13 ${suffix}`);
     productA1 = await createProduct(ownerAS, unitA1, categoryA1.id, 'Produto P13', '10.00');
 
+    const categoryB1 = await createCategory(ownerBS, unitB1, `Categoria P13 B ${suffix}`);
+    await createProduct(ownerBS, unitB1, categoryB1.id, 'Produto P13 B', '11.00');
+
     const pubA1 = await publish(ownerAS, unitA1);
     slugA1 = pubA1.public_slug;
     await publish(ownerBS, unitB1);
