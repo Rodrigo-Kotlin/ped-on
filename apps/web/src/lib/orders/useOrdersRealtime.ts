@@ -1,15 +1,26 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
 import { supabase } from '../supabase';
 import { unitKdsPrefix, unitOrderDetailKey, unitOrdersListPrefix } from './orders';
 import { resetUnitOrdersSequence } from './useOrderMutations';
+
+export type OperationalRealtimeStatus = 'connecting' | 'connected' | 'degraded';
+
+export type RealtimeSubscriptionStatus = 'SUBSCRIBED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CLOSED';
 
 interface OrderRealtimePayload {
   new?: { id?: unknown };
 }
 
-export function subscribeToUnitOrders(unitId: string, queryClient: QueryClient): () => void {
+export function mapRealtimeStatus(status: RealtimeSubscriptionStatus): OperationalRealtimeStatus {
+  if (status === 'SUBSCRIBED') return 'connected';
+  return 'degraded';
+}
+
+export function subscribeToUnitOrders(
+  unitId: string,
+  queryClient: QueryClient,
+  onStatusChange?: (status: OperationalRealtimeStatus) => void,
+): () => void {
   const handleChange = (payload: OrderRealtimePayload) => {
     resetUnitOrdersSequence(queryClient, unitId);
     void queryClient.invalidateQueries({ queryKey: unitOrdersListPrefix(unitId) });
@@ -32,15 +43,13 @@ export function subscribeToUnitOrders(unitId: string, queryClient: QueryClient):
       { event: 'UPDATE', schema: 'public', table: 'orders', filter: `unit_id=eq.${unitId}` },
       handleChange,
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (onStatusChange !== undefined) {
+        onStatusChange(mapRealtimeStatus(status));
+      }
+    });
 
   return () => {
     void supabase.removeChannel(channel);
   };
-}
-
-export function useOrdersRealtime(unitId: string): void {
-  const queryClient = useQueryClient();
-
-  useEffect(() => subscribeToUnitOrders(unitId, queryClient), [queryClient, unitId]);
 }

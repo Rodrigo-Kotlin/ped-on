@@ -40,7 +40,6 @@ import {
   remainingMinutes,
   useOperationalNow,
 } from '../lib/orders/useOperationalNow';
-import { useOrdersRealtime } from '../lib/orders/useOrdersRealtime';
 
 function dateTime(value: string): string {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -717,7 +716,6 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
   const [hasChangedQuery, setHasChangedQuery] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const now = useOperationalNow();
-  useOrdersRealtime(unitId);
   const ordersQuery = useInfiniteQuery({
     queryKey: unitOrdersV2ListKey(unitId, appliedFilters),
     initialPageParam: null as string | null,

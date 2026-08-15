@@ -11,6 +11,7 @@ interface MockRealtimeChannel {
   name: string;
   on: ReturnType<typeof vi.fn>;
   subscribe: ReturnType<typeof vi.fn>;
+  subscribeStatus?: (status: string) => void;
 }
 
 const realtimeRegistrations: RealtimeRegistration[] = [];
@@ -65,7 +66,10 @@ export function createSupabaseMock() {
         return channel;
       },
     );
-    channel.subscribe.mockImplementation(() => channel);
+    channel.subscribe.mockImplementation((callback?: (status: string) => void) => {
+      if (typeof callback === 'function') channel.subscribeStatus = callback;
+      return channel;
+    });
     return channel;
   });
   mock.removeChannel.mockImplementation(async (channel: MockRealtimeChannel) => {
@@ -88,6 +92,18 @@ export function emitSupabaseRealtime(
   realtimeRegistrations
     .filter((registration) => registration.event === event)
     .forEach((registration) => registration.callback(payload));
+}
+
+export function emitLastChannelStatus(status: string) {
+  const results = supabaseMock.channel.mock.results;
+  const result = results[results.length - 1];
+  if (result?.value !== undefined) {
+    (result.value as MockRealtimeChannel).subscribeStatus?.(status);
+  }
+}
+
+export function countRegisteredChannels(): number {
+  return supabaseMock.channel.mock.results.length;
 }
 
 export function resetSupabaseMock() {
@@ -120,7 +136,10 @@ export function resetSupabaseMock() {
         return channel;
       },
     );
-    channel.subscribe.mockImplementation(() => channel);
+    channel.subscribe.mockImplementation((callback?: (status: string) => void) => {
+      if (typeof callback === 'function') channel.subscribeStatus = callback;
+      return channel;
+    });
     return channel;
   });
   supabaseMock.removeChannel.mockImplementation(async (channel: MockRealtimeChannel) => {

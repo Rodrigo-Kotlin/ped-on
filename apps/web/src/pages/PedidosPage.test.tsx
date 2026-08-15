@@ -1,6 +1,7 @@
 import { renderWithProviders } from '@pedon/test-utils';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/supabase', () =>
@@ -10,6 +11,7 @@ vi.mock('../lib/supabase', () =>
 import { AdminProvider } from '../lib/admin/AdminProvider';
 import { useAdmin } from '../lib/admin/admin-context';
 import type { AdminRole } from '../lib/admin/admin-context';
+import { useOperationalOrdersBridge } from '../lib/orders/useOperationalOrdersBridge';
 import type {
   AdminOrderDetail,
   AdminOrdersV2Result,
@@ -279,6 +281,20 @@ function configureRpc(
 
 function renderOrders(children = <PedidosPage />) {
   return renderWithProviders(<AdminProvider>{children}</AdminProvider>);
+}
+
+function OperationalBridge({ children }: { children: ReactNode }) {
+  const { selectedUnit } = useAdmin();
+  useOperationalOrdersBridge(selectedUnit?.id ?? null);
+  return <>{children}</>;
+}
+
+function renderOrdersOperational(children = <PedidosPage />) {
+  return renderWithProviders(
+    <AdminProvider>
+      <OperationalBridge>{children}</OperationalBridge>
+    </AdminProvider>,
+  );
 }
 
 describe('PedidosPage', () => {
@@ -732,7 +748,7 @@ describe('PedidosPage', () => {
 
   it('refaz a lista após Realtime sem aplicar o payload recebido', async () => {
     configureRpc();
-    renderOrders();
+    renderOrdersOperational();
     expect(await screen.findByText('Novo pedido')).toBeInTheDocument();
     const initialCalls = supabaseMock.rpc.mock.calls.filter(
       ([name]) => name === 'get_unit_orders_admin_v2',
@@ -783,7 +799,7 @@ describe('PedidosPage', () => {
       return Promise.resolve({ data: null, error: null });
     });
     const user = userEvent.setup();
-    renderOrders(<SwitchHarness />);
+    renderOrdersOperational(<SwitchHarness />);
     expect(await screen.findByText('Maria Cliente')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Trocar unidade' }));

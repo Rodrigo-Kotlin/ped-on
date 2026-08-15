@@ -13,7 +13,6 @@ import type { KdsOrder, KdsOrderStatus } from '../lib/orders/orders';
 import { elapsedMinutes, useOperationalNow } from '../lib/orders/useOperationalNow';
 import { useKdsOrders } from '../lib/orders/useKdsOrders';
 import { useOrderStatusMutation } from '../lib/orders/useOrderMutations';
-import { useOrdersRealtime } from '../lib/orders/useOrdersRealtime';
 
 function formatClock(value: string | number): string {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(
@@ -166,7 +165,6 @@ function KdsOrderCard({
 
 function KdsBoard({ unitId, unitName }: { unitId: string; unitName: string }) {
   const now = useOperationalNow();
-  useOrdersRealtime(unitId);
   const kdsQuery = useKdsOrders(unitId);
 
   const cardRefs = useRef(new Map<string, HTMLElement>());

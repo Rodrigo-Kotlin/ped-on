@@ -5,7 +5,12 @@ vi.mock('../supabase', () =>
   import('../../test/supabaseMock').then((module) => ({ supabase: module.supabaseMock })),
 );
 
-import { emitSupabaseRealtime, resetSupabaseMock, supabaseMock } from '../../test/supabaseMock';
+import {
+  emitLastChannelStatus,
+  emitSupabaseRealtime,
+  resetSupabaseMock,
+  supabaseMock,
+} from '../../test/supabaseMock';
 import type { AdminOrdersV2Result } from './orders';
 import {
   unitKdsPrefix,
@@ -50,6 +55,20 @@ describe('orders realtime', () => {
     expect(invalidate).toHaveBeenCalledTimes(2);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: unitOrdersListPrefix('unit-2') });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: unitKdsPrefix('unit-2') });
+  });
+
+  it('mapeia status do canal para connected/degraded', () => {
+    const queryClient = new QueryClient();
+    const statuses: string[] = [];
+    subscribeToUnitOrders('unit-1', queryClient, (status) => statuses.push(status));
+
+    emitLastChannelStatus('SUBSCRIBED');
+    emitLastChannelStatus('CHANNEL_ERROR');
+    emitLastChannelStatus('TIMED_OUT');
+    emitLastChannelStatus('SUBSCRIBED');
+    emitLastChannelStatus('CLOSED');
+
+    expect(statuses).toEqual(['connected', 'degraded', 'degraded', 'connected', 'degraded']);
   });
 
   it('reinicia a sequência v2 na primeira página sem alterar cache v1 ou aplicar payload', () => {

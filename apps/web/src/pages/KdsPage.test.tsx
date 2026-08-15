@@ -7,9 +7,11 @@ vi.mock('../lib/supabase', () =>
   import('../test/supabaseMock').then((module) => ({ supabase: module.supabaseMock })),
 );
 
+import type { ReactNode } from 'react';
 import { AdminProvider } from '../lib/admin/AdminProvider';
 import { useAdmin } from '../lib/admin/admin-context';
 import type { AdminRole } from '../lib/admin/admin-context';
+import { useOperationalOrdersBridge } from '../lib/orders/useOperationalOrdersBridge';
 import { KDS_ORDER_STATUSES } from '../lib/orders/orders';
 import type { KdsOrder } from '../lib/orders/orders';
 import { emitSupabaseRealtime, resetSupabaseMock, supabaseMock } from '../test/supabaseMock';
@@ -106,6 +108,20 @@ function configureKdsRpc(
 
 function renderKds(children = <KdsPage />) {
   return renderWithProviders(<AdminProvider>{children}</AdminProvider>);
+}
+
+function OperationalBridge({ children }: { children: ReactNode }) {
+  const { selectedUnit } = useAdmin();
+  useOperationalOrdersBridge(selectedUnit?.id ?? null);
+  return <>{children}</>;
+}
+
+function renderKdsOperational(children = <KdsPage />) {
+  return renderWithProviders(
+    <AdminProvider>
+      <OperationalBridge>{children}</OperationalBridge>
+    </AdminProvider>,
+  );
 }
 
 describe('KdsPage', () => {
@@ -444,7 +460,7 @@ describe('KdsPage', () => {
 
   it('refaz o board após Realtime sem aplicar o payload recebido', async () => {
     const calls = configureKdsRpc('owner', [kdsOrder()]);
-    renderKds();
+    renderKdsOperational();
     await screen.findByRole('article', { name: 'Pedido #81' });
     const initialKds = calls.kds;
 
@@ -461,7 +477,7 @@ describe('KdsPage', () => {
 
   it('não duplica cards ao receber eventos Realtime repetidos', async () => {
     const calls = configureKdsRpc('owner', [kdsOrder()]);
-    renderKds();
+    renderKdsOperational();
     await screen.findByRole('article', { name: 'Pedido #81' });
 
     emitSupabaseRealtime('INSERT', { new: { id: 'order-1' } });
@@ -473,7 +489,7 @@ describe('KdsPage', () => {
 
   it('remove o canal Realtime ao desmontar', async () => {
     configureKdsRpc('owner', [kdsOrder()]);
-    const view = renderKds();
+    const view = renderKdsOperational();
     await screen.findByRole('article', { name: 'Pedido #81' });
 
     view.unmount();
@@ -515,7 +531,7 @@ describe('KdsPage', () => {
       return Promise.resolve({ data: null, error: null });
     });
     const user = userEvent.setup();
-    renderKds(<SwitchHarness />);
+    renderKdsOperational(<SwitchHarness />);
     expect(await screen.findByText('Loja Centro')).toBeInTheDocument();
     expect(await screen.findByRole('article', { name: 'Pedido #81' })).toBeInTheDocument();
 

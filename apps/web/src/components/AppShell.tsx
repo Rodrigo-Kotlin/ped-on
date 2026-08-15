@@ -1,7 +1,9 @@
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useAdmin } from '../lib/admin/admin-context';
 import { useAuth } from '../lib/auth/auth-context';
+import { useOperationalOrdersBridge } from '../lib/orders/useOperationalOrdersBridge';
 import { OfflineBanner } from './OfflineBanner';
+import { OperationalOrderStatus } from './OperationalOrderStatus';
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return isActive
@@ -9,11 +11,25 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
     : 'inline-flex min-h-11 items-center rounded-md border border-pedon-navy/20 px-3 py-1.5 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5';
 }
 
+function OrderCountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-label={`${count} ${count === 1 ? 'pedido novo' : 'pedidos novos'}`}
+      className="ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-pedon-orange px-1.5 py-0.5 text-xs font-bold text-white"
+    >
+      {count}
+    </span>
+  );
+}
+
 export function AppShell() {
   const { profile, organization, role, units, selectedUnit, selectUnit } = useAdmin();
   const { user, signOut } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const isKitchenRoute = location.pathname === '/app/cozinha';
+  const bridge = useOperationalOrdersBridge(selectedUnit?.id ?? null);
 
   const unitLabel = units.length === 0 ? 'Nenhuma unidade' : 'Unidade';
 
@@ -79,9 +95,11 @@ export function AppShell() {
           <>
             <NavLink to="/app/pedidos" className={navLinkClass}>
               Pedidos
+              <OrderCountBadge count={bridge.newCount} />
             </NavLink>
             <NavLink to="/app/cozinha" className={navLinkClass}>
               Cozinha
+              <OrderCountBadge count={bridge.newCount} />
             </NavLink>
             <NavLink to="/app/catalogo" className={navLinkClass}>
               Catálogo
@@ -115,6 +133,17 @@ export function AppShell() {
           </>
         )}
       </nav>
+
+      <OperationalOrderStatus
+        realtimeStatus={bridge.realtimeStatus}
+        alert={bridge.alert}
+        dismissAlert={bridge.dismissAlert}
+        soundEnabled={bridge.soundEnabled}
+        soundUnavailable={bridge.soundUnavailable}
+        onToggleSound={bridge.toggleSound}
+        onViewKitchen={() => navigate('/app/cozinha')}
+        onViewOrders={() => navigate('/app/pedidos')}
+      />
 
       <div className="mt-4 print:hidden">
         <OfflineBanner />

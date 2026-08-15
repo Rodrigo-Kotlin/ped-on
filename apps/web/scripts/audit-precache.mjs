@@ -1,6 +1,7 @@
 /* global URL, console, process */
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { containsForbiddenRuntimeCaching } from './audit-precache-runtime-caching.mjs';
 
 const dist = path.resolve(import.meta.dirname, '../dist');
 const sw = await readFile(path.join(dist, 'sw.js'), 'utf8');
@@ -65,9 +66,7 @@ const report = {
   uniqueBytes,
   logicalBytes,
   duplicateLogicalBytes: logicalBytes - uniqueBytes,
-  runtimeCaching: /rest\/v1|functions\/v1|supabase|NetworkFirst|StaleWhileRevalidate/.test(sw)
-    ? 'FOUND'
-    : 'NONE',
+  runtimeCaching: containsForbiddenRuntimeCaching(sw) ? 'FOUND' : 'NONE',
 };
 
 console.log(JSON.stringify(report, null, 2));
