@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '../supabase';
-import { unitOrderDetailKey, unitOrdersListPrefix } from './orders';
+import { unitKdsPrefix, unitOrderDetailKey, unitOrdersListPrefix } from './orders';
 import { resetUnitOrdersSequence } from './useOrderMutations';
 
 interface OrderRealtimePayload {
@@ -13,6 +13,7 @@ export function subscribeToUnitOrders(unitId: string, queryClient: QueryClient):
   const handleChange = (payload: OrderRealtimePayload) => {
     resetUnitOrdersSequence(queryClient, unitId);
     void queryClient.invalidateQueries({ queryKey: unitOrdersListPrefix(unitId) });
+    void queryClient.invalidateQueries({ queryKey: unitKdsPrefix(unitId) });
     const orderId = typeof payload.new?.id === 'string' ? payload.new.id : null;
     if (orderId !== null) {
       void queryClient.invalidateQueries({ queryKey: unitOrderDetailKey(unitId, orderId) });

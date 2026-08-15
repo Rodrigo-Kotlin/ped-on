@@ -6,22 +6,28 @@ vi.mock('../supabase', () =>
 
 import { resetSupabaseMock, supabaseMock } from '../../test/supabaseMock';
 import {
+  ADMIN_ORDER_ERROR_MESSAGES,
   canCancelOrder,
   deriveOrderOperationalDurations,
   deriveOrderOperationalTimeline,
   extractAdminOrderError,
   extractPublicOrderError,
+  fetchKdsOrders,
   fetchUnitOrdersAdmin,
   fetchUnitOrdersAdminV2,
+  getKdsOrderAction,
   getPrimaryOrderAction,
   getPrimaryPaymentAction,
+  groupKdsItemOptions,
   normalizeAdminOrderDateRange,
   normalizeAdminOrderFilters,
   ORDER_NETWORK_ERROR_MESSAGE,
   publicOrderPollingInterval,
+  unitKdsKey,
+  unitKdsPrefix,
   unitOrdersV2ListKey,
 } from './orders';
-import type { AdminOrderEvent, PublicOrderTrackingResult } from './orders';
+import type { AdminOrderEvent, KdsOrder, PublicOrderTrackingResult } from './orders';
 
 function event(
   event_type: AdminOrderEvent['event_type'],
@@ -359,5 +365,104 @@ describe('order action resolvers and operational timeline', () => {
       delivery_minutes: 10,
       total_cycle_minutes: 40,
     });
+  });
+});
+
+describe('kds client contract', () => {
+  beforeEach(resetSupabaseMock);
+
+  const payload = {
+    unit: { id: 'unit-1', name: 'Loja Centro' },
+    truncated: true,
+    orders: [
+      {
+        id: 'order-1',
+        order_number: 1,
+        status: 'new' as const,
+        service_mode: 'pickup' as const,
+        created_at: '2026-08-10T12:00:00Z',
+        status_updated_at: '2026-08-10T12:00:00Z',
+        estimated_minutes: 20,
+        expected_at: '2026-08-10T12:20:00Z',
+        items: [
+          {
+            product_name: 'X-Burger',
+            quantity: 2,
+            note: 'Sem sal',
+            options: [
+              { group_name: 'Tamanho', group_kind: 'variation', option_name: 'Grande' },
+              { group_name: 'Adicionais', group_kind: 'addon', option_name: 'Bacon' },
+              { group_name: 'Ingredientes', group_kind: 'removal', option_name: 'Cebola' },
+            ],
+          },
+        ],
+      },
+    ] satisfies KdsOrder[],
+  };
+
+  it('chama get_kds_orders_minimal com p_unit_id e devolve o shape original sem paginação', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: payload, error: null });
+
+    const result = await fetchKdsOrders('unit-1');
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('get_kds_orders_minimal', {
+      p_unit_id: 'unit-1',
+    });
+    expect(result).toEqual(payload);
+    expect(result).not.toHaveProperty('total_count');
+    expect(result).not.toHaveProperty('page_info');
+  });
+
+  it('mantém query keys KDS separadas da Central', () => {
+    expect(unitKdsPrefix('unit-1')).toEqual(['unit-kds', 'unit-1']);
+    expect(unitKdsKey('unit-1')).toEqual(['unit-kds', 'unit-1', 'orders']);
+    expect(unitKdsPrefix('unit-1')).not.toEqual(unitOrdersV2ListKey('unit-1', { view: 'active' }));
+    expect(unitKdsPrefix('unit-2')).not.toEqual(unitKdsPrefix('unit-1'));
+  });
+
+  it('resolver KDS segue a mesma state machine sem progressões de entrega', () => {
+    expect(getKdsOrderAction('new')).toEqual({ nextStatus: 'confirmed', label: 'Confirmar' });
+    expect(getKdsOrderAction('confirmed')).toEqual({
+      nextStatus: 'preparing',
+      label: 'Iniciar preparo',
+    });
+    expect(getKdsOrderAction('preparing')).toEqual({ nextStatus: 'ready', label: 'Marcar pronto' });
+    expect(getKdsOrderAction('ready')).toBeNull();
+  });
+
+  it('agrupa opções do item por grupo preservando ordem e sem expor preço', () => {
+    expect(
+      groupKdsItemOptions([
+        { group_name: 'Tamanho', group_kind: 'variation', option_name: 'Médio' },
+        { group_name: 'Adicionais', group_kind: 'addon', option_name: 'Bacon' },
+        { group_name: 'Tamanho', group_kind: 'variation', option_name: 'Grande' },
+        { group_name: 'Ingredientes', group_kind: 'removal', option_name: 'Cebola' },
+      ]),
+    ).toEqual([
+      { group_name: 'Tamanho', group_kind: 'variation', option_names: ['Médio', 'Grande'] },
+      { group_name: 'Adicionais', group_kind: 'addon', option_names: ['Bacon'] },
+      { group_name: 'Ingredientes', group_kind: 'removal', option_names: ['Cebola'] },
+    ]);
+    expect(groupKdsItemOptions([])).toEqual([]);
+  });
+
+  it.each([
+    ['PED10', ADMIN_ORDER_ERROR_MESSAGES.PED10],
+    ['PED11', ADMIN_ORDER_ERROR_MESSAGES.PED11],
+    ['PED12', ADMIN_ORDER_ERROR_MESSAGES.PED12],
+    ['PED46', ADMIN_ORDER_ERROR_MESSAGES.PED46],
+    ['PED47', ADMIN_ORDER_ERROR_MESSAGES.PED47],
+  ] as const)('conflitos KDS usam mensagens administrativas existentes (%s)', (code, message) => {
+    expect(extractAdminOrderError({ code: 'P0001', message: `${code} RAW_INTERNAL` }).message).toBe(
+      message,
+    );
+  });
+
+  it('converte falha de rede do fetch KDS em erro administrativo amigável', async () => {
+    supabaseMock.rpc.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(fetchKdsOrders('unit-1')).rejects.toThrow(
+      'Não foi possível atualizar os pedidos. Verifique sua conexão e tente novamente.',
+    );
   });
 });

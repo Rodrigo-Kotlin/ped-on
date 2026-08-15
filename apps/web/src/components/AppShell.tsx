@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router';
+import { NavLink, Outlet, useLocation } from 'react-router';
 import { useAdmin } from '../lib/admin/admin-context';
 import { useAuth } from '../lib/auth/auth-context';
 import { OfflineBanner } from './OfflineBanner';
@@ -12,11 +12,17 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
 export function AppShell() {
   const { profile, organization, role, units, selectedUnit, selectUnit } = useAdmin();
   const { user, signOut } = useAuth();
+  const location = useLocation();
+  const isKitchenRoute = location.pathname === '/app/cozinha';
 
   const unitLabel = units.length === 0 ? 'Nenhuma unidade' : 'Unidade';
 
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-5xl flex-col px-4 py-6 sm:px-6">
+    <div
+      className={`mx-auto flex min-h-svh w-full flex-col px-4 py-6 sm:px-6 ${
+        isKitchenRoute ? 'max-w-[1600px]' : 'max-w-5xl'
+      }`}
+    >
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-pedon-navy/10 pb-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">Painel</p>
@@ -73,6 +79,9 @@ export function AppShell() {
           <>
             <NavLink to="/app/pedidos" className={navLinkClass}>
               Pedidos
+            </NavLink>
+            <NavLink to="/app/cozinha" className={navLinkClass}>
+              Cozinha
             </NavLink>
             <NavLink to="/app/catalogo" className={navLinkClass}>
               Catálogo

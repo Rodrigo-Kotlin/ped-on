@@ -36,6 +36,7 @@ const AppPage = lazyPage(() => import('../pages/AppPage').then((m) => ({ default
 const PedidosPage = lazyPage(() =>
   import('../pages/PedidosPage').then((m) => ({ default: m.PedidosPage })),
 );
+const KdsPage = lazyPage(() => import('../pages/KdsPage').then((m) => ({ default: m.KdsPage })));
 const CatalogoPage = lazyPage(() =>
   import('../pages/CatalogoPage').then((m) => ({ default: m.CatalogoPage })),
 );
@@ -148,6 +149,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <ErrorBoundary>
                 <PedidosPage />
+              </ErrorBoundary>
+            ),
+          },
+          {
+            path: 'cozinha',
+            element: (
+              <ErrorBoundary>
+                <KdsPage />
               </ErrorBoundary>
             ),
           },

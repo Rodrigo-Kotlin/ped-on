@@ -8,6 +8,7 @@ vi.mock('../supabase', () =>
 import { emitSupabaseRealtime, resetSupabaseMock, supabaseMock } from '../../test/supabaseMock';
 import type { AdminOrdersV2Result } from './orders';
 import {
+  unitKdsPrefix,
   unitOrderDetailKey,
   unitOrdersListKey,
   unitOrdersListPrefix,
@@ -39,15 +40,16 @@ describe('orders realtime', () => {
     expect(supabaseMock.removeChannel).toHaveBeenCalledTimes(1);
   });
 
-  it('invalida somente a lista quando o evento não contém id', () => {
+  it('invalida lista e KDS quando o evento não contém id', () => {
     const queryClient = new QueryClient();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
     subscribeToUnitOrders('unit-2', queryClient);
 
     emitSupabaseRealtime('INSERT', { new: { status: 'new' } });
 
-    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledTimes(2);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: unitOrdersListPrefix('unit-2') });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: unitKdsPrefix('unit-2') });
   });
 
   it('reinicia a sequência v2 na primeira página sem alterar cache v1 ou aplicar payload', () => {

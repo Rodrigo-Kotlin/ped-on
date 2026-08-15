@@ -7,6 +7,7 @@ import {
   AdminOrderError,
   setOrderPaymentStatus,
   setOrderStatus,
+  unitKdsPrefix,
   unitOrderDetailKey,
   unitOrdersListPrefix,
   unitOrdersV2ListPrefix,
@@ -31,11 +32,13 @@ function acceptOrderChange(
   queryClient.setQueryData(unitOrderDetailKey(unitId, orderId), order);
   resetUnitOrdersSequence(queryClient, unitId);
   void queryClient.invalidateQueries({ queryKey: unitOrdersListPrefix(unitId) });
+  void queryClient.invalidateQueries({ queryKey: unitKdsPrefix(unitId) });
 }
 
 function invalidateUnitOrderData(queryClient: QueryClient, unitId: string, orderId: string): void {
   void queryClient.invalidateQueries({ queryKey: unitOrdersListPrefix(unitId) });
   void queryClient.invalidateQueries({ queryKey: unitOrderDetailKey(unitId, orderId) });
+  void queryClient.invalidateQueries({ queryKey: unitKdsPrefix(unitId) });
 }
 
 function isOrderConflict(error: unknown): boolean {
@@ -47,6 +50,7 @@ export function useOrderStatusMutation(unitId: string, orderId: string) {
   const { runCriticalOperation } = useCriticalOperation();
 
   return useMutation({
+    networkMode: 'always',
     mutationFn: (nextStatus: OrderStatus) => {
       assertOnline();
       return runCriticalOperation(() => setOrderStatus(orderId, nextStatus));

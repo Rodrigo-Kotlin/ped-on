@@ -782,3 +782,102 @@ export function deriveOrderOperationalDurations(
     total_cycle_minutes: operationalMinutesBetween(timeline.created_at, timeline.completed_at),
   };
 }
+
+export type KdsOrderStatus = 'new' | 'confirmed' | 'preparing' | 'ready';
+
+export const KDS_ORDER_STATUSES = [
+  'new',
+  'confirmed',
+  'preparing',
+  'ready',
+] as const satisfies readonly KdsOrderStatus[];
+
+export const KDS_STATUS_LABELS: Record<KdsOrderStatus, string> = {
+  new: 'Novos',
+  confirmed: 'Confirmados',
+  preparing: 'Em preparo',
+  ready: 'Prontos',
+};
+
+export interface KdsOrderOption {
+  group_name: string;
+  group_kind: OrderItemOptionKind;
+  option_name: string;
+}
+
+export interface KdsOrderItem {
+  product_name: string;
+  quantity: number;
+  note: string | null;
+  options: KdsOrderOption[];
+}
+
+export interface KdsOrder {
+  id: string;
+  order_number: number;
+  status: KdsOrderStatus;
+  service_mode: ServiceMode;
+  created_at: string;
+  status_updated_at: string;
+  estimated_minutes: number | null;
+  expected_at: string | null;
+  items: KdsOrderItem[];
+}
+
+export interface KdsOrdersResult {
+  unit: { id: string; name: string };
+  truncated: boolean;
+  orders: KdsOrder[];
+}
+
+export function unitKdsPrefix(unitId: string) {
+  return ['unit-kds', unitId] as const;
+}
+
+export function unitKdsKey(unitId: string) {
+  return ['unit-kds', unitId, 'orders'] as const;
+}
+
+export function fetchKdsOrders(unitId: string): Promise<KdsOrdersResult> {
+  return adminOrderRpc('get_kds_orders_minimal', { p_unit_id: unitId });
+}
+
+export interface KdsOrderAction extends OrderPrimaryAction {
+  nextStatus: 'confirmed' | 'preparing' | 'ready';
+}
+
+export function getKdsOrderAction(status: KdsOrderStatus): KdsOrderAction | null {
+  switch (status) {
+    case 'new':
+      return { nextStatus: 'confirmed', label: 'Confirmar' };
+    case 'confirmed':
+      return { nextStatus: 'preparing', label: 'Iniciar preparo' };
+    case 'preparing':
+      return { nextStatus: 'ready', label: 'Marcar pronto' };
+    case 'ready':
+      return null;
+  }
+}
+
+export interface KdsOptionGroup {
+  group_name: string;
+  group_kind: OrderItemOptionKind;
+  option_names: string[];
+}
+
+export function groupKdsItemOptions(options: KdsOrderOption[]): KdsOptionGroup[] {
+  const groups: KdsOptionGroup[] = [];
+  for (const option of options) {
+    const group = groups.find((candidate) => candidate.group_name === option.group_name);
+    if (group !== undefined) {
+      group.option_names.push(option.option_name);
+    } else {
+      groups.push({
+        group_name: option.group_name,
+        group_kind: option.group_kind,
+        option_names: [option.option_name],
+      });
+    }
+  }
+  return groups;
+}
