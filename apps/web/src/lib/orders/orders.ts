@@ -881,3 +881,67 @@ export function groupKdsItemOptions(options: KdsOrderOption[]): KdsOptionGroup[]
   }
   return groups;
 }
+
+export function formatClock(value: string | number | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+export function kdsPrintPath(orderId: string): string {
+  return `/app/cozinha/imprimir/${orderId}`;
+}
+
+export interface KitchenTicketItemLine {
+  quantity: number;
+  product_name: string;
+  option_lines: string[];
+  note_line: string | null;
+}
+
+export interface KitchenTicket {
+  unit_name: string;
+  order_number: number;
+  service_mode_label: string;
+  status_label: string;
+  received_at_label: string;
+  eta_label: string | null;
+  is_late: boolean;
+  items: KitchenTicketItemLine[];
+  printed_at_label: string;
+}
+
+export function buildKitchenTicket(
+  unitName: string,
+  order: KdsOrder,
+  now: number,
+  printedAt: Date,
+): KitchenTicket {
+  const expectedAt = order.expected_at !== null ? Date.parse(order.expected_at) : Number.NaN;
+  const isLate = order.expected_at !== null && Number.isFinite(expectedAt) && expectedAt < now;
+
+  return {
+    unit_name: unitName,
+    order_number: order.order_number,
+    service_mode_label: SERVICE_MODE_LABELS[order.service_mode],
+    status_label: ORDER_STATUS_LABELS[order.status],
+    received_at_label: formatClock(order.created_at),
+    eta_label: order.expected_at === null ? null : formatClock(order.expected_at),
+    is_late: isLate,
+    items: order.items.map((item) => ({
+      quantity: item.quantity,
+      product_name: item.product_name,
+      option_lines: groupKdsItemOptions(item.options).map((group) => {
+        const names = group.option_names.join(', ');
+        if (group.group_kind === 'removal') {
+          return `RETIRAR: ${names}`;
+        }
+        if (group.group_kind === 'addon') {
+          return `Adicionais: ${names}`;
+        }
+        return `${group.group_name}: ${names}`;
+      }),
+      note_line: item.note !== null && item.note !== '' ? `OBS: ${item.note}` : null,
+    })),
+    printed_at_label: formatClock(printedAt),
+  };
+}

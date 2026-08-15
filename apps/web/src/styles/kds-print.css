@@ -1,0 +1,126 @@
+/* Kitchen ticket — screen preview + 80 mm thermal-optimized print.
+   Browser print: the operating system/driver controls the physical printer,
+   paper size and margins. This stylesheet only optimizes the layout. */
+
+.kds-print-ticket {
+  width: 72mm;
+  max-width: 72mm;
+  margin: 0 auto;
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 4mm;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+}
+
+.kds-print-ticket .kds-ticket-unit {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.kds-print-ticket .kds-ticket-title {
+  margin-top: 2mm;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kds-print-ticket .kds-ticket-order {
+  margin-top: 2mm;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.kds-print-ticket .kds-ticket-mode {
+  margin-top: 1mm;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.kds-print-ticket dl {
+  margin-top: 3mm;
+  border-top: 1px dashed #000;
+  border-bottom: 1px dashed #000;
+  padding: 2mm 0;
+}
+
+.kds-print-ticket dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 2mm;
+}
+
+.kds-print-ticket dl > div + div {
+  margin-top: 1mm;
+}
+
+.kds-print-ticket dt {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.kds-print-ticket ul {
+  margin-top: 2mm;
+}
+
+.kds-print-ticket ul li {
+  margin-top: 2mm;
+}
+
+.kds-print-ticket .kds-ticket-item-line {
+  display: flex;
+  gap: 1.5mm;
+}
+
+.kds-print-ticket .kds-ticket-qty {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.kds-print-ticket .kds-ticket-removal {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.kds-print-ticket .kds-ticket-note {
+  margin-top: 1.5mm;
+  border: 1px solid #000;
+  padding: 1mm;
+  font-weight: 700;
+}
+
+.kds-print-ticket footer {
+  margin-top: 3mm;
+  border-top: 1px dashed #000;
+  padding-top: 2mm;
+  font-size: 10px;
+}
+
+@media print {
+  .kds-print-screen {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  .kds-print-ticket {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+}
+
+@page {
+  margin: 3mm;
+}

@@ -1190,6 +1190,26 @@ possível no sistema inteiro seja matematicamente impossível.
 - **Justificativa:** resolver `NEW-MEDIUM-1` sem abrir corrida no cálculo de `sort_order`.
 - **Migration:** `20260814100000_prompt13_backend_operational_core.sql` (migration 23).
 
+### DEC-123 — Comanda de cozinha 80 mm via Browser Print (CSS + `window.print` explícito)
+
+- **Status:** APROVADA
+- **Data:** 2026-08-15
+- **Decisão:** a Etapa 13.4B entrega a comanda da cozinha (kitchen ticket 80 mm) como impressão de
+  navegador: rota `/app/cozinha/imprimir/:orderId` dentro do Admin, comanda renderizada em CSS
+  (`.kds-print-ticket` com `width: 72mm`, `@page { margin: 3mm }`, `@media print` escondendo o
+  AppShell), impressão somente por clique explícito em "Imprimir comanda" (`window.print()` nunca no
+  mount), fonte exclusiva `get_kds_orders_minimal` (sem `get_order_admin`, sem query extra), sem
+  persistência de ticket (sem localStorage/sessionStorage/IndexedDB), sem print history/auditoria e
+  sem PII (cliente, telefone, endereço, CPF, pagamento, totais e IDs técnicos ficam fora da comanda).
+  O navegador/OS é quem envia para a impressora física; não há emissor de NFC-e/SAT, ESC/POS,
+  WebUSB/WebSerial, agente, daemon ou fila de impressão nesta etapa.
+- **Justificativa:** comanda é documento de produção interno (não fiscal e não de cliente); o contrato
+  backend minimizado do KDS (DEC-121) já entrega tudo que a comanda exige, mantendo privacy-by-
+  contract; impressão nativa elimina dependências nativas e mantém o PWA instalável no Core MVP.
+- **Não implementado (consciente):** impressão automática, reimpressão rastreada, lista de impressões,
+  drivers de impressora, WebUSB/WebSerial, QZ Tray/PrintNode, ESC/POS, NFC-e/SAT, alertas e áudio.
+- **Migration:** nenhuma (nenhuma mudança de banco/RPC nesta etapa).
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

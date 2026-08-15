@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
+import { Link } from 'react-router';
 import { useAdmin } from '../lib/admin/admin-context';
 import {
   getKdsOrderAction,
   groupKdsItemOptions,
   KDS_ORDER_STATUSES,
   KDS_STATUS_LABELS,
+  kdsPrintPath,
   SERVICE_MODE_LABELS,
 } from '../lib/orders/orders';
 import type { KdsOrder, KdsOrderStatus } from '../lib/orders/orders';
@@ -133,17 +135,25 @@ function KdsOrderCard({
         ))}
       </ul>
 
-      {action !== null && (
-        <button
-          type="button"
-          onClick={runAction}
-          disabled={mutation.isPending}
-          aria-busy={mutation.isPending}
-          className="mt-3 min-h-11 w-full rounded-md bg-pedon-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-pedon-navy/90 disabled:cursor-not-allowed disabled:opacity-60"
+      <div className="mt-3 flex flex-col gap-2">
+        {action !== null && (
+          <button
+            type="button"
+            onClick={runAction}
+            disabled={mutation.isPending}
+            aria-busy={mutation.isPending}
+            className="min-h-11 w-full rounded-md bg-pedon-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-pedon-navy/90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {mutation.isPending ? 'Atualizando…' : action.label}
+          </button>
+        )}
+        <Link
+          to={kdsPrintPath(order.id)}
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-pedon-navy/30 px-4 py-2 text-sm font-semibold text-pedon-navy transition hover:bg-pedon-navy/5"
         >
-          {mutation.isPending ? 'Atualizando…' : action.label}
-        </button>
-      )}
+          Imprimir
+        </Link>
+      </div>
 
       {mutation.isError && mutation.error instanceof Error && (
         <p role="alert" className="mt-2 text-sm font-medium text-red-700">

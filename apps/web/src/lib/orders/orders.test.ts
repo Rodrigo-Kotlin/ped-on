@@ -7,6 +7,7 @@ vi.mock('../supabase', () =>
 import { resetSupabaseMock, supabaseMock } from '../../test/supabaseMock';
 import {
   ADMIN_ORDER_ERROR_MESSAGES,
+  buildKitchenTicket,
   canCancelOrder,
   deriveOrderOperationalDurations,
   deriveOrderOperationalTimeline,
@@ -19,6 +20,7 @@ import {
   getPrimaryOrderAction,
   getPrimaryPaymentAction,
   groupKdsItemOptions,
+  kdsPrintPath,
   normalizeAdminOrderDateRange,
   normalizeAdminOrderFilters,
   ORDER_NETWORK_ERROR_MESSAGE,
@@ -464,5 +466,111 @@ describe('kds client contract', () => {
     await expect(fetchKdsOrders('unit-1')).rejects.toThrow(
       'Não foi possível atualizar os pedidos. Verifique sua conexão e tente novamente.',
     );
+  });
+});
+
+describe('kitchen ticket de impressão', () => {
+  const ticketOrder: KdsOrder = {
+    id: 'order-1',
+    order_number: 128,
+    status: 'preparing',
+    service_mode: 'pickup',
+    created_at: '2026-08-10T14:00:00.000Z',
+    status_updated_at: '2026-08-10T14:12:00.000Z',
+    estimated_minutes: 20,
+    expected_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    items: [
+      {
+        product_name: 'X-Burger',
+        quantity: 2,
+        note: 'Sem sal',
+        options: [
+          { group_name: 'Tamanho', group_kind: 'variation', option_name: 'Grande' },
+          { group_name: 'Adicionais', group_kind: 'addon', option_name: 'Bacon' },
+          { group_name: 'Adicionais', group_kind: 'addon', option_name: 'Cheddar' },
+          { group_name: 'Ingredientes', group_kind: 'removal', option_name: 'Cebola' },
+          { group_name: 'Ingredientes', group_kind: 'removal', option_name: 'Tomate' },
+        ],
+      },
+      { product_name: 'Batata Grande', quantity: 1, note: null, options: [] },
+    ],
+  };
+
+  it('monta a comanda somente com o contrato KDS', () => {
+    const ticket = buildKitchenTicket(
+      'Loja Centro',
+      ticketOrder,
+      Date.now(),
+      new Date(1660000000000),
+    );
+
+    expect(ticket.unit_name).toBe('Loja Centro');
+    expect(ticket.order_number).toBe(128);
+    expect(ticket.service_mode_label).toBe('Retirada');
+    expect(ticket.status_label).toBe('Em preparo');
+    expect(ticket.received_at_label).toMatch(/^\d{2}:\d{2}$/);
+    expect(ticket.eta_label).toMatch(/^\d{2}:\d{2}$/);
+    expect(ticket.is_late).toBe(false);
+    expect(ticket.printed_at_label).toMatch(/^\d{2}:\d{2}$/);
+    expect(ticket.items).toHaveLength(2);
+
+    const [burger, fries] = ticket.items;
+    expect(burger?.quantity).toBe(2);
+    expect(burger?.product_name).toBe('X-Burger');
+    expect(burger?.option_lines).toEqual([
+      'Tamanho: Grande',
+      'Adicionais: Bacon, Cheddar',
+      'RETIRAR: Cebola, Tomate',
+    ]);
+    expect(burger?.note_line).toBe('OBS: Sem sal');
+    expect(fries?.option_lines).toEqual([]);
+    expect(fries?.note_line).toBeNull();
+  });
+
+  it('destaca atraso e mantém Previsto na comanda', () => {
+    const lateOrder: KdsOrder = {
+      ...ticketOrder,
+      expected_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+    };
+    const ticket = buildKitchenTicket('Loja Centro', lateOrder, Date.now(), new Date());
+
+    expect(ticket.is_late).toBe(true);
+    expect(ticket.eta_label).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it('omite ETA quando expected_at é nulo', () => {
+    const noEtaOrder: KdsOrder = { ...ticketOrder, expected_at: null };
+    const ticket = buildKitchenTicket('Loja Centro', noEtaOrder, Date.now(), new Date());
+
+    expect(ticket.eta_label).toBeNull();
+    expect(ticket.is_late).toBe(false);
+  });
+
+  it('trata entrega com modalidade Entrega', () => {
+    const deliveryOrder: KdsOrder = { ...ticketOrder, service_mode: 'delivery' };
+    const ticket = buildKitchenTicket('Loja Centro', deliveryOrder, Date.now(), new Date());
+
+    expect(ticket.service_mode_label).toBe('Entrega');
+  });
+
+  it('usa rótulos singulares de status na comanda', () => {
+    for (const [status, expected] of [
+      ['new', 'Novo'],
+      ['confirmed', 'Confirmado'],
+      ['preparing', 'Em preparo'],
+      ['ready', 'Pronto'],
+    ] as const) {
+      const ticket = buildKitchenTicket(
+        'Loja Centro',
+        { ...ticketOrder, status },
+        Date.now(),
+        new Date(),
+      );
+      expect(ticket.status_label).toBe(expected);
+    }
+  });
+
+  it('gera o caminho de impressão para a rota dedicada', () => {
+    expect(kdsPrintPath('order-1')).toBe('/app/cozinha/imprimir/order-1');
   });
 });

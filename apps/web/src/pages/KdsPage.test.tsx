@@ -180,6 +180,40 @@ describe('KdsPage', () => {
     const card = within(await screen.findByRole('article', { name: 'Pedido #81' }));
     expect(card.getByText('Pronto')).toBeInTheDocument();
     expect(card.queryByRole('button')).not.toBeInTheDocument();
+    expect(card.getByRole('link', { name: 'Imprimir' })).toHaveAttribute(
+      'href',
+      '/app/cozinha/imprimir/order-1',
+    );
+  });
+
+  it('oferece Imprimir em todos os cards, sem alterar o pedido', async () => {
+    const orders = [
+      kdsOrder({ id: 'o-new', order_number: 81, status: 'new' }),
+      kdsOrder({ id: 'o-conf', order_number: 82, status: 'confirmed' }),
+      kdsOrder({ id: 'o-prep', order_number: 83, status: 'preparing' }),
+      kdsOrder({ id: 'o-ready', order_number: 84, status: 'ready' }),
+    ];
+    const calls = configureKdsRpc('owner', orders);
+    renderKds();
+
+    const articles = await screen.findAllByRole('article');
+    expect(articles).toHaveLength(4);
+    for (const article of articles) {
+      expect(within(article).getByRole('link', { name: 'Imprimir' })).toBeInTheDocument();
+    }
+    const printHrefs = screen
+      .getAllByRole('link', { name: 'Imprimir' })
+      .map((link) => link.getAttribute('href'));
+    expect(printHrefs).toEqual([
+      '/app/cozinha/imprimir/o-new',
+      '/app/cozinha/imprimir/o-conf',
+      '/app/cozinha/imprimir/o-prep',
+      '/app/cozinha/imprimir/o-ready',
+    ]);
+    expect(
+      supabaseMock.rpc.mock.calls.filter(([name]) => name === 'set_order_status'),
+    ).toHaveLength(0);
+    expect(calls.statuses).toHaveLength(0);
   });
 
   it('confirma, inicia preparo e marca pronto movendo o card entre colunas', async () => {

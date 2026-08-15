@@ -37,6 +37,9 @@ const PedidosPage = lazyPage(() =>
   import('../pages/PedidosPage').then((m) => ({ default: m.PedidosPage })),
 );
 const KdsPage = lazyPage(() => import('../pages/KdsPage').then((m) => ({ default: m.KdsPage })));
+const KdsPrintPage = lazyPage(() =>
+  import('../pages/KdsPrintPage').then((m) => ({ default: m.KdsPrintPage })),
+);
 const CatalogoPage = lazyPage(() =>
   import('../pages/CatalogoPage').then((m) => ({ default: m.CatalogoPage })),
 );
@@ -157,6 +160,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <ErrorBoundary>
                 <KdsPage />
+              </ErrorBoundary>
+            ),
+          },
+          {
+            path: 'cozinha/imprimir/:orderId',
+            element: (
+              <ErrorBoundary>
+                <KdsPrintPage />
               </ErrorBoundary>
             ),
           },

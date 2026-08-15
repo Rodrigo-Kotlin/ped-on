@@ -21,9 +21,9 @@ export function AppShell() {
     <div
       className={`mx-auto flex min-h-svh w-full flex-col px-4 py-6 sm:px-6 ${
         isKitchenRoute ? 'max-w-[1600px]' : 'max-w-5xl'
-      }`}
+      } print:m-0 print:max-w-none print:min-h-0 print:px-0 print:py-0`}
     >
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-pedon-navy/10 pb-4">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-pedon-navy/10 pb-4 print:hidden">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">Painel</p>
           <h1 className="mt-1 text-2xl font-bold text-pedon-navy">
@@ -71,7 +71,7 @@ export function AppShell() {
         </div>
       </header>
 
-      <nav className="mt-4 flex flex-wrap gap-2" aria-label="Navegação do painel">
+      <nav className="mt-4 flex flex-wrap gap-2 print:hidden" aria-label="Navegação do painel">
         <NavLink to="/app" end className={navLinkClass}>
           Visão geral
         </NavLink>
@@ -116,11 +116,11 @@ export function AppShell() {
         )}
       </nav>
 
-      <div className="mt-4">
+      <div className="mt-4 print:hidden">
         <OfflineBanner />
       </div>
 
-      <div className="flex-1 py-6">
+      <div className="flex-1 py-6 print:py-0">
         <Outlet />
       </div>
     </div>
