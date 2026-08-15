@@ -1,8 +1,8 @@
 # PED-ON — RLS Security
 
-> Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 12, checkpoint
-> `READY_FOR_REAUDIT`. O frontend usa apenas a publishable key; `service_role` nunca é exposta. RLS
-> nega por padrão e o Clube usa superfícies públicas minimizadas e RPCs internas restritas.
+> Modelo de segurança Supabase/PostgreSQL da Fase 4A, Prompt 13 `IN PROGRESS`, checkpoint
+> `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`. O frontend usa apenas a publishable key;
+> `service_role` nunca é exposta. RLS nega por padrão e as superfícies operacionais são minimizadas.
 
 ## 1. Princípios
 
@@ -103,6 +103,8 @@ role sem escopo.
 | Publicar cardápio (`publish_unit_menu`)                      |   Sim |               Sim |                Não |
 | Ler publicação/histórico (`get_unit_menu_publication_admin`) |   Sim |               Sim |                Sim |
 | Ler Central e detalhe de pedidos                             |   Sim |               Sim |                Sim |
+| Ler Central v2 (`get_unit_orders_admin_v2`)                  |   Sim |               Sim |                Sim |
+| Ler KDS minimizado (`get_kds_orders_minimal`)                |   Sim |               Sim |                Sim |
 | Alterar status do pedido                                     |   Sim |               Sim |                Sim |
 | Registrar `pending → paid`                                   |   Sim |               Sim |                Sim |
 | Registrar `paid → refunded`                                  |   Sim |               Sim |                Não |
@@ -153,8 +155,10 @@ RPCs de catálogo, publicação e leitura administrativa têm `EXECUTE` apenas p
 `create_public_order(text,uuid,jsonb)`, `get_public_order(text)`,
 `create_public_order_v2(text,uuid,jsonb,text)` e
 `get_public_order_by_attempt(text,uuid,text)` têm `EXECUTE` para `anon`/`authenticated` e retornos
-minimizados. As quatro RPCs administrativas de pedidos têm `EXECUTE` apenas para `authenticated`;
-helpers internos de pedidos são revogados de todos os papéis cliente.
+minimizados. As quatro RPCs administrativas históricas de pedidos,
+`get_unit_orders_admin_v2(uuid,jsonb)` e `get_kds_orders_minimal(uuid)` têm `EXECUTE` apenas para
+`authenticated`; todas validam `can_access_unit`. Helpers internos de pedidos são revogados de
+todos os papéis cliente.
 `get_public_loyalty_account(text)` é a única leitura pública de conta/extrato.
 `get_loyalty_program_admin`, `set_loyalty_program_enabled` e `get_loyalty_members_admin` exigem
 `authenticated` e validam `is_org_owner` no servidor. `get_loyalty_public_context_internal`,
@@ -233,6 +237,15 @@ unidade, valida o payload completo e aplica regras server-authoritative para
   resposta pública de criação ou `found=false`, sem PII/IDs internos.
 - Lista, detalhe e transições administrativas validam sessão e acesso à unidade. Refund exige
   `can_manage_unit`; operator não possui esse privilégio.
+- A Central v2 valida no servidor view, status, enums, limit, timestamps e cursor. O cursor é opaco,
+  base64url, single-line, sem PII e sem segredo; incompatibilidade view/status retorna `PED79`, não
+  uma lista vazia.
+- `get_kds_orders_minimal` é uma superfície dedicada, limitada a 200 e autorizada por
+  `can_access_unit` para owner/manager/operator. Pode retornar ID/número/status/service mode,
+  timestamps/ETA, itens, quantidade, nota e nomes/tipos de opções. Omite cliente, telefone,
+  endereço, pagamento, dinheiro/totais, loyalty, tracking, idempotência e IDs técnicos de
+  menu/catálogo.
+- O KDS usa a mesma order state machine e não amplia RLS, grants diretos ou publicação Realtime.
 - `order_events` é append-only por ACL: nenhum papel cliente recebe insert/update/delete.
 - Realtime publica somente `id`, `unit_id`, `updated_at`, `status` e `payment_status`; o cliente
   invalida/refaz a fonte autoritativa em vez de confiar no payload websocket.
@@ -302,6 +315,8 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 | Checkout reutiliza chave com payload diferente        | hash canônico + unique/lock por unidade: `PED42`                       |
 | Tracking tenta enumerar pedido                        | token opaco de 32 hex; desconhecido retorna `found=false`              |
 | Staff tenta pedido de outra unidade                   | `can_access_unit` nas RPCs e RLS filtra leitura direta                 |
+| Cursor v2 é malformado ou incompatível com a view     | validação server-side uniforme: `PED79`                               |
+| KDS tenta receber PII, pagamento ou totais            | RPC dedicada serializa somente o contrato operacional minimizado      |
 | Operator tenta refund                                 | `can_manage_unit` obrigatório: `PED11`                                 |
 | Websocket contém PII                                  | publicação Realtime limitada às cinco colunas de invalidação           |
 | CPF/telefone enviados ao banco                        | Edge normaliza e envia apenas HMAC tenant-bound; bruto fica na request |
@@ -350,6 +365,7 @@ Catálogo reutiliza:
 | `PED46`                 | pedido não encontrado                              |
 | `PED47`/`PED48`         | transição inválida de pedido ou pagamento          |
 | `PED49`/`PED50`         | colisão de tracking ou overflow monetário/numérico |
+| `PED79`                 | filtro/cursor administrativo orders v2 inválido    |
 
 Configuração operacional usa `PED10..PED18`; RPCs históricas de unidade usam `PED00..PED05`.
 `get_public_menu` nunca lança erro (retorna `found=false`). Detalhes completos estão em
@@ -365,9 +381,13 @@ Recompensas e vouchers usam `PED54..PED66`: reward ausente/indisponível/alterad
 saldo insuficiente, conflito/integridade de redemption, voucher ausente/já consumido/código inválido,
 payload/nome/estoque inválidos. O contrato completo está no schema, Seção 10.4.
 
+`PED79 INVALID_ORDER_FILTER` não pertence ao checkout público. Ele cobre key desconhecida, enum
+inválido, limit, timestamp, cursor, view/status incompatível e filtro estruturalmente inválido de
+`get_unit_orders_admin_v2`.
+
 ## 9. Testes executados
 
-As onze suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
+As doze suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
 oficial não substitui esse ambiente destrutivo:
 
 | Script                                       | Resultado oficial | Cobertura principal                                                                       |
@@ -379,9 +399,11 @@ oficial não substitui esse ambiente destrutivo:
 | `menu_publication_integrity.test.mjs`        |           121/121 | publicação, imutabilidade, slug, overlay, API pública e isolamento                        |
 | `orders_integrity.test.mjs`                  |           318/318 | checkout, idempotência, snapshots, PII, lifecycle, ACL/RLS, Realtime e concorrência       |
 | `product_options_integrity.test.mjs`         |           158/158 | opções, snapshots, checkout, RLS/ACL e concorrência de publicação/disponibilidade          |
+| `product_options_remediation_integrity.test.mjs` |         65/65 | regressões da Remediation A/B, locks, recovery e integridade relacional                     |
 | `loyalty_integrity.test.mjs`                 |           148/148 | identidade v2, consent auditável, ACL legado, TTL, rate limit, recovery e ledger           |
 | `loyalty_rewards_integrity.test.mjs`         |           254/254 | rewards, replay secret, FKs, estoque, vouchers e concorrência real                         |
 | `pilot_readiness_team_integrity.test.mjs`    |             84/84 | readiness, grants, owner-only, IDOR, vínculos e configuração segura das RPCs               |
+| `prompt13_order_operations.test.mjs`         |             89/89 | orders v2, PED79, keyset, KDS privacy/RBAC e concorrência NEW-MEDIUM-1                      |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das seis tabelas de cardápio, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
@@ -394,11 +416,12 @@ uniforme, consentimento, token repetível/consumido, disable explícito, rate li
 máximo 50 e recuperação sem PII. Rewards/vouchers validam resgate atômico e idempotente,
 concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-only e DEC-108.
 
-O CI `31814657987` (técnico) e o CI documental `31823617636` aprovaram fresh rebuild das 22
-migrations, alinhamento, DB lint, as onze suítes sequenciais com 1409/1409 checks e Edge unit 15/15
-(Prompt 12 encerrado como `RELEASE_VERIFIED` / `MENU_COMMERCIALLY_USABLE` com
-`PASS_WITH_FINDINGS`). O remote
-smoke 36/36 permanece evidência histórica do Prompt 10. `LOCAL DB REBUILD: NOT RUN — BY DESIGN /
+O CI `31859960640` aprovou fresh rebuild das 23 migrations, alinhamento, DB lint, as doze suítes
+sequenciais com 1494/1494 checks e Edge unit 15/15. Quality gates e E2E smoke tests também passaram.
+O remote smoke 36/36 permanece evidência histórica do Prompt 10. Os smokes remotos do checkpoint
+Prompt 13 foram limitados, mas passaram nos casos executados; paginação com massa real não foi
+executada no remoto. Paginação e concorrência têm cobertura autoritativa no CI isolado.
+`LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; `LOCAL DB TESTS: NOT RUN — BY DESIGN /
 NO LOCAL DOCKER`; `CI ISOLATED DB REBUILD: PASS`.
 
 A publicação passou a exigir regras de seleção satisfazíveis (grupo obrigatório ativo com menos
@@ -411,6 +434,12 @@ final #2, MEDIUM NON-BLOCKING, follow-up Prompt 13+):** `create_catalog_product_
 `create_catalog_product_option` podem adquirir o lock de produto no corpo da função antes do trigger
 unit-scoped; sob concorrência estreita o PostgreSQL detecta o deadlock (40P01) e aborta uma
 transação com rollback atômico, sem impacto de integridade.
+
+**Atualização Prompt 13 / migration 23:** a exceção acima permanece como registro histórico do
+Prompt 12, mas está resolvida. Os dois CREATE agora adquirem `_lock_unit_structure(unit)` antes do
+lock de produto, calculam `max(sort_order)+100` sob a serialização de produto e então inserem. O CI
+isolado validou concorrência de publicação/criação e duas criações simultâneas. A inversão conhecida
+`NEW-MEDIUM-1` foi eliminada; não se afirma impossibilidade matemática de todo deadlock do sistema.
 
 Opções de produto seguem o mesmo modelo: leitura por policy `can_access_unit` com SELECT concedido
 somente a `authenticated`; escrita exclusiva por RPCs `SECURITY DEFINER`; snapshot imutável na
@@ -428,6 +457,6 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial das onze suítes DB e DB lint no CI isolado.
+- Alterações de autorização exigem execução sequencial das doze suítes DB e DB lint no CI isolado.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.

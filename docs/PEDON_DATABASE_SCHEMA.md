@@ -1,8 +1,9 @@
 # PED-ON — Database Schema
 
-> Referência cumulativa da Fase 4A — Prompt 12, checkpoint `READY_FOR_REAUDIT`.
-> Fonte autoritativa: 22 migrations versionadas; migration list local/remota em 22/22 e dry-run
-> linked confirmando que o remoto está up to date.
+> Referência cumulativa da Fase 4A — Prompt 13 `IN PROGRESS`, checkpoint
+> `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`.
+> Fonte autoritativa: 23 migrations versionadas; Git/filesystem/remoto em 23/23/23, post-push dry-run
+> up to date, linked lint com zero erros e drift remoto `NONE`.
 
 ## 1. Estado das migrations
 
@@ -30,12 +31,14 @@
 | 20    | `20260814000000_prompt12_product_options.sql`                       | grupos de opções (variações/adicionais/remoções) e opções por produto no catálogo mutável  |
 | 21    | `20260814010000_prompt12_final_hardening.sql`                       | regra `single`, locks de publicação/mutação e disponibilidade atômica no checkout           |
 | 22    | `20260814020000_prompt12_remediation_a_hardening.sql`               | lock estrutural unit-scoped, publicação PED73 sem versão parcial e vínculo relacional de `order_item_options` |
+| 23    | `20260814100000_prompt13_backend_operational_core.sql`               | NEW-MEDIUM-1, orders admin v2 keyset, KDS minimizado, PED79, índice active urgency e grants/revokes |
 
-Estado reconciliado de 2026-08-14: Git/filesystem em 22/22; remoto em 22/22 (registrado na etapa B1,
-sem migrations novas desde então). `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; fresh
-rebuild isolado das 22 migrations aprovado no CI `31814657987`. A checagem remota ao vivo não pôde
-ser executada nesta máquina na reconvergência (pooler rejeitou a senha do `.env`; host direto com
-IP-restrição/timeout) — sem evidência de drift, conforme CI isolado.
+Estado reconciliado de 2026-08-15: DB push PASS; Git/filesystem/remoto em 23/23/23; post-push dry-run
+PASS/up to date; linked DB lint PASS com zero erros; drift remoto `NONE`. Remote smokes limitados
+passaram para os casos executados, sem alegação de paginação com massa real no remoto. O CI isolado
+`31859960640` aprovou fresh rebuild das 23 migrations, alinhamento, DB lint, 12 suítes DB 1494/1494 e
+Edge 15/15. `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; `LOCAL DB TESTS: NOT RUN — BY
+DESIGN / NO LOCAL DOCKER`.
 
 ## 2. Convenções
 
@@ -392,6 +395,11 @@ Regra de `price_delta` por `kind` (trigger `catalog_product_options_delta_by_kin
 | `set_catalog_product_option_active(uuid,boolean)`          | owner/manager da unidade | estado estrutural da opção                          |
 | `set_catalog_product_option_available(uuid,boolean)`       | owner/manager/operator   | altera somente disponibilidade                      |
 
+Desde a migration 23, os dois CREATE seguem a ordem
+`_lock_unit_structure(unit)` → advisory lock de produto → `max(sort_order)+100` → `INSERT`. O lock
+de produto foi preservado para serializar o cálculo de `sort_order`; a inversão conhecida
+`NEW-MEDIUM-1` foi eliminada sem afirmar impossibilidade matemática de todo deadlock do sistema.
+
 `_validate_option_delta(text,text)` aceita somente decimal textual válido (até dez dígitos inteiros
 e duas casas, sem expoente/`NaN`/`Infinity`); opções usam `price_delta` decimal e `_options_fingerprint`
 interna para ordenação/validação. A leitura administrativa das opções é feita por SELECT direto via
@@ -548,7 +556,11 @@ contrato, produtos sem grupos e produtos com somente grupos opcionais também re
 | Operação           | `estimated_minutes`; `operation_revision` preserva a revisão aceita no checkout                                                                                                                   |
 | Auditoria temporal | `created_at`, `updated_at`, timestamps de status/pagamento e terminais coerentes por constraints                                                                                                  |
 
-Índices cobrem leitura por unidade/data e unidade/status/data. O trigger
+Índices cobrem leitura por unidade/data e unidade/status/data. A migration 23 adiciona somente
+`orders_unit_active_urgency_idx (unit_id, status_updated_at, created_at, id)`, parcial para
+`status IN ('new','confirmed','preparing','ready','out_for_delivery')`. Índices candidatos adicionais
+para payment status, service mode, payment method e eventos foram rejeitados por falta de evidência
+de necessidade. O trigger
 `set_orders_updated_at` usa `clock_timestamp()`. `out_for_delivery` só é válido para delivery;
 `completed_at`/`cancelled_at` e `paid_at`/`refunded_at` são consistentes com seus estados.
 
@@ -619,6 +631,42 @@ expõem PII nem IDs internos.
 | `set_order_status(uuid,text,text)`         | `can_access_unit`                                  | lock da linha, transição, timestamps e evento                |
 | `set_order_payment_status(uuid,text)`      | `can_access_unit`; refund requer `can_manage_unit` | lock da linha, transição e evento                            |
 
+#### 8.5a Central de Pedidos v2
+
+`get_unit_orders_admin_v2(uuid,jsonb)` preserva a RPC v1 e separa `active` de `history`. Não há busca
+por cliente nesta etapa. Os filtros são aplicados no servidor: `view`, `statuses`, `service_mode`,
+`payment_status`, `payment_method`, `order_number`, `date_from`, `date_to`, `cursor` e `limit`.
+Qualquer key desconhecida ou filtro estruturalmente inválido retorna `PED79 INVALID_ORDER_FILTER`.
+O limite default é 50 e o máximo é 100; a paginação é keyset e não usa `OFFSET`.
+
+- `view=active` permite somente `new`, `confirmed`, `preparing`, `ready`, `out_for_delivery` e ordena
+  por `overdue_rank`, `status_bucket`, `status_updated_at`, `created_at`, `id`, todos ascendentes.
+- `view=history` permite somente `completed`, `cancelled` e ordena por `created_at DESC, id DESC`.
+- `statuses` incompatível com a view retorna `PED79`; não é convertido em lista vazia.
+
+O cursor é server-generated, base64url, single-line, opaco, sem PII e sem segredo. PostgreSQL
+`encode(...,'base64')` pode inserir whitespace/newline; migration 23 remove `\s` no encode e no
+decode com `regexp_replace(..., '\s', '', 'g')`. Active carrega `view`, `snapshot_at`, overdue rank,
+status bucket, `status_updated_at`, `created_at`, `id`; history carrega `view`, `created_at`, `id`.
+
+A primeira página active fixa `snapshot_at` e páginas seguintes reutilizam `cursor.snap`. Esse valor
+congela somente a referência temporal da classificação overdue; não oferece snapshot isolation nem
+snapshot transacional do dataset. Mudanças reais de status entre páginas podem alterar os
+resultados. Realtime/refetch futuro deve reiniciar a paginação desde a primeira página.
+
+#### 8.5b KDS minimizado
+
+`get_kds_orders_minimal(uuid)` é uma superfície separada da Central, autorizada por
+`can_access_unit` para owner, manager e operator. Retorna no máximo 200 pedidos nos status `new`,
+`confirmed`, `preparing`, `ready`; `truncated=true` indica que existem mais de 200 resultados. Não retorna
+`out_for_delivery`, `completed` ou `cancelled` e reutiliza a mesma order state machine.
+
+O contrato pode retornar ID do pedido para mutation, número, status, service mode, timestamps,
+`estimated_minutes`, `expected_at`, itens, quantidade, nota do item e nomes/tipos de opções. Omite
+`customer_name`, `customer_phone`, endereço, dados de pagamento, dinheiro/totais, loyalty, tracking
+token, idempotência e IDs técnicos de menu/catálogo. A resposta administrativa ampla não é
+reutilizada pelo KDS: a separação é privacy-by-contract.
+
 Status: `new → confirmed → preparing → ready`; pickup segue para `completed`; delivery segue para
 `out_for_delivery → completed`. Cancelamento é permitido antes de completed. `completed` e
 `cancelled` são terminais. Pagamento evolui separadamente `pending → paid → refunded`; cancelar não
@@ -650,10 +698,15 @@ apenas para invalidar/refazer queries.
 | `PED48`  | `INVALID_PAYMENT_TRANSITION` |
 | `PED49`  | `TRACKING_TOKEN_CONFLICT`    |
 | `PED50`  | `ORDER_AMOUNT_OVERFLOW`      |
+| `PED79`  | `INVALID_ORDER_FILTER`       |
 
 Erros de seleção de opções (Prompt 12): `PED72` `INVALID_OPTION_GROUP`, `PED73`
 `INVALID_SELECTION_RULE`, `PED74` `OPTION_NOT_FOUND`, `PED75` `OPTION_UNAVAILABLE`, `PED76`
 `SELECTION_REQUIRED`, `PED77` `SELECTION_LIMIT_EXCEEDED` e `PED78` `SELECTION_MENU_MISMATCH`.
+
+`PED79` pertence exclusivamente ao contrato administrativo orders v2 e cobre key desconhecida,
+enum inválido, limit, timestamp, cursor, view/status incompatível e filtro estruturalmente inválido.
+Não é erro do checkout público.
 
 A migration de hardening substitui `create_public_order` para remover uma declaração redundante
 apontada pelo lint e reaplica os grants, sem alterar assinatura ou comportamento.
@@ -1002,7 +1055,9 @@ usa `PED60`. Voucher consumido não pode ser consumido novamente (`PED61`).
 | `get_public_menu(text)`                                                            | cardápio público anônimo via slug (anon)                                              |
 | helpers `_is_safe_plain_text`, `_is_unit_open_at` e serializadores `_order_*_json` | validação e respostas minimizadas de pedidos                                          |
 | `create_public_order(text,uuid,jsonb)` / `get_public_order(text)`                  | checkout idempotente e tracking público (aceita `loyalty_token` opcional)             |
-| quatro RPCs administrativas da Seção 8.5                                           | lista, detalhe e transições server-authoritative                                      |
+| quatro RPCs administrativas históricas da Seção 8.5                                | lista v1, detalhe e transições server-authoritative                                   |
+| `get_unit_orders_admin_v2(uuid,jsonb)`                                              | filtros server-side e paginação keyset da Central v2                                  |
+| `get_kds_orders_minimal(uuid)`                                                      | leitura KDS dedicada, minimizada e limitada a 200                                     |
 | RPCs e helpers das Seções 9.7–9.10                                                 | programa, identidade v2, rate limit, conta/extrato, membros e recuperação de checkout |
 | `_loyalty_earn_order(orders)` / `_loyalty_reverse_order(orders)`                   | earn/reversal internos do ledger (revogados de navegador)                             |
 | RPCs da Seção 10.2                                                                | catálogo, resgate atômico e recovery públicos                                         |
@@ -1074,6 +1129,25 @@ superfície pública de leitura do cardápio. As tabelas de pedidos não possuem
 checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 
 ## 13. Produção e validação
+
+Checkpoint Prompt 13 — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED` (Etapa 13.2):
+
+- Prompt 13 `IN PROGRESS`; Etapa 13.1 `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`;
+  Etapa 13.2 `COMPLETED`; Etapa 13.3 `NOT STARTED — READY`; `OPERATION_READY: NOT ACHIEVED`;
+- HEAD técnico `0e171c55afe3a88a699f1ee81b8f937a70659226`; migration 23
+  `20260814100000_prompt13_backend_operational_core.sql`;
+- DB push PASS; Git/filesystem/remoto 23/23/23; post-push dry-run PASS/up to date; linked DB lint
+  PASS com zero erros; remote drift `NONE`;
+- migration 23 não cria tabela, coluna, policy RLS, publicação Realtime, status/transição de pedido
+  nem segunda state machine;
+- `NEW-MEDIUM-1: RESOLVED`; a inversão conhecida foi eliminada com ordem unit → produto, mantendo a
+  serialização do `sort_order`;
+- CI isolado `31859960640` SUCCESS: fresh rebuild 23 migrations, alinhamento, DB lint, 12 suítes DB
+  1494/1494, Edge 15/15, Quality gates e E2E smoke tests;
+- remote smokes: cobertura limitada, PASS nos casos executados; paginação com massa real não foi
+  executada no remoto. Paginação e concorrência permanecem cobertas autoritativamente no CI isolado;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
 Checkpoint Prompt 12 — `COMPLETED` / `RELEASE_VERIFIED` / `MENU_COMMERCIALLY_USABLE` (evidência
 atual — fechamento final):
@@ -1159,7 +1233,7 @@ Checkpoint do Prompt 10 (`RELEASE_VERIFIED`):
 - CI `31598675826` (Quality gates, Backend release gates e E2E smoke tests) e Cloudflare deployment
   `ceaf4832-bc0e-4159-a983-fd5ca367efd8`, source `2a91711`, aprovados.
 
-Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 22 migrations:
+Checkpoint histórico do Prompt 08, supersedido pelo estado cumulativo atual de 23 migrations:
 
 - migrations `20260810144145_orders_checkout.sql` e
   `20260810162508_orders_checkout_lint_hardening.sql` aplicadas oficialmente naquele checkpoint;

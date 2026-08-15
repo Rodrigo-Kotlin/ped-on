@@ -1081,6 +1081,20 @@ A partir desta atualização, qualquer frase que afirme que a implementação at
 ou que "todos os writers sempre adquirem unit primeiro" deve ser lida como **CONTRATO ARQUITETURAL
 DESEJADO**, salvo a **EXCEÇÃO IMPLEMENTACIONAL CONHECIDA** acima.
 
+**Atualização posterior — Prompt 13 / migration 23 (2026-08-15):**
+
+A exceção implementacional descrita na Reauditoria final #2 foi resolvida por
+`20260814100000_prompt13_backend_operational_core.sql`. Tanto
+`create_catalog_product_option_group` quanto `create_catalog_product_option` agora adquirem
+`_lock_unit_structure(unit_id)` antes do advisory lock por produto, calculam
+`max(sort_order)+100` ainda sob o lock de produto e somente então executam o `INSERT`. O contrato
+desejado unit-first volta a coincidir com a implementação dos dois CREATE, sem remover
+antecipadamente a serialização necessária ao `sort_order`. A concorrência foi validada no CI
+isolado `31859960640`, e as definições remotas foram verificadas.
+
+A inversão conhecida `NEW-MEDIUM-1` foi eliminada. Esta atualização não afirma que todo deadlock
+possível no sistema inteiro seja matematicamente impossível.
+
 ### DEC-117 — Recovery durável fail-closed antes de qualquer mutação de rede
 
 - **Status:** APROVADA
@@ -1117,14 +1131,78 @@ DESEJADO**, salvo a **EXCEÇÃO IMPLEMENTACIONAL CONHECIDA** acima.
   globalmente na inicialização, não apenas quando o slug é acessado, eliminando notas privadas
   residuais de sessões antigas.
 
+## Decisões Aprovadas (Prompt 13 — Operação de Pedidos 2.0)
+
+### DEC-120 — Central de Pedidos v2 usa filtros server-side e keyset cursor
+
+- **Status:** APROVADA
+- **Data:** 2026-08-15
+- **Decisão:** `get_unit_orders_admin_v2(uuid,jsonb)` é o contrato administrativo v2; a v1
+  `get_unit_orders_admin(uuid,text,integer)` permanece preservada. Active e history são views
+  separadas, com filtros server-side e sem busca por cliente nesta etapa. A paginação não usa
+  `OFFSET`: `limit` default 50, máximo 100, e cursor opaco gerado pelo servidor.
+- **Filtros aceitos:** `view`, `statuses`, `service_mode`, `payment_status`, `payment_method`,
+  `order_number`, `date_from`, `date_to`, `cursor` e `limit`. `PED79 INVALID_ORDER_FILTER` cobre key
+  desconhecida, enum inválido, limit, timestamp, cursor, combinação view/status incompatível e
+  filtro estruturalmente inválido. O código pertence ao contrato administrativo v2, não ao checkout
+  público.
+- **Active:** ordenação global por `overdue_rank`, `status_bucket`, `status_updated_at`, `created_at`,
+  `id`. A primeira página fixa `snapshot_at`; páginas seguintes reutilizam `cursor.snap`, garantindo
+  que a referência temporal da prioridade overdue não mude durante a sequência.
+- **History:** ordenação por `created_at DESC, id DESC` e cursor com view, timestamp e ID.
+- **Tightening view/status:** `view=active` permite somente `new`, `confirmed`, `preparing`, `ready`,
+  `out_for_delivery`; `view=history` permite somente `completed`, `cancelled`. `statuses`
+  incompatível com a view retorna `PED79 INVALID_ORDER_FILTER`, não uma lista vazia.
+- **Cursor:** base64url, single-line, opaco, sem PII e sem segredo. Como PostgreSQL
+  `encode(...,'base64')` pode inserir whitespace/newline, o encode e o decode removem `\s` via
+  `regexp_replace(..., '\s', '', 'g')`. O cursor active carrega view, `snapshot_at`, overdue rank,
+  status bucket, `status_updated_at`, `created_at` e ID; history carrega view, `created_at` e ID.
+- **Limite semântico:** `snapshot_at` não é snapshot transacional do dataset; congela somente a
+  referência temporal de overdue. Mudanças reais de status entre requests ainda podem alterar o
+  dataset. Um frontend que receber Realtime/refetch deve reiniciar na primeira página.
+- **Justificativa:** preservar a ordenação operacional global correta entre páginas sem custo e
+  instabilidade de `OFFSET`, mantendo a fonte autoritativa no servidor.
+
+### DEC-121 — KDS possui contrato backend minimizado dedicado
+
+- **Status:** APROVADA
+- **Data:** 2026-08-15
+- **Decisão:** o KDS usa a RPC separada `get_kds_orders_minimal(uuid)`, autorizada por
+  `can_access_unit` para owner, manager e operator. Retorna somente pedidos `new`, `confirmed`,
+  `preparing` e `ready`, até 200 linhas, com `truncated=true` quando houver mais resultados.
+- **Minimização permitida:** ID do pedido necessário à mutation, número, status, service mode,
+  timestamps, `estimated_minutes`, `expected_at`, itens, quantidade, nota do item e nomes/tipos de
+  opções.
+- **Dados excluídos:** `customer_name`, `customer_phone`, endereço de entrega, informações de
+  pagamento, dinheiro/totais, loyalty, tracking token, idempotência e IDs técnicos de menu/catálogo.
+- **State machine:** KDS usa a mesma order state machine da Central; não existe uma segunda máquina
+  de estados. A resposta administrativa ampla não é reutilizada pelo KDS.
+- **Justificativa:** privacy-by-contract no backend, evitando que a tela operacional receba dados que
+  não precisa para preparar pedidos.
+
+### DEC-122 — Product option CREATE segue unit-first preservando sort-order serialization
+
+- **Status:** APROVADA
+- **Data:** 2026-08-15
+- **Decisão:** não remover antecipadamente o lock de produto dos CREATE. A ordem final é
+  `_lock_unit_structure(unit)` → advisory lock de produto → `max(sort_order)+100` → `INSERT` em
+  `create_catalog_product_option_group` e `create_catalog_product_option`.
+- **Justificativa:** resolver `NEW-MEDIUM-1` sem abrir corrida no cálculo de `sort_order`.
+- **Migration:** `20260814100000_prompt13_backend_operational_core.sql` (migration 23).
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.
 
 ## Achados em aberto (não bloqueantes)
 
-### NEW-MEDIUM-1 — Lock-order inversion nos CREATE de product options (follow-up Prompt 13+)
+Nenhum achado backend aberto no checkpoint da Etapa 13.2.
 
+## Achados resolvidos
+
+### NEW-MEDIUM-1 — Lock-order inversion nos CREATE de product options
+
+- **Status:** `RESOLVED — Prompt 13 / migration 23`.
 - **Severidade:** MEDIUM NON-BLOCKING.
 - **Origem:** Reauditoria final #2 do Prompt 12 (parecer `PASS_WITH_FINDINGS` /
   `GO_WITH_NON_BLOCKING_FINDINGS`).
@@ -1138,3 +1216,7 @@ Nenhuma decisão em aberto neste momento.
 - **Follow-up:** Prompt 13+ — prioridade `MEDIUM NON-BLOCKING HARDENING`. Não incorporar ao escopo
   funcional obrigatório do Prompt 13 se não fizer sentido arquiteturalmente; apenas garantir que não
   seja esquecido.
+- **Resolução:** migration 23 alterou os dois CREATE para a ordem unit → produto →
+  `max(sort_order)+100` → insert. O CI isolado validou publicação concorrente com criação de grupo,
+  publicação concorrente com criação de opção e duas criações simultâneas preservando `sort_order`.
+  As definições remotas foram verificadas; a inversão conhecida foi eliminada.

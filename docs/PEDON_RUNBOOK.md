@@ -1,8 +1,8 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no checkpoint `READY_FOR_REAUDIT` do Prompt 12. Reconvergência do
-> release aprovada no HEAD `f663cecb96ef87f397376e29aee82cd24ba846df`, CI `31814657987`; base anterior
-> auditada `3a6cd42eab24719e01505fc854d03c65ca9d9975` (Prompt 11, `RELEASE_VERIFIED`).
+> Guia operacional do Ped-On no Prompt 13 `IN PROGRESS`, checkpoint
+> `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`. Backend técnico/remoto validado no HEAD
+> `0e171c55afe3a88a699f1ee81b8f937a70659226`, CI `31859960640`.
 
 ## 1. Pré-requisitos
 
@@ -39,7 +39,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 O build de produção fica em `apps/web/dist`. O PWA cacheia apenas assets estáticos; não há
 `runtimeCaching` de API, dados privados, tokens ou respostas do Clube.
 
-## 3. Gates do Prompt 12
+## 3. Gates do Prompt 13
 
 Gates locais leves obrigatórios:
 
@@ -57,13 +57,14 @@ gitleaks git --redact --log-level warn .
 
 Não executar Docker, `supabase start`, `supabase db reset` nem stack Supabase local na máquina de
 desenvolvimento. O GitHub Actions é o ambiente oficial e descartável para fresh rebuild, aplicação
-das 22 migrations, onze suítes DB, DB lint e Edge unit.
+das 23 migrations, doze suítes DB, DB lint e Edge unit.
 
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
-- `CI ISOLATED DB REBUILD: PASS` no run `31814657987`, com fresh rebuild das 22 migrations e
-  DB 1409/1409;
-- migration 22 aplicada remotamente; migration list Git/filesystem em 22/22 (remoto 22/22 registrado
-  na etapa B1); dry-run linked confirma que o remoto está up to date.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
+- `CI ISOLATED DB REBUILD: PASS` no run `31859960640`, com fresh rebuild das 23 migrations e
+  DB 1494/1494 em 12 suítes;
+- migration 23 aplicada remotamente; Git/filesystem/remoto em 23/23/23; post-push dry-run up to date,
+  linked lint com zero erros e drift remoto `NONE`.
 
 ## 4. Variáveis e secrets
 
@@ -126,6 +127,8 @@ $env:SUPABASE_DB_PASSWORD = '<senha-do-banco>'
 19. `20260813120000_prompt11_readiness_unit_coherence.sql`
 20. `20260814000000_prompt12_product_options.sql`
 21. `20260814010000_prompt12_final_hardening.sql`
+22. `20260814020000_prompt12_remediation_a_hardening.sql`
+23. `20260814100000_prompt13_backend_operational_core.sql`
 
 ### 5.2 Fluxo linked controlado
 
@@ -145,14 +148,14 @@ Regras:
 - nunca editar/apagar migration já aplicada;
 - nunca aplicar SQL silencioso pelo Dashboard;
 - executar o dry-run antes do push real; somente o comando com `--dry-run` é não destrutivo;
-- confirmar Git/filesystem e remote em 22/22; o dry-run linked deve informar que o remoto está up to
+- confirmar Git/filesystem/remoto em 23/23/23; o dry-run linked deve informar que o remoto está up to
   date;
 - não usar `supabase db reset` no projeto oficial.
 
 ## 6. Testes DB e Edge
 
 Os testes DB usam conexão PostgreSQL administrativa para setup/cleanup e sessões dedicadas com
-`SET ROLE`/claims. As onze suítes destrutivas rodam sequencialmente apenas no banco descartável do
+`SET ROLE`/claims. As doze suítes destrutivas rodam sequencialmente apenas no banco descartável do
 GitHub Actions:
 
 ```powershell
@@ -163,10 +166,12 @@ node supabase/tests/unit_operational_config_integrity.test.mjs
 node supabase/tests/catalog_integrity.test.mjs
 node supabase/tests/menu_publication_integrity.test.mjs
 node supabase/tests/orders_integrity.test.mjs
+node supabase/tests/product_options_integrity.test.mjs
+node supabase/tests/product_options_remediation_integrity.test.mjs
 node supabase/tests/loyalty_integrity.test.mjs
 node supabase/tests/loyalty_rewards_integrity.test.mjs
 node supabase/tests/pilot_readiness_team_integrity.test.mjs
-node supabase/tests/product_options_integrity.test.mjs
+node supabase/tests/prompt13_order_operations.test.mjs
 ```
 
 | Script                                       |   Checkpoint |
@@ -177,16 +182,19 @@ node supabase/tests/product_options_integrity.test.mjs
 | `catalog_integrity.test.mjs`                 | 123/123 PASS |
 | `menu_publication_integrity.test.mjs`        | 121/121 PASS |
 | `orders_integrity.test.mjs`                  | 318/318 PASS |
+| `product_options_integrity.test.mjs`         | 158/158 PASS |
+| `product_options_remediation_integrity.test.mjs` | 65/65 PASS |
 | `loyalty_integrity.test.mjs`                 | 148/148 PASS |
 | `loyalty_rewards_integrity.test.mjs`         | 254/254 PASS |
 | `pilot_readiness_team_integrity.test.mjs`    |   84/84 PASS |
-| `product_options_integrity.test.mjs`         | 158/158 PASS |
+| `prompt13_order_operations.test.mjs`         |   89/89 PASS |
 
 A execução sequencial evita interferência na contagem global herdada de `membership_units`. Cada
 script cria fixtures sintéticas e faz cleanup. Nunca limpar registros reais ao recuperar uma
 execução interrompida.
 
-Baseline oficial do CI `31787020339`: dez suítes, 1340/1340 checks.
+Baseline atual do CI `31859960640`: doze suítes, 1494/1494 checks. O baseline histórico do Prompt 12
+permanece registrado em seus checkpoints próprios.
 
 ### 6.1 Edge unit
 
@@ -335,6 +343,25 @@ pedido.
 Tracking público usa `get_public_order` e omite notas livres dos itens. O detalhe administrativo
 continua autorizado a exibi-las.
 
+### 8.1 Central v2 e KDS
+
+- `get_unit_orders_admin_v2(uuid,jsonb)` preserva a v1, usa filtros server-side e cursor keyset sem
+  `OFFSET`; não há busca por cliente nesta etapa; `limit` default 50 e máximo 100.
+- Active aceita `new`, `confirmed`, `preparing`, `ready`, `out_for_delivery` e ordena por overdue
+  rank, status bucket, `status_updated_at`, `created_at`, `id`. History aceita `completed`,
+  `cancelled` e ordena por `created_at DESC, id DESC`.
+- View/status incompatível e demais filtros inválidos retornam `PED79 INVALID_ORDER_FILTER`.
+- Cursor é base64url, single-line, opaco, sem PII/segredo. A migration remove whitespace/newline no
+  encode e no decode com `regexp_replace(..., '\s', '', 'g')`.
+- `snapshot_at` congela apenas a referência temporal de overdue, não o dataset entre requests.
+  Mudanças reais de status podem alterar páginas; em Realtime/refetch, reiniciar da primeira página.
+- `get_kds_orders_minimal(uuid)` usa `can_access_unit`, retorna no máximo 200 pedidos
+  `new`/`confirmed`/`preparing`/`ready` e sinaliza `truncated=true`. É uma superfície dedicada e usa a
+  mesma order state machine.
+- O KDS retorna somente identidade operacional do pedido, status/modo/tempos, itens, quantidade,
+  nota e nomes/tipos de opções. Não retorna cliente/telefone/endereço, pagamento, dinheiro/totais,
+  loyalty, tracking, idempotência nem IDs técnicos de menu/catálogo.
+
 ## 9. Administração e frontend
 
 - `/clube/:publicSlug`: lookup/enroll, saldo, rewards, resgate/recovery, vouchers e extrato;
@@ -386,10 +413,27 @@ continua autorizado a exibi-las.
 
 Jobs obrigatórias atuais: `Quality gates`, `E2E smoke tests` e `Backend release gates`. Backend
 reconstrói o Supabase local exclusivamente pelas migrations versionadas, valida alinhamento local,
-executa `supabase db lint --local --level error --fail-on error`, as onze suítes DB sequenciais e
+executa `supabase db lint --local --level error --fail-on error`, as doze suítes DB sequenciais e
 Edge unit. O job
 não usa service role, senha ou banco remoto. Edge smoke remoto e Cloudflare smoke permanecem gates
 manuais de release por dependerem de ambiente implantado.
+
+Checkpoint Prompt 13 — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED` (Etapa 13.2):
+
+- Prompt 13 `IN PROGRESS`; Etapa 13.1 `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`;
+  Etapa 13.2 `COMPLETED`; Etapa 13.3 `NOT STARTED — READY`; `OPERATION_READY: NOT ACHIEVED`;
+- HEAD técnico `0e171c55afe3a88a699f1ee81b8f937a70659226`; CI `31859960640` SUCCESS nos três jobs;
+- migration 23 `20260814100000_prompt13_backend_operational_core.sql`: NEW-MEDIUM-1, Central v2,
+  KDS minimizado, PED79, índice `orders_unit_active_urgency_idx` e grants/revokes;
+- backend: fresh rebuild isolado das 23 migrations, alinhamento, DB lint, 12 suítes com 1494/1494
+  checks e Edge 15/15;
+- DB push PASS; Git/filesystem/remoto 23/23/23; post-push dry-run PASS/up to date; linked lint PASS
+  com zero erros; remote drift `NONE`;
+- remote smokes limitados, PASS nos casos executados. Não houve paginação com massa real no remoto;
+  paginação e concorrência permanecem autoritativamente cobertas no CI isolado;
+- `NEW-MEDIUM-1: RESOLVED` pela ordem unit → produto → `max(sort_order)+100` → insert;
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
 Checkpoint Prompt 12 — `ADMIN_CHECKPOINT` (Etapa 3 do Prompt 12 concluída):
 
@@ -528,15 +572,17 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 | Opção retorna `PED74`/`PED75`            | opção inexistente ou indisponível no momento                                |
 | Checkout retorna `PED76`/`PED77`         | seleção obrigatória ausente ou acima do `max_select` do grupo               |
 | Checkout retorna `PED78`                 | opção selecionada pertence a outro cardápio publicado                       |
+| Central v2 retorna `PED79`               | revisar keys, enums, limit, timestamps, cursor e compatibilidade view/status |
+| Página active muda após Realtime         | reiniciar paginação na primeira página; `snapshot_at` não isola o dataset    |
+| KDS retorna `truncated=true`             | mais de 200 pedidos de cozinha; tratar como refetch/alerta operacional       |
 | Dados antigos após troca de login        | confirmar `queryClient.clear()` em mudança de user ID                      |
 | Migration ausente                        | `supabase migration list`; revisar antes de `db push --linked`             |
-| DB test falha por contagem               | confirmar execução sequencial das onze suítes                              |
+| DB test falha por contagem               | confirmar execução sequencial das doze suítes                              |
 
 ## 13. Próximo passo
 
-Prompt 12 está `COMPLETED`, checkpoint `RELEASE_VERIFIED`, marco `MENU_COMMERCIALLY_USABLE — ACHIEVED`
-(parecer final `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS` sobre o release funcional
-`f663cec`, CI `31814657987` e CI documental `31823617636`). O próximo passo é o **Prompt 13 —
-Operação de Pedidos 2.0** (`NOT STARTED — UNBLOCKED`). Não iniciar o Prompt 13 sem novo parecer de
-etapa; a dívida técnica `NEW-MEDIUM-1` (lock-order inversion nos dois CREATE de product options) é
-follow-up Prompt 13+ e não bloqueia o fechamento.
+Prompt 13 permanece `IN PROGRESS`. Etapa 13.1 está `COMPLETED` com
+`CONTRACT_FREEZE APPROVED_WITH_FINDINGS`; Etapa 13.2 está `COMPLETED` no
+`BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`; `NEW-MEDIUM-1` está `RESOLVED` pela migration 23. O
+próximo passo é a Etapa 13.3 (`NOT STARTED — READY`), que não deve ser iniciada nesta etapa
+documental. `OPERATION_READY: NOT ACHIEVED`.

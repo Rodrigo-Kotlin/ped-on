@@ -5,33 +5,34 @@
 
 ---
 
-| Campo                  | Valor                                                                                                                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PROJETO                | Ped-On                                                                                                                                                                                                                                                                                     |
-| BRANCH                 | `main`                                                                                                                                                                                                                                                                                     |
-| MODELO                 | Main-First monitorado                                                                                                                                                                                                                                                                      |
-| FASE ATUAL             | Fase 4A — Pilot Ready                                                                                                                                                                                                                                                                      |
-| PROMPT ATUAL           | Prompt 12 — Produtos, Variações e Adicionais                                                                                                                                                                                                                                               |
-| STATUS                 | `COMPLETED` — fechamento documental após a segunda reauditoria independente final                                                                                                                                                                                                          |
-| CHECKPOINT             | `RELEASE_VERIFIED` — parecer final `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS`                                                                                                                                                                                                  |
-| MILESTONE              | `MENU_COMMERCIALLY_USABLE — ACHIEVED`                                                                                                                                                                                                                                                       |
-| HEAD INICIAL DO PROMPT | `3a6cd42` — Prompt 11 encerrado (`RELEASE_VERIFIED`)                                                                                                                                                                                                                                       |
-| HEAD TÉCNICO VALIDADO  | `f663cecb96ef87f397376e29aee82cd24ba846df` — B2 (lease de operação crítica até resolução de voucher ambíguo); HEAD técnico do release funcional (última alteração funcional do Prompt 12)                                                                                                  |
-| HEAD FINAL DE FECHAMENTO | commit documental do fechamento do Prompt 12 (docs-only; hash registrado na seção de fechamento e no relatório final; não substitui o SHA técnico `f663cec…`); HEAD inicial da etapa `7e351a4`                                                                                                      |
-| BACKEND                | `IMPLEMENTED / VERIFIED` — migrations 20–22; HIGH-1..HIGH-5 e MEDIUM BLOCKING-1 corrigidos; `_lock_unit_structure` unit-scoped, publicação com PED73 e sem versão parcial, `order_item_options` com vínculo relacional composto; CI `31814657987` aprovou fresh rebuild das 22 migrations, DB lint e DB 1409/1409 checks (11 suítes)     |
-| FRONTEND               | `IMPLEMENTED / VERIFIED` — lease `beginCriticalOperation` com release idempotente; recovery ambíguo de voucher mantém a lease até conclusão; recovery fail-closed de pedido/redemption antes de RPC; sanitizer global de carrinhos no bootstrap; PED73 no admin                                                                       |
-| OPÇÕES DE PRODUTO      | kinds `variation`/`addon`/`removal`; `single`/`multiple`; min/max validados no servidor; `price_delta` decimal exato com `unit_price = base + SUM(delta)` no checkout; snapshot imutável na publicação (`menu_version_*`) e por linha no pedido (`order_item_options`)                       |
-| TESTES VERIFICADOS     | Frontend 383/383 (40 arquivos); E2E 345/345 com 3 skips móveis intencionais; DB 1409/1409 (11 suítes); Edge 15/15; format, lint, typecheck, build, precache, gitleaks e `git diff --check` PASS                                                                                                            |
-| PWA                    | Atualização por prompt explícito; bloqueio por lease de operação crítica (checkout, order mutation, redemption, voucher consume e team assignment/removal) até desfecho conclusivo; runtime cache de API `NONE`; precache sem duplicatas após audit estático                                     |
-| CLOUDFLARE             | estável `https://ped-on.pages.dev` responsiva; **build source SHA = HEAD docs de cada deploy** (`CF_PAGES_COMMIT_SHA`), não o HEAD funcional. Na reauditoria final o stable servia o bundle do SHA `7e351a4` (docs/current main, redeployado pelos commits docs-only); o **functional source** permanece `f663cec…` (commits intermediários docs-only, sem mudança funcional). O novo HEAD documental de fechamento passa a ser o build source após convergência. Deployment id e immutable URL `UNVERIFIED` — sem credencial Cloudflare API no ambiente (limitação de evidência, INFO não bloqueante) |
-| GITHUB ACTIONS         | CI técnico `31814657987` e CI documental `31823617636` SUCCESS (3 jobs); CI final de fechamento registrado na seção de fechamento                                                                                                                                                             |
-| PENDÊNCIAS             | Nenhuma bloqueante. Achados abertos após fechamento: `NEW-MEDIUM-1` (lock-order inversion nos dois CREATE de product options — follow-up Prompt 13+, MEDIUM NON-BLOCKING HARDENING) e limitação de evidência Cloudflare (deployment id/immutable URL)                                          |
-| NEXT_STEP              | Prompt 13 — Operação de Pedidos 2.0 (`NOT STARTED — UNBLOCKED`)                                                                                                                                                                                                                            |
-| FASE SEGUINTE          | Não iniciada                                                                                                                                                                                                                                                                               |
-| PROMPT SEGUINTE        | Prompt 13 — `NOT STARTED — UNBLOCKED`; próximo passo após o fechamento do Prompt 12 (não iniciar nesta sessão)                                                                                                                                                                              |
-| PROMPT 10              | `COMPLETED` — checkpoint `RELEASE_VERIFIED`; reauditoria independente concluída com `GO_WITH_NON_BLOCKING_FINDINGS`                                                                                                                                                              |
-| LOCAL DB REBUILD       | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                                                    |
-| CI ISOLATED DB REBUILD | `PASS` — fresh rebuild das 22 migrations no CI `31814657987` (Prompt 12)                                                                                                                                                                                                                   |
+| Campo                    | Valor                                                                                                                                                                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PROJETO                  | Ped-On                                                                                                                                                                                                                                                       |
+| BRANCH                   | `main`                                                                                                                                                                                                                                                       |
+| MODELO                   | Main-First monitorado                                                                                                                                                                                                                                        |
+| FASE ATUAL               | Fase 4A — Pilot Ready                                                                                                                                                                                                                                        |
+| PROMPT ATUAL             | Prompt 13 — Operação de Pedidos 2.0                                                                                                                                                                                                                          |
+| STATUS                   | `IN PROGRESS`                                                                                                                                                                                                                                                 |
+| CHECKPOINT               | `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                                  |
+| MILESTONE                | `OPERATION_READY — NOT ACHIEVED`                                                                                                                                                                                                                             |
+| HEAD INICIAL DA ETAPA    | `0e171c55afe3a88a699f1ee81b8f937a70659226`                                                                                                                                                                                                                   |
+| HEAD TÉCNICO VALIDADO    | `0e171c55afe3a88a699f1ee81b8f937a70659226` — migration 23, CI `31859960640` e remoto 23/23/23                                                                                                                                                                |
+| HEAD FINAL DE FECHAMENTO | commit documental desta etapa; SHA registrado no relatório final                                                                                                                                                                                             |
+| ETAPA 13.1               | `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`                                                                                                                                                                                                      |
+| ETAPA 13.2               | `COMPLETED` — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                   |
+| ETAPA 13.3               | `NOT STARTED — READY`                                                                                                                                                                                                                                        |
+| BACKEND                  | `IMPLEMENTED / VERIFIED` — migration 23 aplicada remotamente; orders v2, KDS minimizado, PED79, índice active urgency, grants/revokes e correção NEW-MEDIUM-1; sem nova tabela, coluna, policy RLS, publicação Realtime ou state machine                              |
+| FRONTEND                 | Etapa 13.3 `NOT STARTED — READY`; nenhum frontend do Prompt 13 implementado nesta etapa                                                                                                                                                                      |
+| TESTES VERIFICADOS       | CI `31859960640`: Frontend 383/383; E2E 345/345 com 3 skips móveis intencionais; DB 1494/1494 (12 suítes); Edge 15/15; fresh rebuild de 23 migrations, alinhamento e DB lint PASS                                                                               |
+| PWA                      | Sem mudança nesta etapa documental; runtime cache de API `NONE`                                                                                                                                                                                             |
+| GITHUB ACTIONS           | CI técnico `31859960640` SUCCESS nos três jobs; CI documental do novo SHA registrado no relatório final                                                                                                                                                      |
+| PENDÊNCIAS               | Nenhum finding backend aberto na Etapa 13.2. `NEW-MEDIUM-1` está `RESOLVED — Prompt 13 / migration 23`; Etapa 13.3 permanece por iniciar                                                                                                                       |
+| NEXT_STEP                | Etapa 13.3 (`NOT STARTED — READY`); não iniciar nesta etapa documental                                                                                                                                                                                       |
+| PROMPT 13                | `IN PROGRESS`                                                                                                                                                                                                                                                 |
+| PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
+| LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
+| LOCAL DB TESTS           | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
+| CI ISOLATED DB REBUILD   | `PASS` — fresh rebuild das 23 migrations no CI `31859960640`                                                                                                                                                                                                |
 
 ---
 
@@ -79,6 +80,48 @@
   pedido bloqueia a opção de catálogo disponível, serializando checkout contra toggle/delete.
 - O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
   carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
+
+## Checkpoint Prompt 13 — `BACKEND_OPERATIONAL_CHECKPOINT` (Etapa 13.2)
+
+- Prompt 13 permanece `IN PROGRESS`; Etapa 13.1 está `COMPLETED` com
+  `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`; Etapa 13.2 está `COMPLETED` com
+  `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`; Etapa 13.3 está `NOT STARTED — READY`.
+- Migration 23: `20260814100000_prompt13_backend_operational_core.sql`. Git/filesystem/remoto
+  reconciliados em 23/23/23; DB push PASS; post-push dry-run up to date; linked DB lint PASS com
+  zero erros; remote drift `NONE`.
+- `get_unit_orders_admin_v2(uuid,jsonb)` preserva a v1, aplica filtros server-side e paginação
+  keyset sem `OFFSET`; não inclui busca por cliente nesta etapa. `limit` default 50 e máximo 100.
+- `view=active` aceita somente `new`, `confirmed`, `preparing`, `ready` e `out_for_delivery` e ordena
+  globalmente por overdue rank, status bucket, `status_updated_at`, `created_at`, `id`.
+  `view=history` aceita somente `completed` e `cancelled`, ordenando por `created_at DESC, id DESC`.
+  Status incompatível com a view retorna `PED79 INVALID_ORDER_FILTER`, não lista vazia.
+- O cursor público é base64url, single-line, opaco, sem PII e sem segredo. A migration normaliza
+  whitespace/newline que `encode(..., 'base64')` pode inserir com `regexp_replace(..., '\s', '',
+  'g')` tanto no encode quanto no decode.
+- A primeira página active fixa `snapshot_at`; páginas seguintes reutilizam `cursor.snap`. Isso
+  congela apenas a referência temporal da classificação overdue, não cria snapshot transacional.
+  Mudanças de status entre requests podem alterar o dataset; Realtime/refetch futuro deve reiniciar
+  a paginação na primeira página.
+- `get_kds_orders_minimal(uuid)` é uma superfície separada, protegida por `can_access_unit`, para
+  owner/manager/operator. Retorna até 200 pedidos `new`/`confirmed`/`preparing`/`ready` com shape
+  minimizado e `truncated=true` quando necessário; reutiliza a mesma order state machine.
+- O KDS pode retornar ID e número do pedido, status, service mode, timestamps, ETA, itens,
+  quantidades, nota de item e nomes/tipos de opções. Não retorna cliente/telefone/endereço,
+  pagamento, dinheiro/totais, loyalty, tracking, idempotência nem IDs técnicos de menu/catálogo.
+- Único índice novo: `orders_unit_active_urgency_idx (unit_id, status_updated_at, created_at, id)`,
+  parcial para os cinco status active. Índices candidatos adicionais foram rejeitados sem evidência
+  de necessidade.
+- `NEW-MEDIUM-1` está resolvido: os dois CREATE agora seguem `_lock_unit_structure(unit)` → advisory
+  lock de produto → `max(sort_order)+100` → `INSERT`, preservando serialização de `sort_order`. A
+  inversão conhecida foi eliminada; isso não é afirmação de impossibilidade matemática de todo
+  deadlock do sistema.
+- CI isolado `31859960640`: fresh rebuild de 23 migrations, alinhamento, DB lint, 12 suítes DB
+  1494/1494 e Edge 15/15 PASS. Os smokes remotos executados foram limitados, mas passaram; paginação
+  com massa real não foi executada no remoto. A cobertura autoritativa de paginação e concorrência
+  permanece no CI isolado.
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `OPERATION_READY: NOT ACHIEVED`.
 
 ## Reauditoria independente do Prompt 10 — resultado histórico
 

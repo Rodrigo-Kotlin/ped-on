@@ -88,8 +88,19 @@ detalhes na atualização da DEC-116 e no Decision Register).
 
 ## Prompt 13 — Operação de Pedidos 2.0
 
-Estado: `NOT STARTED — UNBLOCKED` (próximo passo após o fechamento do Prompt 12; não iniciar nesta
-sessão).
+Estado: `IN PROGRESS`.
+
+- Etapa 13.1: `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`.
+- Etapa 13.2: `COMPLETED` — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`.
+- Etapa 13.3: `NOT STARTED — READY`.
+- `NEW-MEDIUM-1: RESOLVED — Prompt 13 / migration 23`.
+- `OPERATION_READY: NOT ACHIEVED`.
+
+O backend operacional foi aplicado e verificado remotamente na migration 23, com
+`get_unit_orders_admin_v2`, filtros server-side, cursor keyset, `PED79`, KDS minimizado dedicado e
+índice active urgency. Git/filesystem/remoto estão em 23/23/23; CI `31859960640` aprovou fresh
+rebuild de 23 migrations, 12 suítes DB 1494/1494 e os demais três jobs. Isso não entrega o frontend
+da Central/KDS e não inicia a Etapa 13.3.
 
 Objetivos:
 

@@ -6,14 +6,16 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 
 ## Estado atual
 
-Fase 4A — Pilot Ready, Prompt 12: Produtos, Variações e Adicionais.
-Status `COMPLETED`, checkpoint `RELEASE_VERIFIED`, marco `MENU_COMMERCIALLY_USABLE — ACHIEVED`.
-Reauditoria final #2: `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS` (CRITICAL 0, HIGH 0,
-MEDIUM BLOCKING 0; MEDIUM NON-BLOCKING 1 — follow-up Prompt 13+).
+Fase 4A — Pilot Ready, Prompt 13: Operação de Pedidos 2.0.
+Status `IN PROGRESS`, checkpoint `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`.
+Etapa 13.1 `COMPLETED` (`CONTRACT_FREEZE APPROVED_WITH_FINDINGS`); Etapa 13.2 `COMPLETED`; Etapa 13.3
+`NOT STARTED — READY`.
 
 `PILOT_READY: ACHIEVED`.
 `MENU_COMMERCIALLY_USABLE: ACHIEVED`.
-`PROMPT 12: COMPLETED / RELEASE_VERIFIED`; Prompt 13 `NOT STARTED — UNBLOCKED`.
+`PROMPT 12: COMPLETED / RELEASE_VERIFIED`; `PROMPT 13: IN PROGRESS`.
+`NEW-MEDIUM-1: RESOLVED — Prompt 13 / migration 23`.
+`OPERATION_READY: NOT ACHIEVED`.
 
 `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 `CI ISOLATED DB REBUILD: PASS` (GitHub Actions; nenhum Docker local).
@@ -27,6 +29,8 @@ O produto atual inclui:
 - carrinho local sem PII, checkout guest idempotente e recuperação segura de tentativa pendente;
 - tracking público por token opaco, com resposta minimizada e sem notas livres dos itens;
 - Central de Pedidos, lifecycle, pagamento operacional separado, auditoria e Realtime para refetch;
+- backend da Central v2 com filtros server-side, paginação keyset e contrato `PED79`, além de RPC KDS
+  dedicada e minimizada; frontend da Etapa 13.3 ainda não iniciado;
 - Clube Ped-On por organização, com identificação pública por CPF + telefone protegidos por HMAC;
 - consentimento explícito e auditável, saldo, ledger append-only, extrato público e vínculo opcional
   no checkout;
@@ -74,8 +78,8 @@ ped-on/
 │       └── src/                   # app, componentes, domínio web e páginas
 ├── packages/                      # config, domain, schemas, test-utils e UI
 ├── supabase/
-│   ├── migrations/                # 22 migrations versionadas até o Prompt 12
-│   ├── tests/                     # onze suítes DB e smoke remoto da Edge
+│   ├── migrations/                # 23 migrations versionadas até a Etapa 13.2 do Prompt 13
+│   ├── tests/                     # doze suítes DB e smoke remoto da Edge
 │   ├── functions/loyalty-cpf/     # Edge Function e testes Deno
 │   └── seed.example.sql           # seed de exemplo, sem dados reais
 ├── docs/                          # continuidade, schema, RLS e operação
@@ -145,7 +149,7 @@ pnpm --filter @pedon/web exec playwright install chromium
 
 ## Banco e migrations
 
-O filesystem versionado possui 22 migrations ordenadas:
+O filesystem versionado possui 23 migrations ordenadas:
 
 1. `20260809221710_identity_tenant_foundation.sql`
 2. `20260810015224_rbac_units_context.sql`
@@ -169,6 +173,7 @@ O filesystem versionado possui 22 migrations ordenadas:
 20. `20260814000000_prompt12_product_options.sql`
 21. `20260814010000_prompt12_final_hardening.sql`
 22. `20260814020000_prompt12_remediation_a_hardening.sql`
+23. `20260814100000_prompt13_backend_operational_core.sql`
 
 Fluxo linked não destrutivo:
 
@@ -181,17 +186,23 @@ supabase migration list
 supabase db lint --linked
 ```
 
-Git/filesystem e remoto estão em 22/22; o dry-run linked informa que o remoto está up to date.
+Git/filesystem e remoto estão em 23/23/23; o post-push dry-run linked informa que o remoto está up to
+date, o linked lint tem zero erros e o drift remoto é `NONE`.
 Somente o comando com `--dry-run` é não destrutivo; não executar o push real antes de CI verde e
 aprovação da migration. Não reaplicar migrations já aplicadas, editar migration existente ou usar
 `supabase db reset` localmente.
 
-## Testes do Prompt 12
+## Testes do Prompt 13 — backend operational checkpoint
 
-- gates locais e do CI `31814657987` + CI documental `31823617636`: frontend unit 383/383 (40
-  arquivos), E2E 345/345 com 3 skips móveis intencionais e Edge unit 15/15;
-- banco isolado: onze suítes, DB lint e baseline 1409/1409 checks;
-- migrations Git/filesystem: 22; remote: 22; dry-run linked informa remote up to date;
+- CI técnico `31859960640`: frontend unit 383/383 (40 arquivos), E2E 345/345 com 3 skips móveis
+  intencionais e Edge unit 15/15;
+- banco isolado: doze suítes, DB lint e baseline 1494/1494 checks, com fresh rebuild das 23
+  migrations;
+- migrations Git/filesystem/remoto: 23/23/23; post-push dry-run up to date; linked lint zero erros;
+  remote drift `NONE`;
+- remote smokes limitados passaram nos casos executados; paginação com massa real não foi executada
+  no remoto, permanecendo paginação/concorrência autoritativamente cobertas no CI isolado;
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
 - Cloudflare estável `https://ped-on.pages.dev` responsiva. **Distinção intencional:**
   `FUNCTIONAL SOURCE HEAD` = `f663cecb96ef87f397376e29aee82cd24ba846df`;
   `CLOUDFLARE BUILD SOURCE SHA` = SHA docs/current main de cada deploy (`CF_PAGES_COMMIT_SHA`); os
@@ -228,4 +239,5 @@ aprovação da migration. Não reaplicar migrations já aplicadas, editar migrat
 Prompt 11: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `PILOT_READY: ACHIEVED`.
 Prompt 12: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `MENU_COMMERCIALLY_USABLE: ACHIEVED`
 (reauditoria final `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS`).
-Prompt 13: `NOT STARTED — UNBLOCKED` (próximo passo).
+Prompt 13: `IN PROGRESS` / checkpoint `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`.
+Etapa 13.3: `NOT STARTED — READY`. `OPERATION_READY: NOT ACHIEVED`.
