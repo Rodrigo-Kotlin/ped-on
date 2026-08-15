@@ -581,8 +581,8 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 
 ## 13. Próximo passo
 
-Prompt 13 permanece `IN PROGRESS`. Etapa 13.1 está `COMPLETED` com
-`CONTRACT_FREEZE APPROVED_WITH_FINDINGS`; Etapa 13.2 está `COMPLETED` no
-`BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`; `NEW-MEDIUM-1` está `RESOLVED` pela migration 23. O
-próximo passo é a Etapa 13.3 (`NOT STARTED — READY`), que não deve ser iniciada nesta etapa
-documental. `OPERATION_READY: NOT ACHIEVED`.
+Prompt 13 permanece `IN PROGRESS`. Etapas 13.1, 13.2, 13.3, 13.4B e 13.5A estão `COMPLETED`
+(13.5A registrada como DEC-124 — alertas operacionais locais + audit-precache endurecido);
+`NEW-MEDIUM-1` está `RESOLVED` pela migration 23. O próximo passo é a Etapa 13.5B
+(`NOT STARTED — READY`), que não deve ser iniciada nesta etapa documental.
+`OPERATION_READY: NOT ACHIEVED`.

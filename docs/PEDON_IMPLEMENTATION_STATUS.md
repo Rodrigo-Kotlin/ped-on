@@ -15,19 +15,22 @@
 | STATUS                   | `IN PROGRESS`                                                                                                                                                                                                                                                 |
 | CHECKPOINT               | `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                                  |
 | MILESTONE                | `OPERATION_READY — NOT ACHIEVED`                                                                                                                                                                                                                             |
-| HEAD INICIAL DA ETAPA    | `0e171c55afe3a88a699f1ee81b8f937a70659226`                                                                                                                                                                                                                   |
-| HEAD TÉCNICO VALIDADO    | `0e171c55afe3a88a699f1ee81b8f937a70659226` — migration 23, CI `31859960640` e remoto 23/23/23                                                                                                                                                                |
-| HEAD FINAL DE FECHAMENTO | commit documental desta etapa; SHA registrado no relatório final                                                                                                                                                                                             |
+| HEAD INICIAL DA ETAPA    | `0354e92f9b329ea999589f3984de3d004fda1fd5`                                                                                                                                                                                                                   |
+| HEAD TÉCNICO VALIDADO    | `cdbfb09bdec664ccbd105d1700c3b65c15dcfed4` — CI `31912058296` SUCCESS (Quality + Backend + E2E) com remoto 23/23/23                                                                                                                                    |
+| HEAD FINAL DE FECHAMENTO | `a97f541` (docs: DEC-124)                                                                                                                                                                                                                                     |
 | ETAPA 13.1               | `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`                                                                                                                                                                                                      |
 | ETAPA 13.2               | `COMPLETED` — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                   |
-| ETAPA 13.3               | `NOT STARTED — READY`                                                                                                                                                                                                                                        |
-| BACKEND                  | `IMPLEMENTED / VERIFIED` — migration 23 aplicada remotamente; orders v2, KDS minimizado, PED79, índice active urgency, grants/revokes e correção NEW-MEDIUM-1; sem nova tabela, coluna, policy RLS, publicação Realtime ou state machine                              |
-| FRONTEND                 | Etapa 13.3 `NOT STARTED — READY`; nenhum frontend do Prompt 13 implementado nesta etapa                                                                                                                                                                      |
-| TESTES VERIFICADOS       | CI `31859960640`: Frontend 383/383; E2E 345/345 com 3 skips móveis intencionais; DB 1494/1494 (12 suítes); Edge 15/15; fresh rebuild de 23 migrations, alinhamento e DB lint PASS                                                                               |
-| PWA                      | Sem mudança nesta etapa documental; runtime cache de API `NONE`                                                                                                                                                                                             |
-| GITHUB ACTIONS           | CI técnico `31859960640` SUCCESS nos três jobs; CI documental do novo SHA registrado no relatório final                                                                                                                                                      |
-| PENDÊNCIAS               | Nenhum finding backend aberto na Etapa 13.2. `NEW-MEDIUM-1` está `RESOLVED — Prompt 13 / migration 23`; Etapa 13.3 permanece por iniciar                                                                                                                       |
-| NEXT_STEP                | Etapa 13.3 (`NOT STARTED — READY`); não iniciar nesta etapa documental                                                                                                                                                                                       |
+| ETAPA 13.3               | `COMPLETED` — Central de Pedidos v2, KDS, comanda digital e UI operacional (Fase 4A — Pilot Ready)                                                                                                                                                        |
+| ETAPA 13.4B              | `COMPLETED` — Comanda de cozinha 80 mm via Browser Print (DEC-123)                                                                                                                                                                                           |
+| ETAPA 13.5A              | `COMPLETED` — Alertas operacionais locais + audit-precache endurecido (DEC-124)                                                                                                                                                                              |
+| ETAPA 13.5B              | `NOT STARTED — READY`                                                                                                                                                                                                                                        |
+| BACKEND                  | Sem mudança nesta etapa (migration 23 inalterada); `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED` permanece válido                                                                                                                                            |
+| FRONTEND                 | Etapa 13.5A entregue: badge "N pedidos novos", banner "Novo pedido #N recebido.", som opt-in (sessão-only), baseline conservador em troca de unidade, resync offline→online sem alerta em lote, indicador "Tempo real indisponível" e realtime endurecido (typed payload + reset hook) |
+| TESTES VERIFICADOS       | CI `31912058296`: Frontend vitest 503/503 (46 arquivos); E2E 505/505 com 3 skips; DB 1494/1494 (12 suítes); Edge 15/15; fresh rebuild de 23 migrations, alinhamento e DB lint PASS; audit-precache `runtimeCaching: NONE`                              |
+| PWA                      | Gate `audit-precache` endurecido: `runtimeCaching` deve permanecer `NONE` para `/auth/**`, `/rest/**`, `/storage/**`, `/realtime/**` e RPCs de mutação (helper + regressão vitest cobrem o invariante — DEC-124)                                       |
+| GITHUB ACTIONS           | CI técnico `31912058296` SUCCESS nos três jobs; CI documental do novo SHA registrado no relatório final                                                                                                                                                      |
+| PENDÊNCIAS               | Nenhum finding aberto na Etapa 13.5A; Etapa 13.5B permanece por iniciar                                                                                                                                                                                       |
+| NEXT_STEP                | Etapa 13.5B (`NOT STARTED — READY`); não iniciar nesta etapa documental                                                                                                                                                                                       |
 | PROMPT 13                | `IN PROGRESS`                                                                                                                                                                                                                                                 |
 | PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
 | LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
@@ -80,6 +83,45 @@
   pedido bloqueia a opção de catálogo disponível, serializando checkout contra toggle/delete.
 - O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
   carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
+
+## Checkpoint Prompt 13 — Etapa 13.5A — Alertas Operacionais Locais (DEC-124)
+
+- Prompt 13 permanece `IN PROGRESS`; Etapa 13.1 está `COMPLETED` com
+  `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`; Etapa 13.2 está `COMPLETED` com
+  `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`; Etapa 13.3 está `COMPLETED` (Fase 4A — Pilot Ready);
+  Etapa 13.4B está `COMPLETED` (comanda 80 mm via Browser Print — DEC-123); Etapa 13.5A está
+  `COMPLETED` (alertas operacionais locais + audit-precache endurecido — DEC-124); Etapa 13.5B
+  está `NOT STARTED — READY`.
+- Migration: nenhuma (etapa puramente frontend/PWA — backend permanece no contrato da Etapa 13.2 /
+  migration 23; 23/23/23 reconciliado, DB push PASS, DB lint PASS, remote drift `NONE`).
+- Badge "N pedidos novos" nos NavLinks `Pedidos` e `Cozinha` (contador unitário/plural,
+  `aria-label` dedicado); banner dismissível "Novo pedido #N recebido." com botões "Ver cozinha",
+  "Ver pedidos" e "Fechar"; som opt-in WebAudio (chime) com toggle "Ativar/Silenciar som"
+  persistido apenas em `sessionStorage` (sessão-only, não vaza entre sessões).
+- `useOrdersRealtime` endurecido: tipagem explícita (`OrderRealtimePayload`,
+  `OperationalRealtimeStatus`), invalidação das queries unit-KDS, unit-orders e order-detail em
+  cada mudança, e `resetUnitOrdersSequence` para evitar dedup com sequência stale.
+- `useOperationalOrdersBridge`: baseline conservador em troca de unidade (não dispara alerta em
+  lote do que já estava lá), resync online→offline→online sem alerta em lote do que ocorreu
+  offline, e indicador "Tempo real indisponível. Atualização periódica continua ativa." quando o
+  canal cai para `degraded`. O componente `OperationalOrderStatus` é montado apenas nas rotas
+  `/app/pedidos` e `/app/cozinha`; a ponte continua assinando o canal realtime em background nas
+  demais rotas para manter badge/alerta atualizados ao navegar para pedidos/cozinha.
+- Privacy-by-design: badge e banner nunca expõem PII (cliente, telefone, endereço, CPF, pagamento,
+  totais, IDs técnicos); banner contém apenas o número do pedido (`#82`) e badge é apenas contador.
+- PWA / `audit-precache` endurecido: `runtimeCaching` deve permanecer `NONE` para `/auth/**`,
+  `/rest/**`, `/storage/**`, `/realtime/**` e RPCs de mutação do Supabase. Helper
+  `audit-precache-runtime-caching.mjs` + regressão vitest (`audit-precache-runtime-caching.test.mjs`)
+  cobrem o invariante. CI valida `runtimeCaching: NONE`.
+- Cobertura E2E: novo spec `e2e/prompt13-order-alerts.spec.ts` cobre A-J (hidratação, realtime,
+  dedup, som opt-in, operator, troca de unidade, privacy, degradado, navegação, offline→online)
+  em mobile-360, tablet-768, desktop-1024 e desktop-1440 (10 testes × 4 projetos = 40 cenários).
+- Gates verdes no CI `31912058296` (commit `cdbfb09`): lint, typecheck, format:check,
+  vitest 46/46 (503 testes), build (37 precache), audit-precache `runtimeCaching: NONE`,
+  E2E 505/505 (3 skips intencionais). Backend release gates (isolated DB rebuild de 23
+  migrations) PASS.
+- Decisão registrada: `DEC-124 — Alertas operacionais locais + audit-precache runtimeCaching=NONE`.
+- Próxima etapa: 13.5B (`NOT STARTED — READY`); não iniciar nesta etapa documental.
 
 ## Checkpoint Prompt 13 — `BACKEND_OPERATIONAL_CHECKPOINT` (Etapa 13.2)
 

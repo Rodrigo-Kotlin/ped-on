@@ -92,7 +92,10 @@ Estado: `IN PROGRESS`.
 
 - Etapa 13.1: `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`.
 - Etapa 13.2: `COMPLETED` — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`.
-- Etapa 13.3: `NOT STARTED — READY`.
+- Etapa 13.3: `COMPLETED` — Central de Pedidos v2, KDS, comanda digital e UI operacional (Fase 4A — Pilot Ready).
+- Etapa 13.4B: `COMPLETED` — Comanda de cozinha 80 mm via Browser Print (DEC-123).
+- Etapa 13.5A: `COMPLETED` — Alertas operacionais locais + audit-precache endurecido (DEC-124).
+- Etapa 13.5B: `NOT STARTED — READY`.
 - `NEW-MEDIUM-1: RESOLVED — Prompt 13 / migration 23`.
 - `OPERATION_READY: NOT ACHIEVED`.
 

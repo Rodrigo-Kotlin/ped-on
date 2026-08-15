@@ -1133,9 +1133,11 @@ checkout e tracking públicos passam exclusivamente pelas RPCs minimizadas.
 Checkpoint Prompt 13 — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED` (Etapa 13.2):
 
 - Prompt 13 `IN PROGRESS`; Etapa 13.1 `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`;
-  Etapa 13.2 `COMPLETED`; Etapa 13.3 `NOT STARTED — READY`; `OPERATION_READY: NOT ACHIEVED`;
+  Etapa 13.2 `COMPLETED`; Etapas 13.3, 13.4B e 13.5A `COMPLETED` (frontend puro, DEC-123 e DEC-124);
+  Etapa 13.5B `NOT STARTED — READY`; `OPERATION_READY: NOT ACHIEVED`;
 - HEAD técnico `0e171c55afe3a88a699f1ee81b8f937a70659226`; migration 23
-  `20260814100000_prompt13_backend_operational_core.sql`;
+  `20260814100000_prompt13_backend_operational_core.sql` (etapas 13.3, 13.4B e 13.5A não introduziram
+  nova migration; backend permanece no contrato da Etapa 13.2);
 - DB push PASS; Git/filesystem/remoto 23/23/23; post-push dry-run PASS/up to date; linked DB lint
   PASS com zero erros; remote drift `NONE`;
 - migration 23 não cria tabela, coluna, policy RLS, publicação Realtime, status/transição de pedido
