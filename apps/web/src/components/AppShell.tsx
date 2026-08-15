@@ -29,6 +29,8 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const isKitchenRoute = location.pathname === '/app/cozinha';
+  const isOrdersRoute =
+    location.pathname === '/app/pedidos' || location.pathname === '/app/cozinha';
   const bridge = useOperationalOrdersBridge(selectedUnit?.id ?? null);
 
   const unitLabel = units.length === 0 ? 'Nenhuma unidade' : 'Unidade';
@@ -134,16 +136,18 @@ export function AppShell() {
         )}
       </nav>
 
-      <OperationalOrderStatus
-        realtimeStatus={bridge.realtimeStatus}
-        alert={bridge.alert}
-        dismissAlert={bridge.dismissAlert}
-        soundEnabled={bridge.soundEnabled}
-        soundUnavailable={bridge.soundUnavailable}
-        onToggleSound={bridge.toggleSound}
-        onViewKitchen={() => navigate('/app/cozinha')}
-        onViewOrders={() => navigate('/app/pedidos')}
-      />
+      {isOrdersRoute && (
+        <OperationalOrderStatus
+          realtimeStatus={bridge.realtimeStatus}
+          alert={bridge.alert}
+          dismissAlert={bridge.dismissAlert}
+          soundEnabled={bridge.soundEnabled}
+          soundUnavailable={bridge.soundUnavailable}
+          onToggleSound={bridge.toggleSound}
+          onViewKitchen={() => navigate('/app/cozinha')}
+          onViewOrders={() => navigate('/app/pedidos')}
+        />
+      )}
 
       <div className="mt-4 print:hidden">
         <OfflineBanner />
