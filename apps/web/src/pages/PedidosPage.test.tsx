@@ -613,6 +613,7 @@ describe('PedidosPage', () => {
     renderOrders();
 
     await user.click(await screen.findByRole('button', { name: /Abrir pedido 42/ }));
+    const detail = screen.getByRole('region', { name: 'Pedido #42' });
     expect(await screen.findByRole('heading', { name: 'Pedido #42' })).toHaveFocus();
     expect(screen.getByRole('link', { name: '(11) 98765-4321' })).toBeInTheDocument();
     expect(screen.getByText(/Rua das Flores, 123, Apto 4/)).toBeInTheDocument();
@@ -625,9 +626,9 @@ describe('PedidosPage', () => {
     expect(document.body).not.toHaveTextContent(/item-option-1|group-1|option-1/);
     expect(screen.getByText('Observação: Sem talheres')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
-    expect(await screen.findByRole('button', { name: 'Iniciar preparo' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument();
+    await user.click(within(detail).getByRole('button', { name: 'Confirmar' }));
+    expect(await within(detail).findByRole('button', { name: 'Iniciar preparo' })).toBeVisible();
+    expect(within(detail).queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument();
     expect(supabaseMock.rpc).toHaveBeenCalledWith('set_order_status', {
       p_order_id: 'order-1',
       p_next_status: 'confirmed',
@@ -641,10 +642,11 @@ describe('PedidosPage', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderOrders();
     await user.click(await screen.findByRole('button', { name: /Abrir pedido 42/ }));
+    const detail = screen.getByRole('region', { name: 'Pedido #42' });
 
-    await user.click(screen.getByRole('button', { name: 'Saiu para entrega' }));
+    await user.click(within(detail).getByRole('button', { name: 'Saiu para entrega' }));
     expect(await screen.findByRole('heading', { name: 'Status: Saiu para entrega' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Concluir' }));
+    await user.click(within(detail).getByRole('button', { name: 'Concluir entrega' }));
     expect(await screen.findByRole('heading', { name: 'Status: Concluído' })).toBeVisible();
   });
 
@@ -669,8 +671,9 @@ describe('PedidosPage', () => {
     ).toHaveLength(callsBefore);
 
     await user.click(card);
+    const detail = screen.getByRole('region', { name: 'Pedido #42' });
 
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await user.click(within(detail).getByRole('button', { name: 'Confirmar' }));
     expect(
       (await screen.findAllByRole('alert')).some((alert) =>
         /offline/i.test(alert.textContent ?? ''),
@@ -682,7 +685,7 @@ describe('PedidosPage', () => {
     expect(screen.getAllByText('Maria Cliente')).not.toHaveLength(0);
 
     online.mockReturnValue(true);
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    await user.click(within(detail).getByRole('button', { name: 'Cancelar' }));
     expect(await screen.findByRole('heading', { name: 'Status: Cancelado' })).toBeVisible();
   });
 
@@ -790,5 +793,331 @@ describe('PedidosPage', () => {
     expect(await screen.findByText('Nenhum pedido ativo.')).toBeInTheDocument();
     await waitFor(() => expect(supabaseMock.removeChannel).toHaveBeenCalledTimes(1));
     expect(supabaseMock.channel).toHaveBeenCalledWith('unit-orders:unit-2');
+  });
+
+  it('confirma pedido pela ação rápida do card sem abrir o detalhe', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(await screen.findByRole('button', { name: 'Iniciar preparo' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pedido #42' })).not.toBeInTheDocument();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('set_order_status', {
+      p_order_id: 'order-1',
+      p_next_status: 'confirmed',
+      p_note: null,
+    });
+    expect(
+      supabaseMock.rpc.mock.calls.filter(([name]) => name === 'set_order_status'),
+    ).toHaveLength(1);
+  });
+
+  it('exibe Atualizando…, desabilita e bloqueia clique duplo na ação rápida', async () => {
+    const user = userEvent.setup();
+    let resolveStatus!: (value: unknown) => void;
+    const gate = new Promise((resolve) => {
+      resolveStatus = resolve;
+    });
+    let nextDetail = makeDetail();
+    supabaseMock.rpc.mockImplementation((name: string, args?: Record<string, unknown>) => {
+      if (name === 'get_my_admin_context') {
+        return Promise.resolve({ data: context('owner'), error: null });
+      }
+      if (name === 'get_unit_orders_admin_v2') {
+        const filters = args?.p_filters as V2RequestFilters;
+        const active = !['completed', 'cancelled'].includes(nextDetail.status);
+        const filtered =
+          (filters.view === 'active' ? active : !active) &&
+          (filters.statuses === undefined || filters.statuses.includes(nextDetail.status))
+            ? [summaryFromDetail(nextDetail, summary.expected_at)]
+            : [];
+        return Promise.resolve({ data: v2Result(filtered, { filters }), error: null });
+      }
+      if (name === 'get_order_admin') return Promise.resolve({ data: nextDetail, error: null });
+      if (name === 'set_order_status') {
+        nextDetail = {
+          ...nextDetail,
+          status: args?.p_next_status as AdminOrderDetail['status'],
+        };
+        return gate;
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    const confirmButton = screen.getByRole('button', { name: 'Confirmar' });
+    await user.click(confirmButton);
+
+    const card = screen.getByRole('article');
+    const updating = await within(card).findByRole('button', { name: 'Atualizando…' });
+    expect(updating).toBeDisabled();
+    await user.click(updating);
+
+    resolveStatus({ data: nextDetail, error: null });
+    expect(await screen.findByRole('button', { name: 'Iniciar preparo' })).toBeInTheDocument();
+    expect(
+      supabaseMock.rpc.mock.calls.filter(([name]) => name === 'set_order_status'),
+    ).toHaveLength(1);
+  });
+
+  it('mostra PED47 amigável na ação rápida e refaz a lista sem repetir a mutação', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    const original = supabaseMock.rpc.getMockImplementation()!;
+    const initialListCalls = supabaseMock.rpc.mock.calls.filter(
+      ([name]) => name === 'get_unit_orders_admin_v2',
+    ).length;
+    supabaseMock.rpc.mockImplementation((name: string, args?: Record<string, unknown>) => {
+      if (name === 'set_order_status') {
+        return Promise.resolve({ data: null, error: { code: 'P0001', message: 'PED47 CONFLICT' } });
+      }
+      return original(name, args);
+    });
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Este pedido foi atualizado por outra operação. Recarregue os dados e tente novamente.',
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/PED47|SQL/);
+    await waitFor(() => {
+      expect(
+        supabaseMock.rpc.mock.calls.filter(([name]) => name === 'get_unit_orders_admin_v2').length,
+      ).toBeGreaterThan(initialListCalls);
+    });
+    expect(
+      supabaseMock.rpc.mock.calls.filter(([name]) => name === 'set_order_status'),
+    ).toHaveLength(1);
+  });
+
+  it('mantém erro de rede amigável na ação rápida do card', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    const original = supabaseMock.rpc.getMockImplementation()!;
+    supabaseMock.rpc.mockImplementation((name: string, args?: Record<string, unknown>) => {
+      if (name === 'set_order_status') {
+        return Promise.resolve({ data: null, error: { message: 'Failed to fetch' } });
+      }
+      return original(name, args);
+    });
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível atualizar os pedidos. Verifique sua conexão e tente novamente.',
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Failed to fetch');
+  });
+
+  it('marca pago pela ação rápida do card e remove o botão ao pagar', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Marcar pago' }));
+    await waitFor(() => expect(screen.getByText('Dinheiro · Pago')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Marcar pago' })).not.toBeInTheDocument();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('set_order_payment_status', {
+      p_order_id: 'order-1',
+      p_payment_status: 'paid',
+    });
+  });
+
+  it('não oferece pagamento rápido para pedidos reembolsados', async () => {
+    configureRpc('owner', makeDetail({ payment_status: 'refunded' }), null);
+    renderOrders();
+    await screen.findByText('Novo pedido');
+    expect(screen.queryByRole('button', { name: 'Marcar pago' })).not.toBeInTheDocument();
+  });
+
+  it('não chama RPC de pagamento quando offline e mostra alerta no card', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Marcar pago' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/offline/i);
+    expect(
+      supabaseMock.rpc.mock.calls.filter(([name]) => name === 'set_order_payment_status'),
+    ).toHaveLength(0);
+  });
+
+  it('mostra PED48 amigável ao marcar pago pela ação rápida', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    const original = supabaseMock.rpc.getMockImplementation()!;
+    supabaseMock.rpc.mockImplementation((name: string, args?: Record<string, unknown>) => {
+      if (name === 'set_order_payment_status') {
+        return Promise.resolve({
+          data: null,
+          error: { code: 'P0001', message: 'PED48 CONFLICT' },
+        });
+      }
+      return original(name, args);
+    });
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Marcar pago' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'O pagamento foi atualizado por outra operação. Recarregue os dados e tente novamente.',
+    );
+  });
+
+  it('cancela pelo card somente com confirmação explícita e remove o pedido da lista ativa', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Cancelar o pedido #42? Esta ação não pode ser desfeita.',
+    );
+    expect(await screen.findByText('Nenhum pedido ativo.')).toBeInTheDocument();
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('set_order_status', {
+      p_order_id: 'order-1',
+      p_next_status: 'cancelled',
+      p_note: null,
+    });
+  });
+
+  it('mantém o pedido ativo ao recusar o cancelamento', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(screen.getByText('Novo pedido')).toBeInTheDocument();
+    expect(
+      supabaseMock.rpc.mock.calls.filter(([name]) => name === 'set_order_status'),
+    ).toHaveLength(0);
+  });
+
+  it('não oferece cancelamento para pedidos terminais no histórico', async () => {
+    const user = userEvent.setup();
+    configureRpc('owner', makeDetail({ status: 'completed', completed_at: createdAt }), null);
+    renderOrders();
+    await user.click(await screen.findByRole('button', { name: 'Histórico' }));
+    await screen.findByText(/Concluído às/);
+
+    expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument();
+  });
+
+  it('aplica filtro de status e move o pedido ao confirmar pela ação rápida', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Novo' }));
+    await user.click(screen.getByRole('button', { name: 'Aplicar filtros' }));
+    expect(await screen.findByText('Maria Cliente')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(await screen.findByText('Nenhum pedido ativo.')).toBeInTheDocument();
+  });
+
+  it('não expõe telefone ou endereço nos cards', async () => {
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    expect(screen.getByText('Maria Cliente')).toBeInTheDocument();
+    expect(screen.queryByText('(11) 98765-4321')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Rua das Flores/)).not.toBeInTheDocument();
+  });
+
+  it('mantém foco na nova ação primária após confirmar pelo card', async () => {
+    const user = userEvent.setup();
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Iniciar preparo' })).toHaveFocus();
+    });
+  });
+
+  it('restaura o foco para o título da lista ao cancelar o último pedido', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    configureRpc();
+    renderOrders();
+    await screen.findByText('Novo pedido');
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByText('Nenhum pedido ativo.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Pedidos' })).toHaveFocus());
+  });
+
+  it('deriva marcos e durações da Operação no detalhe a partir dos eventos', async () => {
+    const user = userEvent.setup();
+    const events = [
+      { id: 'e1', event_type: 'created', from_value: null, to_value: 'new' },
+      { id: 'e2', event_type: 'status_changed', from_value: 'new', to_value: 'confirmed' },
+      { id: 'e3', event_type: 'status_changed', from_value: 'confirmed', to_value: 'preparing' },
+      { id: 'e4', event_type: 'status_changed', from_value: 'preparing', to_value: 'ready' },
+      {
+        id: 'e5',
+        event_type: 'status_changed',
+        from_value: 'ready',
+        to_value: 'out_for_delivery',
+      },
+      {
+        id: 'e6',
+        event_type: 'status_changed',
+        from_value: 'out_for_delivery',
+        to_value: 'completed',
+      },
+    ] as const;
+    const timelineEvents = events.map((event, index) => ({
+      ...event,
+      note: null,
+      actor_type: 'customer' as const,
+      actor_user_id: null,
+      created_at: new Date(Date.parse(createdAt) + index * 5 * 60_000).toISOString(),
+    }));
+    configureRpc(
+      'owner',
+      makeDetail({
+        status: 'completed',
+        service_mode: 'delivery',
+        completed_at: timelineEvents[5]!.created_at,
+        events: timelineEvents,
+      }),
+      null,
+    );
+    renderOrders();
+    await user.click(await screen.findByRole('button', { name: 'Histórico' }));
+    await user.click(await screen.findByRole('button', { name: /Abrir pedido 42/ }));
+    const detail = screen.getByRole('region', { name: 'Pedido #42' });
+    const operacao = screen.getByRole('region', { name: 'Operação' });
+    const timeline = screen.getByRole('region', { name: 'Linha do tempo' });
+
+    expect(within(detail).getByText('Operação')).toBeInTheDocument();
+    expect(within(operacao).getByText('Recebido')).toBeInTheDocument();
+    expect(within(operacao).getByText('Aceitação')).toBeInTheDocument();
+    expect(within(operacao).getByText('Preparo')).toBeInTheDocument();
+    expect(within(operacao).getByText('Entrega')).toBeInTheDocument();
+    expect(within(operacao).getByText('Ciclo total')).toBeInTheDocument();
+    expect(within(operacao).getAllByText('5 min').length).toBeGreaterThan(0);
+    expect(within(operacao).getAllByText('25 min').length).toBeGreaterThan(0);
+    expect(within(timeline).getByText('Status: Novo → Confirmado')).toBeInTheDocument();
+    expect(within(timeline).getByText('Status: Saiu para entrega → Concluído')).toBeInTheDocument();
   });
 });

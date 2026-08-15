@@ -1,25 +1,26 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useAdmin } from '../lib/admin/admin-context';
 import { formatBRL } from '../lib/money';
-import { assertOnline } from '../lib/offline/useOnline';
 import { orderOptionLabel } from '../lib/orders/order-option-label';
-import { useCriticalOperation } from '../lib/pwa/critical-operation';
 import {
   ACTIVE_ORDER_STATUSES,
+  canCancelOrder,
+  deriveOrderOperationalDurations,
+  deriveOrderOperationalTimeline,
   fetchOrderAdmin,
   fetchUnitOrdersAdminV2,
+  getPrimaryOrderAction,
+  getPrimaryPaymentAction,
   HISTORY_ORDER_STATUSES,
+  isTerminalOrderStatus,
   normalizeAdminOrderDateRange,
   normalizeAdminOrderFilters,
   ORDER_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
   SERVICE_MODE_LABELS,
-  setOrderPaymentStatus,
-  setOrderStatus,
   unitOrderDetailKey,
-  unitOrdersListPrefix,
   unitOrdersV2ListKey,
 } from '../lib/orders/orders';
 import type {
@@ -33,31 +34,13 @@ import type {
   PaymentStatus,
   ServiceMode,
 } from '../lib/orders/orders';
+import { useOrderPaymentMutation, useOrderStatusMutation } from '../lib/orders/useOrderMutations';
 import {
   elapsedMinutes,
   remainingMinutes,
   useOperationalNow,
 } from '../lib/orders/useOperationalNow';
 import { useOrdersRealtime } from '../lib/orders/useOrdersRealtime';
-
-const STATUS_FILTER_LABELS: Record<OrderStatus, string> = {
-  new: 'Novo',
-  confirmed: 'Confirmado',
-  preparing: 'Em preparo',
-  ready: 'Pronto',
-  out_for_delivery: 'Saiu para entrega',
-  completed: 'Concluído',
-  cancelled: 'Cancelado',
-};
-
-const ACTION_LABELS: Partial<Record<OrderStatus, string>> = {
-  confirmed: 'Confirmar',
-  preparing: 'Iniciar preparo',
-  ready: 'Marcar pronto',
-  out_for_delivery: 'Saiu para entrega',
-  completed: 'Concluir',
-  cancelled: 'Cancelar',
-};
 
 function dateTime(value: string): string {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -115,34 +98,40 @@ function OrderOperationalTime({
   if (view === 'history') {
     const finalTimestamp = order.status === 'completed' ? order.completed_at : order.cancelled_at;
     return (
-      <div className="mt-2 space-y-0.5 text-xs text-pedon-text/70">
-        <p>Recebido há {minutesText(elapsedMinutes(order.created_at, now))}</p>
+      <span className="mt-2 block space-y-0.5 text-xs text-pedon-text/70">
+        <span className="block">
+          Recebido há {minutesText(elapsedMinutes(order.created_at, now))}
+        </span>
         {finalTimestamp !== null && (
-          <p>
+          <span className="block">
             {order.status === 'completed' ? 'Concluído' : 'Cancelado'} às {time(finalTimestamp)}
-          </p>
+          </span>
         )}
-      </div>
+      </span>
     );
   }
 
   const overdue = isOrderOverdue(order, now);
   return (
-    <div className="mt-2 space-y-0.5 text-xs text-pedon-text/70">
-      <p>Recebido há {minutesText(elapsedMinutes(order.created_at, now))}</p>
-      <p>No status há {minutesText(elapsedMinutes(order.status_updated_at, now))}</p>
+    <span className="mt-2 block space-y-0.5 text-xs text-pedon-text/70">
+      <span className="block">
+        Recebido há {minutesText(elapsedMinutes(order.created_at, now))}
+      </span>
+      <span className="block">
+        No status há {minutesText(elapsedMinutes(order.status_updated_at, now))}
+      </span>
       {order.expected_at !== null &&
         (overdue ? (
-          <p className="font-bold text-red-800">
+          <span className="block font-bold text-red-800">
             Atrasado há {minutesText(elapsedMinutes(order.expected_at, now))}
-          </p>
+          </span>
         ) : (
-          <p>
+          <span className="block">
             Previsto {time(order.expected_at)} · Restam{' '}
             {minutesText(remainingMinutes(order.expected_at, now))}
-          </p>
+          </span>
         ))}
-    </div>
+    </span>
   );
 }
 
@@ -153,43 +142,267 @@ function formatPhone(value: string): string {
     : `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
 }
 
-function possibleStatuses(status: OrderStatus, serviceMode: ServiceMode): OrderStatus[] {
-  if (status === 'new') return ['confirmed', 'cancelled'];
-  if (status === 'confirmed') return ['preparing', 'cancelled'];
-  if (status === 'preparing') return ['ready', 'cancelled'];
-  if (status === 'ready') {
-    return serviceMode === 'delivery'
-      ? ['out_for_delivery', 'cancelled']
-      : ['completed', 'cancelled'];
-  }
-  if (status === 'out_for_delivery') return ['completed', 'cancelled'];
-  return [];
-}
-
 function eventDescription(event: AdminOrderEvent): string {
   if (event.event_type === 'created') return 'Pedido recebido';
   if (event.event_type === 'payment_changed') {
     return `Pagamento: ${PAYMENT_STATUS_LABELS[event.to_value as PaymentStatus]}`;
   }
-  return `Status: ${ORDER_STATUS_LABELS[event.to_value as OrderStatus]}`;
+  const from =
+    event.from_value !== null ? ORDER_STATUS_LABELS[event.from_value as OrderStatus] : null;
+  const to = ORDER_STATUS_LABELS[event.to_value as OrderStatus];
+  return from === null ? `Status: ${to}` : `Status: ${from} → ${to}`;
+}
+
+function OrderOperationSection({ order }: { order: AdminOrderDetail }) {
+  const timeline = deriveOrderOperationalTimeline(order.events, order);
+  const durations = deriveOrderOperationalDurations(timeline);
+  const milestones: Array<{ key: keyof typeof timeline; label: string }> = [
+    { key: 'created_at', label: 'Recebido' },
+    { key: 'confirmed_at', label: 'Confirmado' },
+    { key: 'preparing_at', label: 'Em preparo' },
+    { key: 'ready_at', label: 'Pronto' },
+    { key: 'out_for_delivery_at', label: 'Saiu para entrega' },
+    timeline.cancelled_at !== null
+      ? { key: 'cancelled_at', label: 'Cancelado' }
+      : { key: 'completed_at', label: 'Concluído' },
+  ];
+  const durationRows = [
+    { label: 'Aceitação', value: durations.acceptance_minutes },
+    { label: 'Preparo', value: durations.preparation_minutes },
+    { label: 'Entrega', value: durations.delivery_minutes },
+    { label: 'Ciclo total', value: durations.total_cycle_minutes },
+  ];
+
+  return (
+    <section aria-labelledby="operacao-heading" className="mt-5 border-t border-pedon-navy/10 pt-5">
+      <h3 id="operacao-heading" className="font-bold text-pedon-navy">
+        Operação
+      </h3>
+      <ul className="mt-3 space-y-1 text-sm">
+        {milestones.map((milestone) => {
+          const at = timeline[milestone.key];
+          if (at === null) return null;
+          return (
+            <li key={milestone.key} className="flex justify-between gap-3">
+              <span>{milestone.label}</span>
+              <time dateTime={at}>{dateTime(at)}</time>
+            </li>
+          );
+        })}
+      </ul>
+      <dl className="mt-4 grid grid-cols-2 gap-2 border-t border-pedon-navy/10 pt-3 text-sm">
+        {durationRows.map((row) =>
+          row.value === null ? null : (
+            <div key={row.label} className="rounded-md bg-pedon-surface px-3 py-2">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-pedon-text/60">
+                {row.label}
+              </dt>
+              <dd className="font-bold text-pedon-navy">{row.value} min</dd>
+            </div>
+          ),
+        )}
+      </dl>
+    </section>
+  );
+}
+
+function OrderCard({
+  unitId,
+  order,
+  view,
+  now,
+  isSelected,
+  onOpen,
+  onOrderRemoved,
+  openButtonRef,
+}: {
+  unitId: string;
+  order: AdminOrderSummaryV2;
+  view: OrderAdminView;
+  now: number;
+  isSelected: boolean;
+  onOpen: (orderId: string) => void;
+  onOrderRemoved: (orderId: string) => void;
+  openButtonRef: (node: HTMLButtonElement | null) => void;
+}) {
+  const primaryActionRef = useRef<HTMLButtonElement>(null);
+  const paymentActionRef = useRef<HTMLButtonElement>(null);
+  const statusMutation = useOrderStatusMutation(unitId, order.id);
+  const paymentMutation = useOrderPaymentMutation(unitId, order.id);
+  const busy = statusMutation.isPending || paymentMutation.isPending;
+  const displayedStatus = statusMutation.data?.status ?? order.status;
+  const displayedPaymentStatus = paymentMutation.data?.payment_status ?? order.payment_status;
+  const statusTarget = statusMutation.variables;
+  const primaryAction = getPrimaryOrderAction({
+    status: displayedStatus,
+    service_mode: order.service_mode,
+  });
+  const paymentAction = getPrimaryPaymentAction(displayedPaymentStatus);
+  const canCancel = canCancelOrder(displayedStatus);
+  const primaryBusy = statusMutation.isPending && statusTarget === primaryAction?.nextStatus;
+  const cancelBusy = statusMutation.isPending && statusTarget === 'cancelled';
+  const actionError = statusMutation.error?.message ?? paymentMutation.error?.message ?? null;
+  const overdue = view === 'active' && isOrderOverdue(order, now);
+  const isSuccess = statusMutation.isSuccess || paymentMutation.isSuccess;
+  const wasSuccessRef = useRef(false);
+
+  useEffect(() => {
+    if (isSuccess && !wasSuccessRef.current) {
+      const appliedStatus = statusMutation.data?.status ?? statusTarget ?? order.status;
+      if (view === 'active' && isTerminalOrderStatus(appliedStatus)) {
+        onOrderRemoved(order.id);
+      } else {
+        const raf = requestAnimationFrame(() => {
+          if (primaryActionRef.current !== null) primaryActionRef.current.focus();
+          else if (paymentActionRef.current !== null) paymentActionRef.current.focus();
+        });
+        return () => cancelAnimationFrame(raf);
+      }
+    }
+    wasSuccessRef.current = isSuccess;
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuccess, statusTarget, order.status, order.id, view, onOrderRemoved]);
+
+  function cancelOrder() {
+    if (
+      !window.confirm(`Cancelar o pedido #${order.order_number}? Esta ação não pode ser desfeita.`)
+    ) {
+      return;
+    }
+    statusMutation.mutate('cancelled');
+  }
+
+  return (
+    <article
+      aria-busy={busy}
+      className={`overflow-hidden rounded-xl border bg-white shadow-sm transition hover:border-pedon-orange ${
+        overdue
+          ? 'border-l-4 border-l-red-700 border-y-red-300 border-r-red-300'
+          : order.status === 'new'
+            ? 'border-l-4 border-l-pedon-orange border-y-pedon-orange/40 border-r-pedon-orange/40'
+            : order.status === 'ready'
+              ? 'border-l-4 border-l-pedon-navy border-y-pedon-navy/25 border-r-pedon-navy/25'
+              : 'border-pedon-navy/15'
+      }`}
+    >
+      <button
+        ref={openButtonRef}
+        type="button"
+        onClick={() => onOpen(order.id)}
+        aria-label={`Abrir pedido ${order.order_number} de ${order.customer_name}`}
+        aria-current={isSelected ? 'true' : undefined}
+        className="w-full p-4 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pedon-orange"
+      >
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block font-bold text-pedon-navy">
+              #{order.order_number} · {time(order.created_at)}
+            </span>
+            <span className="mt-1 block truncate font-medium">{order.customer_name}</span>
+          </span>
+          <span className="shrink-0 rounded-full bg-pedon-surface px-2.5 py-1 text-xs font-bold text-pedon-navy">
+            {ORDER_STATUS_LABELS[order.status]}
+          </span>
+        </span>
+        <span className="mt-2 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wide">
+          {order.status === 'new' && (
+            <span className="rounded-full bg-orange-50 px-2 py-1 text-pedon-orange">
+              Novo pedido
+            </span>
+          )}
+          {overdue && (
+            <span className="rounded-full bg-red-50 px-2 py-1 text-red-800">Atrasado</span>
+          )}
+          {order.status === 'ready' && (
+            <span className="rounded-full bg-pedon-surface px-2 py-1 text-pedon-navy">
+              Pronto para {order.service_mode === 'pickup' ? 'retirada' : 'entrega'}
+            </span>
+          )}
+          {order.status === 'out_for_delivery' && (
+            <span className="rounded-full bg-pedon-surface px-2 py-1 text-pedon-navy">Em rota</span>
+          )}
+        </span>
+        <OrderOperationalTime order={order} view={view} now={now} />
+        <span className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm sm:grid-cols-3">
+          <span>{SERVICE_MODE_LABELS[order.service_mode]}</span>
+          <span>
+            {order.item_count} {order.item_count === 1 ? 'item' : 'itens'}
+          </span>
+          <span className="font-bold">{formatBRL(order.total)}</span>
+          <span className="col-span-2 break-words sm:col-span-2">
+            {PAYMENT_METHOD_LABELS[order.payment_method]} ·{' '}
+            {PAYMENT_STATUS_LABELS[order.payment_status]}
+          </span>
+        </span>
+      </button>
+      <footer className="flex flex-wrap gap-2 border-t border-pedon-navy/10 bg-pedon-surface/60 p-3">
+        {primaryAction !== null && (
+          <button
+            ref={primaryActionRef}
+            type="button"
+            disabled={busy}
+            onClick={() => statusMutation.mutate(primaryAction.nextStatus)}
+            className="min-h-11 rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-50"
+          >
+            {primaryBusy ? 'Atualizando…' : primaryAction.label}
+          </button>
+        )}
+        {paymentAction !== null && (
+          <button
+            ref={paymentActionRef}
+            type="button"
+            disabled={busy}
+            onClick={() => paymentMutation.mutate(paymentAction.nextStatus)}
+            className="min-h-11 rounded-md bg-pedon-navy px-4 font-semibold text-white disabled:opacity-50"
+          >
+            {paymentMutation.isPending ? 'Atualizando…' : paymentAction.label}
+          </button>
+        )}
+        {canCancel && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={cancelOrder}
+            className="min-h-11 rounded-md border border-red-300 px-4 font-semibold text-red-800 disabled:opacity-50"
+          >
+            {cancelBusy ? 'Atualizando…' : 'Cancelar'}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onOpen(order.id)}
+          className="ml-auto min-h-11 rounded-md border border-pedon-navy/25 px-4 font-semibold text-pedon-navy"
+        >
+          Detalhes
+        </button>
+      </footer>
+      {actionError !== null && (
+        <p role="alert" className="bg-red-50 px-3 py-2 text-sm text-red-800">
+          {actionError}
+        </p>
+      )}
+    </article>
+  );
 }
 
 function OrderDetail({
   unitId,
   orderId,
+  now,
   canManageUnit,
   onClose,
 }: {
   unitId: string;
   orderId: string;
+  now: number;
   canManageUnit: boolean;
   onClose: () => void;
 }) {
-  const { runCriticalOperation } = useCriticalOperation();
-  const queryClient = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const hasFocusedRef = useRef(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const statusMutation = useOrderStatusMutation(unitId, orderId);
+  const paymentMutation = useOrderPaymentMutation(unitId, orderId);
   const detailQuery = useQuery({
     queryKey: unitOrderDetailKey(unitId, orderId),
     queryFn: () => fetchOrderAdmin(orderId),
@@ -201,29 +414,6 @@ function OrderDetail({
       hasFocusedRef.current = true;
     }
   }, [detailQuery.data]);
-
-  function acceptServerOrder(order: AdminOrderDetail) {
-    queryClient.setQueryData(unitOrderDetailKey(unitId, order.id), order);
-    void queryClient.invalidateQueries({ queryKey: unitOrdersListPrefix(unitId) });
-    setActionError(null);
-  }
-
-  const statusMutation = useMutation({
-    mutationFn: (status: OrderStatus) => {
-      assertOnline();
-      return runCriticalOperation(() => setOrderStatus(orderId, status));
-    },
-    onSuccess: acceptServerOrder,
-    onError: (error: Error) => setActionError(error.message),
-  });
-  const paymentMutation = useMutation({
-    mutationFn: (status: PaymentStatus) => {
-      assertOnline();
-      return runCriticalOperation(() => setOrderPaymentStatus(orderId, status));
-    },
-    onSuccess: acceptServerOrder,
-    onError: (error: Error) => setActionError(error.message),
-  });
 
   if (detailQuery.isLoading) {
     return <p role="status">Carregando detalhes do pedido…</p>;
@@ -240,8 +430,14 @@ function OrderDetail({
   }
 
   const order = detailQuery.data;
-  const transitions = possibleStatuses(order.status, order.service_mode);
   const busy = statusMutation.isPending || paymentMutation.isPending;
+  const statusTarget = statusMutation.variables;
+  const primaryAction = getPrimaryOrderAction(order);
+  const canCancel = canCancelOrder(order.status);
+  const statusBusyPrimary =
+    statusMutation.isPending && primaryAction !== null && statusTarget === primaryAction.nextStatus;
+  const statusBusyCancel = statusMutation.isPending && statusTarget === 'cancelled';
+  const actionError = statusMutation.error?.message ?? paymentMutation.error?.message ?? null;
 
   function changeStatus(nextStatus: OrderStatus) {
     if (
@@ -282,6 +478,22 @@ function OrderDetail({
             Pedido #{order.order_number}
           </h2>
           <p className="mt-1 text-sm">Recebido em {dateTime(order.created_at)}</p>
+          {!isTerminalOrderStatus(order.status) && (
+            <p className="text-sm text-pedon-text/70">
+              No status há {minutesText(elapsedMinutes(order.status_updated_at, now))}
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold">
+            <span className="rounded-full bg-pedon-surface px-2.5 py-1 text-pedon-navy">
+              {ORDER_STATUS_LABELS[order.status]}
+            </span>
+            <span className="rounded-full bg-pedon-surface px-2.5 py-1 text-pedon-navy">
+              {SERVICE_MODE_LABELS[order.service_mode]}
+            </span>
+            <span className="rounded-full bg-pedon-surface px-2.5 py-1 text-pedon-navy">
+              {PAYMENT_STATUS_LABELS[order.payment_status]}
+            </span>
+          </div>
         </div>
         <button
           type="button"
@@ -374,7 +586,7 @@ function OrderDetail({
                 onClick={() => paymentMutation.mutate('paid')}
                 className="min-h-11 w-full rounded-md bg-pedon-navy px-4 font-semibold text-white disabled:opacity-50"
               >
-                Marcar como pago
+                {paymentMutation.isPending ? 'Atualizando…' : 'Marcar como pago'}
               </button>
             )}
             {order.payment_status === 'paid' && canManageUnit && (
@@ -390,6 +602,8 @@ function OrderDetail({
           </div>
         </section>
       </div>
+
+      <OrderOperationSection order={order} />
 
       <section aria-labelledby="items-heading" className="mt-5 border-t border-pedon-navy/10 pt-5">
         <h3 id="items-heading" className="font-bold text-pedon-navy">
@@ -442,23 +656,28 @@ function OrderDetail({
         <h3 id="actions-heading" className="font-bold text-pedon-navy">
           Status: {ORDER_STATUS_LABELS[order.status]}
         </h3>
-        {transitions.length > 0 && (
+        {(primaryAction !== null || canCancel) && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {transitions.map((nextStatus) => (
+            {primaryAction !== null && (
               <button
-                key={nextStatus}
                 type="button"
                 disabled={busy}
-                onClick={() => changeStatus(nextStatus)}
-                className={
-                  nextStatus === 'cancelled'
-                    ? 'min-h-11 rounded-md border border-red-300 px-4 font-semibold text-red-800 disabled:opacity-50'
-                    : 'min-h-11 rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-50'
-                }
+                onClick={() => statusMutation.mutate(primaryAction.nextStatus)}
+                className="min-h-11 rounded-md bg-pedon-orange px-4 font-semibold text-white disabled:opacity-50"
               >
-                {ACTION_LABELS[nextStatus]}
+                {statusBusyPrimary ? 'Atualizando…' : primaryAction.label}
               </button>
-            ))}
+            )}
+            {canCancel && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => changeStatus('cancelled')}
+                className="min-h-11 rounded-md border border-red-300 px-4 font-semibold text-red-800 disabled:opacity-50"
+              >
+                {statusBusyCancel ? 'Atualizando…' : 'Cancelar'}
+              </button>
+            )}
           </div>
         )}
       </section>
@@ -489,6 +708,7 @@ function OrderDetail({
 function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string }) {
   const { canManageUnit } = useAdmin();
   const orderButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [draftFilters, setDraftFilters] = useState<OrderFiltersDraft>(emptyFiltersDraft);
   const [appliedFilters, setAppliedFilters] = useState<NormalizedAdminOrderFilters>(() =>
     normalizeAdminOrderFilters({ view: 'active' }),
@@ -527,6 +747,19 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
     if (orderId !== null) {
       window.requestAnimationFrame(() => orderButtonRefs.current.get(orderId)?.focus());
     }
+  }
+
+  function handleOrderRemoved(orderId: string) {
+    orderButtonRefs.current.delete(orderId);
+    window.requestAnimationFrame(() => {
+      for (const node of orderButtonRefs.current.values()) {
+        if (node.isConnected) {
+          node.focus();
+          return;
+        }
+      }
+      headingRef.current?.focus();
+    });
   }
 
   function changeView(nextView: OrderAdminView) {
@@ -609,7 +842,13 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
           <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">
             Central 2.0
           </p>
-          <h2 className="mt-1 text-2xl font-bold text-pedon-navy">Pedidos</h2>
+          <h2
+            ref={headingRef}
+            tabIndex={-1}
+            className="mt-1 text-2xl font-bold text-pedon-navy outline-none"
+          >
+            Pedidos
+          </h2>
           <p className="mt-1 text-sm text-pedon-text/70">{unitName}</p>
         </div>
         <button
@@ -672,7 +911,7 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
                   onChange={() => toggleDraftStatus(status)}
                   className="size-4 accent-pedon-orange"
                 />
-                {STATUS_FILTER_LABELS[status]}
+                {ORDER_STATUS_LABELS[status]}
               </label>
             ))}
           </div>
@@ -839,73 +1078,23 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
               </div>
             ) : (
               <ul className="space-y-3">
-                {orders.map((order) => {
-                  const overdue = view === 'active' && isOrderOverdue(order, now);
-                  return (
-                    <li key={order.id}>
-                      <button
-                        ref={(node) => {
-                          if (node === null) orderButtonRefs.current.delete(order.id);
-                          else orderButtonRefs.current.set(order.id, node);
-                        }}
-                        type="button"
-                        onClick={() => setSelectedOrderId(order.id)}
-                        aria-label={`Abrir pedido ${order.order_number} de ${order.customer_name}`}
-                        aria-current={selectedOrderId === order.id ? 'true' : undefined}
-                        className={`min-h-11 w-full rounded-xl border bg-white p-4 text-left shadow-sm transition hover:border-pedon-orange focus:outline-none focus:ring-2 focus:ring-pedon-orange ${
-                          overdue
-                            ? 'border-l-4 border-l-red-700 border-y-red-300 border-r-red-300'
-                            : order.status === 'new'
-                              ? 'border-l-4 border-l-pedon-orange border-y-pedon-orange/40 border-r-pedon-orange/40'
-                              : order.status === 'ready'
-                                ? 'border-l-4 border-l-pedon-navy border-y-pedon-navy/25 border-r-pedon-navy/25'
-                                : 'border-pedon-navy/15'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-bold text-pedon-navy">
-                              #{order.order_number} · {time(order.created_at)}
-                            </p>
-                            <p className="mt-1 truncate font-medium">{order.customer_name}</p>
-                          </div>
-                          <span className="shrink-0 rounded-full bg-pedon-surface px-2.5 py-1 text-xs font-bold text-pedon-navy">
-                            {ORDER_STATUS_LABELS[order.status]}
-                          </span>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wide">
-                          {order.status === 'new' && (
-                            <span className="rounded-full bg-orange-50 px-2 py-1 text-pedon-orange">
-                              Novo pedido
-                            </span>
-                          )}
-                          {overdue && (
-                            <span className="rounded-full bg-red-50 px-2 py-1 text-red-800">
-                              Atrasado
-                            </span>
-                          )}
-                          {order.status === 'ready' && (
-                            <span className="rounded-full bg-pedon-surface px-2 py-1 text-pedon-navy">
-                              Pronto para {order.service_mode === 'pickup' ? 'retirada' : 'entrega'}
-                            </span>
-                          )}
-                        </div>
-                        <OrderOperationalTime order={order} view={view} now={now} />
-                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm sm:grid-cols-3">
-                          <span>{SERVICE_MODE_LABELS[order.service_mode]}</span>
-                          <span>
-                            {order.item_count} {order.item_count === 1 ? 'item' : 'itens'}
-                          </span>
-                          <span className="font-bold">{formatBRL(order.total)}</span>
-                          <span className="col-span-2 break-words sm:col-span-2">
-                            {PAYMENT_METHOD_LABELS[order.payment_method]} ·{' '}
-                            {PAYMENT_STATUS_LABELS[order.payment_status]}
-                          </span>
-                        </div>
-                      </button>
-                    </li>
-                  );
-                })}
+                {orders.map((order) => (
+                  <li key={order.id}>
+                    <OrderCard
+                      unitId={unitId}
+                      order={order}
+                      view={view}
+                      now={now}
+                      isSelected={selectedOrderId === order.id}
+                      onOpen={(orderId) => setSelectedOrderId(orderId)}
+                      onOrderRemoved={handleOrderRemoved}
+                      openButtonRef={(node) => {
+                        if (node === null) orderButtonRefs.current.delete(order.id);
+                        else orderButtonRefs.current.set(order.id, node);
+                      }}
+                    />
+                  </li>
+                ))}
               </ul>
             )}
 
@@ -926,6 +1115,7 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
               key={selectedOrderId}
               unitId={unitId}
               orderId={selectedOrderId}
+              now={now}
               canManageUnit={canManageUnit}
               onClose={closeDetail}
             />

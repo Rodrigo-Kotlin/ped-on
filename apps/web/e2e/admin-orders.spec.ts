@@ -8,10 +8,18 @@ const ORDER_ID = '44444444-4444-4444-8444-444444444444';
 const CREATED_AT = '2026-08-10T14:05:00.000Z';
 
 type AdminRole = 'owner' | 'operator';
-type OrderStatus = 'new' | 'confirmed' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+type OrderStatus =
+  'new' | 'confirmed' | 'preparing' | 'ready' | 'out_for_delivery' | 'completed' | 'cancelled';
 type PaymentStatus = 'pending' | 'paid' | 'refunded';
+type ServiceMode = 'pickup' | 'delivery';
 
-function orderFixture(status: OrderStatus, paymentStatus: PaymentStatus) {
+interface OrderFixtureOptions {
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  serviceMode?: ServiceMode;
+}
+
+function orderFixture({ status, paymentStatus, serviceMode = 'pickup' }: OrderFixtureOptions) {
   return {
     id: ORDER_ID,
     organization_id: ORGANIZATION_ID,
@@ -23,7 +31,7 @@ function orderFixture(status: OrderStatus, paymentStatus: PaymentStatus) {
     tracking_path: `/pedido/${'a'.repeat(32)}`,
     status,
     payment_status: paymentStatus,
-    service_mode: 'pickup',
+    service_mode: serviceMode,
     payment_method: 'pix',
     customer_name: 'Cliente E2E',
     customer_phone: '11987654321',
@@ -99,8 +107,12 @@ function orderFixture(status: OrderStatus, paymentStatus: PaymentStatus) {
   };
 }
 
-function orderSummaryFixture(status: OrderStatus, paymentStatus: PaymentStatus) {
-  const detail = orderFixture(status, paymentStatus);
+function orderSummaryFixture(
+  status: OrderStatus,
+  paymentStatus: PaymentStatus,
+  serviceMode: ServiceMode = 'pickup',
+) {
+  const detail = orderFixture({ status, paymentStatus, serviceMode });
   return {
     id: detail.id,
     order_number: detail.order_number,
@@ -126,9 +138,25 @@ function orderSummaryFixture(status: OrderStatus, paymentStatus: PaymentStatus) 
   };
 }
 
-async function mockAdminOrders(page: Page, role: AdminRole, initialPayment: PaymentStatus) {
-  let status: OrderStatus = 'new';
-  let paymentStatus = initialPayment;
+interface AdminOrderFilters {
+  view: 'active' | 'history';
+  cursor?: string;
+  statuses?: OrderStatus[];
+  service_mode?: ServiceMode;
+}
+
+async function mockAdminOrders(
+  page: Page,
+  role: AdminRole,
+  options: {
+    status?: OrderStatus;
+    payment?: PaymentStatus;
+    serviceMode?: ServiceMode;
+  } = {},
+) {
+  let status: OrderStatus = options.status ?? 'new';
+  let paymentStatus = options.payment ?? 'pending';
+  const serviceMode = options.serviceMode ?? 'pickup';
   const calls = { statuses: [] as string[], payments: [] as string[] };
 
   await page.routeWebSocket('**/realtime/v1/**', (webSocket) => webSocket.close());
@@ -204,33 +232,31 @@ async function mockAdminOrders(page: Page, role: AdminRole, initialPayment: Paym
       return;
     }
     if (pathname === '/rest/v1/rpc/get_unit_orders_admin_v2') {
-      const body = request.postDataJSON() as {
-        p_filters: {
-          view: 'active' | 'history';
-          cursor?: string;
-          service_mode?: 'pickup' | 'delivery';
-        };
-      };
+      const body = request.postDataJSON() as { p_filters: AdminOrderFilters };
       const filters = body.p_filters;
       const isTerminal = status === 'completed' || status === 'cancelled';
       const historyOrder = {
-        ...orderSummaryFixture('completed', paymentStatus),
+        ...orderSummaryFixture('completed', paymentStatus, serviceMode),
         id: '44444444-4444-4444-8444-444444444440',
         order_number: 80,
         customer_name: 'Cliente Histórico',
       };
       const secondOrder = {
-        ...orderSummaryFixture('confirmed', paymentStatus),
+        ...orderSummaryFixture('confirmed', paymentStatus, serviceMode),
         id: '44444444-4444-4444-8444-444444444442',
         order_number: 82,
         customer_name: 'Segundo pedido E2E',
       };
-      const activeOrders =
-        filters.service_mode === 'delivery' || isTerminal
-          ? []
-          : filters.cursor === 'cursor-page-2'
-            ? [secondOrder]
-            : [orderSummaryFixture(status, paymentStatus)];
+      const matchesServiceFilter =
+        filters.service_mode === undefined || filters.service_mode === serviceMode;
+      const matchesStatusFilter =
+        filters.statuses === undefined || filters.statuses.includes(status);
+      const hideActive = isTerminal || !matchesServiceFilter || !matchesStatusFilter;
+      const activeOrders = hideActive
+        ? []
+        : filters.cursor === 'cursor-page-2'
+          ? [secondOrder]
+          : [orderSummaryFixture(status, paymentStatus, serviceMode)];
       const orders = filters.view === 'history' ? [historyOrder] : activeOrders;
       await route.fulfill({
         status: 200,
@@ -253,20 +279,12 @@ async function mockAdminOrders(page: Page, role: AdminRole, initialPayment: Paym
             limit: 50,
           },
           snapshot_at: filters.view === 'active' ? CREATED_AT : null,
-          total_count:
-            filters.view === 'active' ? (filters.service_mode === 'delivery' ? 0 : 2) : 1,
+          total_count: filters.view === 'active' ? (hideActive ? 0 : 2) : 1,
           orders,
           page_info: {
-            has_more:
-              filters.view === 'active' &&
-              filters.cursor === undefined &&
-              filters.service_mode === undefined &&
-              !isTerminal,
+            has_more: filters.view === 'active' && filters.cursor === undefined && !hideActive,
             next_cursor:
-              filters.view === 'active' &&
-              filters.cursor === undefined &&
-              filters.service_mode === undefined &&
-              !isTerminal
+              filters.view === 'active' && filters.cursor === undefined && !hideActive
                 ? 'cursor-page-2'
                 : null,
           },
@@ -275,21 +293,33 @@ async function mockAdminOrders(page: Page, role: AdminRole, initialPayment: Paym
       return;
     }
     if (pathname === '/rest/v1/rpc/get_order_admin') {
-      await route.fulfill({ status: 200, headers, json: orderFixture(status, paymentStatus) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        json: orderFixture({ status, paymentStatus, serviceMode }),
+      });
       return;
     }
     if (pathname === '/rest/v1/rpc/set_order_status') {
       const body = request.postDataJSON() as { p_next_status: OrderStatus };
       status = body.p_next_status;
       calls.statuses.push(status);
-      await route.fulfill({ status: 200, headers, json: orderFixture(status, paymentStatus) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        json: orderFixture({ status, paymentStatus, serviceMode }),
+      });
       return;
     }
     if (pathname === '/rest/v1/rpc/set_order_payment_status') {
       const body = request.postDataJSON() as { p_payment_status: PaymentStatus };
       paymentStatus = body.p_payment_status;
       calls.payments.push(paymentStatus);
-      await route.fulfill({ status: 200, headers, json: orderFixture(status, paymentStatus) });
+      await route.fulfill({
+        status: 200,
+        headers,
+        json: orderFixture({ status, paymentStatus, serviceMode }),
+      });
       return;
     }
 
@@ -302,7 +332,7 @@ async function mockAdminOrders(page: Page, role: AdminRole, initialPayment: Paym
 test.use({ serviceWorkers: 'block' });
 
 test('owner percorre lifecycle new até completed na central', async ({ page }) => {
-  const calls = await mockAdminOrders(page, 'owner', 'pending');
+  const calls = await mockAdminOrders(page, 'owner');
   await page.goto('/app/pedidos');
 
   await expect(page.getByRole('link', { name: 'Pedidos' })).toBeVisible();
@@ -315,17 +345,18 @@ test('owner percorre lifecycle new até completed na central', async ({ page }) 
   await expect(page.getByText('R$ 25,00 cada')).toBeVisible();
   await expect(page.getByText(/99999999-9999/)).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Marcar como pago' }).click();
+  const detail = page.getByRole('region', { name: 'Pedido #81' });
+  await detail.getByRole('button', { name: 'Marcar como pago' }).click();
   await expect(
     page.getByRole('region', { name: 'Pagamento' }).getByText('Pago', { exact: true }),
   ).toBeVisible();
 
-  await page.getByRole('button', { name: 'Confirmar' }).click();
-  await page.getByRole('button', { name: 'Iniciar preparo' }).click();
-  await page.getByRole('button', { name: 'Marcar pronto' }).click();
+  await detail.getByRole('button', { name: 'Confirmar' }).click();
+  await detail.getByRole('button', { name: 'Iniciar preparo' }).click();
+  await detail.getByRole('button', { name: 'Marcar pronto' }).click();
   const actions = page.getByRole('region', { name: 'Status: Pronto' });
   await expect(actions.getByRole('button', { name: 'Saiu para entrega' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Concluir' }).click();
+  await detail.getByRole('button', { name: 'Concluir retirada' }).click();
 
   await expect(page.getByRole('heading', { name: 'Status: Concluído' })).toBeVisible();
   expect(calls.statuses).toEqual(['confirmed', 'preparing', 'ready', 'completed']);
@@ -333,7 +364,7 @@ test('owner percorre lifecycle new até completed na central', async ({ page }) 
 });
 
 test('operator acessa pedidos e não recebe controle de refund', async ({ page }) => {
-  await mockAdminOrders(page, 'operator', 'paid');
+  await mockAdminOrders(page, 'operator', { payment: 'paid' });
   await page.goto('/app/pedidos');
 
   await expect(page.locator('header').getByText('Operador')).toBeVisible();
@@ -348,7 +379,7 @@ test('operator acessa pedidos e não recebe controle de refund', async ({ page }
 test('Central v2 alterna views, aplica/limpa filtro, pagina e preserva detalhe', async ({
   page,
 }) => {
-  await mockAdminOrders(page, 'owner', 'pending');
+  await mockAdminOrders(page, 'owner');
   await page.goto('/app/pedidos');
 
   await expect(page.getByRole('button', { name: 'Ativos' })).toHaveAttribute(
@@ -372,4 +403,147 @@ test('Central v2 alterna views, aplica/limpa filtro, pagina e preserva detalhe',
   await expect(page.getByText('Cliente E2E')).toBeVisible();
   await page.getByRole('button', { name: /Abrir pedido 81/ }).click();
   await expect(page.getByRole('heading', { name: 'Pedido #81' })).toBeFocused();
+});
+
+test('A: ação rápida confirma do card sem abrir detalhe', async ({ page }) => {
+  const calls = await mockAdminOrders(page, 'owner');
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: 'Confirmar' }).click();
+  await expect(page.getByRole('button', { name: 'Iniciar preparo' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Pedido #81' })).toHaveCount(0);
+  expect(calls.statuses).toEqual(['confirmed']);
+});
+
+test('B: lifecycle ativo completo pelas ações rápidas do card (retirada)', async ({ page }) => {
+  const calls = await mockAdminOrders(page, 'owner');
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: 'Confirmar' }).click();
+  await page.getByRole('button', { name: 'Iniciar preparo' }).click();
+  await page.getByRole('button', { name: 'Marcar pronto' }).click();
+  await expect(page.getByText('Pronto para retirada')).toBeVisible();
+  await page.getByRole('button', { name: 'Concluir retirada' }).click();
+  await expect(page.getByText('Nenhum pedido ativo.')).toBeVisible();
+  expect(calls.statuses).toEqual(['confirmed', 'preparing', 'ready', 'completed']);
+});
+
+test('C: fluxo de entrega exibe Em rota e Concluir entrega', async ({ page }) => {
+  const calls = await mockAdminOrders(page, 'owner', { serviceMode: 'delivery' });
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: 'Confirmar' }).click();
+  await page.getByRole('button', { name: 'Iniciar preparo' }).click();
+  await page.getByRole('button', { name: 'Marcar pronto' }).click();
+  await expect(page.getByText('Pronto para entrega')).toBeVisible();
+  await page.getByRole('button', { name: 'Saiu para entrega' }).click();
+  await expect(page.getByText('Em rota')).toBeVisible();
+  await page.getByRole('button', { name: 'Concluir entrega' }).click();
+  await expect(page.getByText('Nenhum pedido ativo.')).toBeVisible();
+  expect(calls.statuses).toEqual([
+    'confirmed',
+    'preparing',
+    'ready',
+    'out_for_delivery',
+    'completed',
+  ]);
+});
+
+test('D: marca pago pela ação rápida e esconde o botão', async ({ page }) => {
+  const calls = await mockAdminOrders(page, 'owner');
+  await page.goto('/app/pedidos');
+
+  await expect(page.getByText('Pix · Pendente')).toBeVisible();
+  await page.getByRole('button', { name: 'Marcar pago' }).click();
+  await expect(page.getByText('Pix · Pago')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Marcar pago' })).toHaveCount(0);
+  expect(calls.payments).toEqual(['paid']);
+});
+
+test('E: cancelamento aceito remove o pedido da lista ativa', async ({ page }) => {
+  page.on('dialog', (dialog) => dialog.accept());
+  const calls = await mockAdminOrders(page, 'owner');
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByText('Nenhum pedido ativo.')).toBeVisible();
+  expect(calls.statuses).toEqual(['cancelled']);
+});
+
+test('F: cancelamento recusado mantém o pedido', async ({ page }) => {
+  page.on('dialog', (dialog) => dialog.dismiss());
+  const calls = await mockAdminOrders(page, 'owner');
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByText('Novo pedido')).toBeVisible();
+  expect(calls.statuses).toEqual([]);
+});
+
+test('G: operador executa ações rápidas sem controle de reembolso', async ({ page }) => {
+  const calls = await mockAdminOrders(page, 'operator');
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: 'Marcar pago' }).click();
+  await page.getByRole('button', { name: 'Confirmar' }).click();
+  await expect(page.getByRole('button', { name: 'Iniciar preparo' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Registrar reembolso' })).toHaveCount(0);
+  expect(calls.statuses).toEqual(['confirmed']);
+  expect(calls.payments).toEqual(['paid']);
+});
+
+test('H: pedido concluído no histórico não oferece ações rápidas', async ({ page }) => {
+  await mockAdminOrders(page, 'owner', { status: 'completed', payment: 'paid' });
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: 'Histórico' }).click();
+  await expect(page.getByText('Cliente Histórico')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirmar' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cancelar' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Marcar pago' })).toHaveCount(0);
+});
+
+test('I: cards se ajustam em 360 a 1440 sem estourar o viewport', async ({ page }) => {
+  await mockAdminOrders(page, 'owner');
+  await page.goto('/app/pedidos');
+  await expect(page.getByRole('button', { name: /Abrir pedido 81/ })).toBeVisible();
+
+  for (const width of [360, 768, 1024, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const openButton = page.getByRole('button', { name: /Abrir pedido 81/ });
+    await expect(openButton).toBeVisible();
+    const box = await openButton.boundingBox();
+    expect(box).not.toBeNull();
+    if (box) {
+      expect(box.x).toBeGreaterThanOrEqual(-1);
+      expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+    }
+  }
+});
+
+test('J: detalhe mantém ações via resolver para entrega', async ({ page }) => {
+  const calls = await mockAdminOrders(page, 'owner', {
+    status: 'ready',
+    serviceMode: 'delivery',
+  });
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('button', { name: /Abrir pedido 81/ }).click();
+  const detail = page.getByRole('region', { name: 'Pedido #81' });
+  await detail.getByRole('button', { name: 'Saiu para entrega' }).click();
+  await expect(page.getByRole('heading', { name: 'Status: Saiu para entrega' })).toBeVisible();
+  await detail.getByRole('button', { name: 'Concluir entrega' }).click();
+  await expect(page.getByRole('heading', { name: 'Status: Concluído' })).toBeVisible();
+  expect(calls.statuses).toEqual(['out_for_delivery', 'completed']);
+});
+
+test('K: filtro de status move o pedido ao confirmar pela ação rápida', async ({ page }) => {
+  await mockAdminOrders(page, 'owner');
+  await page.goto('/app/pedidos');
+
+  await page.getByRole('checkbox', { name: 'Novo' }).check();
+  await page.getByRole('button', { name: 'Aplicar filtros' }).click();
+  await expect(page.getByText('Cliente E2E')).toBeVisible();
+  await page.getByRole('button', { name: 'Confirmar' }).click();
+  await expect(page.getByText('Nenhum pedido ativo.')).toBeVisible();
 });

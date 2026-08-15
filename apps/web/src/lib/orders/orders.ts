@@ -104,8 +104,8 @@ export const ADMIN_ORDER_ERROR_MESSAGES: Record<AdminOrderErrorCode, string> = {
   PED11: 'Você não tem permissão para acessar os pedidos desta unidade.',
   PED12: 'Unidade não encontrada.',
   PED46: 'Pedido não encontrado.',
-  PED47: 'Este pedido foi atualizado. Recarregue os dados e tente novamente.',
-  PED48: 'O pagamento foi atualizado. Recarregue os dados e tente novamente.',
+  PED47: 'Este pedido foi atualizado por outra operação. Recarregue os dados e tente novamente.',
+  PED48: 'O pagamento foi atualizado por outra operação. Recarregue os dados e tente novamente.',
   PED79: 'Os filtros de pedidos não são válidos. Revise os filtros e tente novamente.',
 };
 
@@ -649,4 +649,136 @@ export function publicOrderPollingInterval(
   result: PublicOrderTrackingResult | undefined,
 ): 15000 | false {
   return result?.found === true && !isTerminalOrderStatus(result.order.status) ? 15000 : false;
+}
+
+export interface OrderPrimaryAction {
+  nextStatus: OrderStatus;
+  label: string;
+}
+
+export function getPrimaryOrderAction(order: {
+  status: OrderStatus;
+  service_mode: ServiceMode;
+}): OrderPrimaryAction | null {
+  switch (order.status) {
+    case 'new':
+      return { nextStatus: 'confirmed', label: 'Confirmar' };
+    case 'confirmed':
+      return { nextStatus: 'preparing', label: 'Iniciar preparo' };
+    case 'preparing':
+      return { nextStatus: 'ready', label: 'Marcar pronto' };
+    case 'ready':
+      return order.service_mode === 'delivery'
+        ? { nextStatus: 'out_for_delivery', label: 'Saiu para entrega' }
+        : { nextStatus: 'completed', label: 'Concluir retirada' };
+    case 'out_for_delivery':
+      return { nextStatus: 'completed', label: 'Concluir entrega' };
+    default:
+      return null;
+  }
+}
+
+export function canCancelOrder(status: OrderStatus): boolean {
+  return !isTerminalOrderStatus(status);
+}
+
+export interface OrderPaymentAction {
+  nextStatus: PaymentStatus;
+  label: string;
+}
+
+export function getPrimaryPaymentAction(paymentStatus: PaymentStatus): OrderPaymentAction | null {
+  return paymentStatus === 'pending' ? { nextStatus: 'paid', label: 'Marcar pago' } : null;
+}
+
+export interface OrderOperationalTimeline {
+  created_at: string | null;
+  confirmed_at: string | null;
+  preparing_at: string | null;
+  ready_at: string | null;
+  out_for_delivery_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+}
+
+const OPERATIONAL_TIMELINE_KEYS: Record<OrderStatus, keyof OrderOperationalTimeline> = {
+  new: 'created_at',
+  confirmed: 'confirmed_at',
+  preparing: 'preparing_at',
+  ready: 'ready_at',
+  out_for_delivery: 'out_for_delivery_at',
+  completed: 'completed_at',
+  cancelled: 'cancelled_at',
+};
+
+export function deriveOrderOperationalTimeline(
+  events: AdminOrderEvent[],
+  order?: Pick<AdminOrderSummary, 'created_at' | 'completed_at' | 'cancelled_at'> | null,
+): OrderOperationalTimeline {
+  const timeline: OrderOperationalTimeline = {
+    created_at: null,
+    confirmed_at: null,
+    preparing_at: null,
+    ready_at: null,
+    out_for_delivery_at: null,
+    completed_at: null,
+    cancelled_at: null,
+  };
+  for (const event of events) {
+    if (event.event_type === 'created') {
+      applyOperationalTimestamp(timeline, 'new', event.created_at);
+    } else if (event.event_type === 'status_changed') {
+      applyOperationalTimestamp(timeline, event.to_value as OrderStatus, event.created_at);
+    }
+  }
+  if (timeline.created_at === null && order?.created_at !== undefined) {
+    timeline.created_at = order.created_at;
+  }
+  if (timeline.completed_at === null && order?.completed_at != null) {
+    timeline.completed_at = order.completed_at;
+  }
+  if (timeline.cancelled_at === null && order?.cancelled_at != null) {
+    timeline.cancelled_at = order.cancelled_at;
+  }
+  return timeline;
+}
+
+function applyOperationalTimestamp(
+  timeline: OrderOperationalTimeline,
+  status: OrderStatus,
+  at: string,
+): void {
+  const key = OPERATIONAL_TIMELINE_KEYS[status];
+  if (timeline[key] === null || at < timeline[key]!) {
+    timeline[key] = at;
+  }
+}
+
+export interface OrderOperationalDurations {
+  acceptance_minutes: number | null;
+  preparation_minutes: number | null;
+  delivery_minutes: number | null;
+  total_cycle_minutes: number | null;
+}
+
+function operationalMinutesBetween(start: string | null, end: string | null): number | null {
+  if (start === null || end === null) return null;
+  const startValue = Date.parse(start);
+  const endValue = Date.parse(end);
+  if (!Number.isFinite(startValue) || !Number.isFinite(endValue)) return null;
+  return Math.max(0, Math.round((endValue - startValue) / 60_000));
+}
+
+export function deriveOrderOperationalDurations(
+  timeline: OrderOperationalTimeline,
+): OrderOperationalDurations {
+  return {
+    acceptance_minutes: operationalMinutesBetween(timeline.created_at, timeline.confirmed_at),
+    preparation_minutes: operationalMinutesBetween(timeline.preparing_at, timeline.ready_at),
+    delivery_minutes: operationalMinutesBetween(
+      timeline.out_for_delivery_at ?? timeline.ready_at,
+      timeline.completed_at,
+    ),
+    total_cycle_minutes: operationalMinutesBetween(timeline.created_at, timeline.completed_at),
+  };
 }

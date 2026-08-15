@@ -1,9 +1,9 @@
-import type { InfiniteData, QueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '../supabase';
-import type { AdminOrdersV2Result } from './orders';
-import { unitOrderDetailKey, unitOrdersListPrefix, unitOrdersV2ListPrefix } from './orders';
+import { unitOrderDetailKey, unitOrdersListPrefix } from './orders';
+import { resetUnitOrdersSequence } from './useOrderMutations';
 
 interface OrderRealtimePayload {
   new?: { id?: unknown };
@@ -11,13 +11,7 @@ interface OrderRealtimePayload {
 
 export function subscribeToUnitOrders(unitId: string, queryClient: QueryClient): () => void {
   const handleChange = (payload: OrderRealtimePayload) => {
-    queryClient.setQueriesData<InfiniteData<AdminOrdersV2Result, string | null>>(
-      { queryKey: unitOrdersV2ListPrefix(unitId) },
-      (data) =>
-        data === undefined
-          ? undefined
-          : { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) },
-    );
+    resetUnitOrdersSequence(queryClient, unitId);
     void queryClient.invalidateQueries({ queryKey: unitOrdersListPrefix(unitId) });
     const orderId = typeof payload.new?.id === 'string' ? payload.new.id : null;
     if (orderId !== null) {

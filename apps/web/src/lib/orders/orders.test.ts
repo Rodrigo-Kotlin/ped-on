@@ -6,17 +6,40 @@ vi.mock('../supabase', () =>
 
 import { resetSupabaseMock, supabaseMock } from '../../test/supabaseMock';
 import {
+  canCancelOrder,
+  deriveOrderOperationalDurations,
+  deriveOrderOperationalTimeline,
   extractAdminOrderError,
   extractPublicOrderError,
   fetchUnitOrdersAdmin,
   fetchUnitOrdersAdminV2,
+  getPrimaryOrderAction,
+  getPrimaryPaymentAction,
   normalizeAdminOrderDateRange,
   normalizeAdminOrderFilters,
   ORDER_NETWORK_ERROR_MESSAGE,
   publicOrderPollingInterval,
   unitOrdersV2ListKey,
 } from './orders';
-import type { PublicOrderTrackingResult } from './orders';
+import type { AdminOrderEvent, PublicOrderTrackingResult } from './orders';
+
+function event(
+  event_type: AdminOrderEvent['event_type'],
+  from_value: AdminOrderEvent['from_value'],
+  to_value: AdminOrderEvent['to_value'],
+  created_at: string,
+): AdminOrderEvent {
+  return {
+    id: `event-${created_at}`,
+    event_type,
+    from_value,
+    to_value,
+    note: null,
+    actor_type: 'customer',
+    actor_user_id: null,
+    created_at,
+  };
+}
 
 function tracking(status: 'new' | 'completed' | 'cancelled'): PublicOrderTrackingResult {
   return {
@@ -212,5 +235,129 @@ describe('orders contract', () => {
     expect(publicOrderPollingInterval(tracking('completed'))).toBe(false);
     expect(publicOrderPollingInterval(tracking('cancelled'))).toBe(false);
     expect(publicOrderPollingInterval({ found: false })).toBe(false);
+  });
+});
+
+describe('order action resolvers and operational timeline', () => {
+  it('resolve a ação primária para cada estado não terminal', () => {
+    expect(getPrimaryOrderAction({ status: 'new', service_mode: 'pickup' })).toEqual({
+      nextStatus: 'confirmed',
+      label: 'Confirmar',
+    });
+    expect(getPrimaryOrderAction({ status: 'confirmed', service_mode: 'delivery' })).toEqual({
+      nextStatus: 'preparing',
+      label: 'Iniciar preparo',
+    });
+    expect(getPrimaryOrderAction({ status: 'preparing', service_mode: 'pickup' })).toEqual({
+      nextStatus: 'ready',
+      label: 'Marcar pronto',
+    });
+    expect(getPrimaryOrderAction({ status: 'ready', service_mode: 'pickup' })).toEqual({
+      nextStatus: 'completed',
+      label: 'Concluir retirada',
+    });
+    expect(getPrimaryOrderAction({ status: 'ready', service_mode: 'delivery' })).toEqual({
+      nextStatus: 'out_for_delivery',
+      label: 'Saiu para entrega',
+    });
+    expect(getPrimaryOrderAction({ status: 'out_for_delivery', service_mode: 'pickup' })).toEqual({
+      nextStatus: 'completed',
+      label: 'Concluir entrega',
+    });
+    expect(getPrimaryOrderAction({ status: 'completed', service_mode: 'pickup' })).toBeNull();
+    expect(getPrimaryOrderAction({ status: 'cancelled', service_mode: 'delivery' })).toBeNull();
+  });
+
+  it('permite cancelar apenas estados não terminais', () => {
+    for (const status of ['new', 'confirmed', 'preparing', 'ready', 'out_for_delivery'] as const) {
+      expect(canCancelOrder(status)).toBe(true);
+    }
+    expect(canCancelOrder('completed')).toBe(false);
+    expect(canCancelOrder('cancelled')).toBe(false);
+  });
+
+  it('resolve a ação de pagamento apenas para pendentes', () => {
+    expect(getPrimaryPaymentAction('pending')).toEqual({
+      nextStatus: 'paid',
+      label: 'Marcar pago',
+    });
+    expect(getPrimaryPaymentAction('paid')).toBeNull();
+    expect(getPrimaryPaymentAction('refunded')).toBeNull();
+  });
+
+  it('deriva o timeline operacional dos eventos sem inventar marcos', () => {
+    const timeline = deriveOrderOperationalTimeline([
+      event('created', null, 'new', '2026-08-10T12:00:00Z'),
+      event('status_changed', 'new', 'confirmed', '2026-08-10T12:05:00Z'),
+      event('status_changed', 'confirmed', 'preparing', '2026-08-10T12:10:00Z'),
+      event('status_changed', 'preparing', 'ready', '2026-08-10T12:20:00Z'),
+    ]);
+
+    expect(timeline).toEqual({
+      created_at: '2026-08-10T12:00:00Z',
+      confirmed_at: '2026-08-10T12:05:00Z',
+      preparing_at: '2026-08-10T12:10:00Z',
+      ready_at: '2026-08-10T12:20:00Z',
+      out_for_delivery_at: null,
+      completed_at: null,
+      cancelled_at: null,
+    });
+  });
+
+  it('usa timestamps do pedido como fallback e prefere a ocorrência mais antiga', () => {
+    const timeline = deriveOrderOperationalTimeline(
+      [
+        event('created', null, 'new', '2026-08-10T12:00:00Z'),
+        event('status_changed', 'new', 'completed', '2026-08-10T12:30:00Z'),
+      ],
+      {
+        created_at: '2026-08-10T12:00:00Z',
+        completed_at: '2026-08-10T12:31:00Z',
+        cancelled_at: null,
+      },
+    );
+
+    expect(timeline).toEqual({
+      created_at: '2026-08-10T12:00:00Z',
+      confirmed_at: null,
+      preparing_at: null,
+      ready_at: null,
+      out_for_delivery_at: null,
+      completed_at: '2026-08-10T12:30:00Z',
+      cancelled_at: null,
+    });
+  });
+
+  it('calcula durações aceitação/preparo/entrega/ciclo a partir do timeline', () => {
+    const timeline = deriveOrderOperationalTimeline([
+      event('created', null, 'new', '2026-08-10T12:00:00Z'),
+      event('status_changed', 'new', 'confirmed', '2026-08-10T12:05:00Z'),
+      event('status_changed', 'confirmed', 'preparing', '2026-08-10T12:10:00Z'),
+      event('status_changed', 'preparing', 'ready', '2026-08-10T12:20:00Z'),
+      event('status_changed', 'ready', 'out_for_delivery', '2026-08-10T12:22:00Z'),
+      event('status_changed', 'out_for_delivery', 'completed', '2026-08-10T12:47:00Z'),
+    ]);
+
+    expect(deriveOrderOperationalDurations(timeline)).toEqual({
+      acceptance_minutes: 5,
+      preparation_minutes: 10,
+      delivery_minutes: 25,
+      total_cycle_minutes: 47,
+    });
+  });
+
+  it('usa ready→completed como entrega quando não há saída para entrega', () => {
+    const timeline = deriveOrderOperationalTimeline([
+      event('created', null, 'new', '2026-08-10T12:00:00Z'),
+      event('status_changed', 'new', 'ready', '2026-08-10T12:30:00Z'),
+      event('status_changed', 'ready', 'completed', '2026-08-10T12:40:00Z'),
+    ]);
+
+    expect(deriveOrderOperationalDurations(timeline)).toEqual({
+      acceptance_minutes: null,
+      preparation_minutes: null,
+      delivery_minutes: 10,
+      total_cycle_minutes: 40,
+    });
   });
 });
