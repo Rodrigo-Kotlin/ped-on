@@ -504,7 +504,7 @@ async function run() {
     });
     ok(
       v2ByNumber.total_count === 1 &&
-        v2ByNumber.orders[0]?.order_number === historyOrder?.order_number,
+        String(v2ByNumber.orders[0]?.order_number) === String(historyOrder?.order_number),
       '3.4 filtro order_number aplicado',
     );
     const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();

@@ -388,7 +388,8 @@ begin
   v_cursor_text := nullif(v_filters ->> 'cursor', '');
   if v_cursor_text is not null then
     begin
-      v_cursor_base64 := translate(v_cursor_text, '-_', '+/');
+      v_cursor_base64 := regexp_replace(v_cursor_text, '\s', '', 'g');
+      v_cursor_base64 := translate(v_cursor_base64, '-_', '+/');
       v_cursor_base64 := rpad(v_cursor_base64, (length(v_cursor_base64) + 3) / 4 * 4, '=');
       v_cursor := convert_from(decode(v_cursor_base64, 'base64'), 'UTF8')::jsonb;
     exception when others then
@@ -736,7 +737,7 @@ begin
         ),
         'base64'
       );
-      v_last_cursor := replace(translate(v_last_cursor, '+/', '-_'), '=', '');
+      v_last_cursor := replace(translate(regexp_replace(v_last_cursor, '\s', '', 'g'), '+/', '-_'), '=', '');
       v_page_info := jsonb_build_object(
         'has_more', true,
         'next_cursor', v_last_cursor
@@ -773,7 +774,7 @@ begin
         ),
         'base64'
       );
-      v_last_cursor := replace(translate(v_last_cursor, '+/', '-_'), '=', '');
+      v_last_cursor := replace(translate(regexp_replace(v_last_cursor, '\s', '', 'g'), '+/', '-_'), '=', '');
       v_page_info := jsonb_build_object(
         'has_more', true,
         'next_cursor', v_last_cursor
@@ -801,7 +802,7 @@ begin
         'limit', v_limit
       )
     ),
-    'snapshot_at', v_snapshot_at,
+    'snapshot_at', v_snapshot_used,
     'total_count', v_total_count,
     'orders', v_orders,
     'page_info', v_page_info
