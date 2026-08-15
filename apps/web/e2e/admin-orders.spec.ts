@@ -99,6 +99,33 @@ function orderFixture(status: OrderStatus, paymentStatus: PaymentStatus) {
   };
 }
 
+function orderSummaryFixture(status: OrderStatus, paymentStatus: PaymentStatus) {
+  const detail = orderFixture(status, paymentStatus);
+  return {
+    id: detail.id,
+    order_number: detail.order_number,
+    status: detail.status,
+    payment_status: detail.payment_status,
+    service_mode: detail.service_mode,
+    payment_method: detail.payment_method,
+    item_count: detail.item_count,
+    subtotal: detail.subtotal,
+    delivery_fee: detail.delivery_fee,
+    total: detail.total,
+    estimated_minutes: detail.estimated_minutes,
+    expected_at: '2026-08-10T14:25:00.000Z',
+    customer_name: detail.customer_name,
+    created_at: detail.created_at,
+    updated_at: detail.updated_at,
+    status_updated_at: detail.status_updated_at,
+    payment_status_updated_at: detail.payment_status_updated_at,
+    completed_at: detail.completed_at,
+    cancelled_at: detail.cancelled_at,
+    paid_at: detail.paid_at,
+    refunded_at: detail.refunded_at,
+  };
+}
+
 async function mockAdminOrders(page: Page, role: AdminRole, initialPayment: PaymentStatus) {
   let status: OrderStatus = 'new';
   let paymentStatus = initialPayment;
@@ -176,16 +203,73 @@ async function mockAdminOrders(page: Page, role: AdminRole, initialPayment: Paym
       });
       return;
     }
-    if (pathname === '/rest/v1/rpc/get_unit_orders_admin') {
-      const order = orderFixture(status, paymentStatus);
+    if (pathname === '/rest/v1/rpc/get_unit_orders_admin_v2') {
+      const body = request.postDataJSON() as {
+        p_filters: {
+          view: 'active' | 'history';
+          cursor?: string;
+          service_mode?: 'pickup' | 'delivery';
+        };
+      };
+      const filters = body.p_filters;
+      const isTerminal = status === 'completed' || status === 'cancelled';
+      const historyOrder = {
+        ...orderSummaryFixture('completed', paymentStatus),
+        id: '44444444-4444-4444-8444-444444444440',
+        order_number: 80,
+        customer_name: 'Cliente Histórico',
+      };
+      const secondOrder = {
+        ...orderSummaryFixture('confirmed', paymentStatus),
+        id: '44444444-4444-4444-8444-444444444442',
+        order_number: 82,
+        customer_name: 'Segundo pedido E2E',
+      };
+      const activeOrders =
+        filters.service_mode === 'delivery' || isTerminal
+          ? []
+          : filters.cursor === 'cursor-page-2'
+            ? [secondOrder]
+            : [orderSummaryFixture(status, paymentStatus)];
+      const orders = filters.view === 'history' ? [historyOrder] : activeOrders;
       await route.fulfill({
         status: 200,
         headers,
         json: {
           unit: { id: UNIT_ID, name: 'Loja Centro' },
-          status_filter: null,
-          count: 1,
-          orders: [order],
+          view: filters.view,
+          filters: {
+            view: filters.view,
+            statuses:
+              filters.view === 'active'
+                ? ['new', 'confirmed', 'preparing', 'ready', 'out_for_delivery']
+                : ['completed', 'cancelled'],
+            service_mode: filters.service_mode ?? null,
+            payment_status: null,
+            payment_method: null,
+            order_number: null,
+            date_from: null,
+            date_to: null,
+            limit: 50,
+          },
+          snapshot_at: filters.view === 'active' ? CREATED_AT : null,
+          total_count:
+            filters.view === 'active' ? (filters.service_mode === 'delivery' ? 0 : 2) : 1,
+          orders,
+          page_info: {
+            has_more:
+              filters.view === 'active' &&
+              filters.cursor === undefined &&
+              filters.service_mode === undefined &&
+              !isTerminal,
+            next_cursor:
+              filters.view === 'active' &&
+              filters.cursor === undefined &&
+              filters.service_mode === undefined &&
+              !isTerminal
+                ? 'cursor-page-2'
+                : null,
+          },
         },
       });
       return;
@@ -231,6 +315,11 @@ test('owner percorre lifecycle new até completed na central', async ({ page }) 
   await expect(page.getByText('R$ 25,00 cada')).toBeVisible();
   await expect(page.getByText(/99999999-9999/)).toHaveCount(0);
 
+  await page.getByRole('button', { name: 'Marcar como pago' }).click();
+  await expect(
+    page.getByRole('region', { name: 'Pagamento' }).getByText('Pago', { exact: true }),
+  ).toBeVisible();
+
   await page.getByRole('button', { name: 'Confirmar' }).click();
   await page.getByRole('button', { name: 'Iniciar preparo' }).click();
   await page.getByRole('button', { name: 'Marcar pronto' }).click();
@@ -240,6 +329,7 @@ test('owner percorre lifecycle new até completed na central', async ({ page }) 
 
   await expect(page.getByRole('heading', { name: 'Status: Concluído' })).toBeVisible();
   expect(calls.statuses).toEqual(['confirmed', 'preparing', 'ready', 'completed']);
+  expect(calls.payments).toEqual(['paid']);
 });
 
 test('operator acessa pedidos e não recebe controle de refund', async ({ page }) => {
@@ -249,6 +339,37 @@ test('operator acessa pedidos e não recebe controle de refund', async ({ page }
   await expect(page.locator('header').getByText('Operador')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Pedidos' })).toBeVisible();
   await page.getByRole('button', { name: /Abrir pedido 81/ }).click();
-  await expect(page.getByText('Pago', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Pagamento' }).getByText('Pago', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Registrar reembolso' })).toHaveCount(0);
+});
+
+test('Central v2 alterna views, aplica/limpa filtro, pagina e preserva detalhe', async ({
+  page,
+}) => {
+  await mockAdminOrders(page, 'owner', 'pending');
+  await page.goto('/app/pedidos');
+
+  await expect(page.getByRole('button', { name: 'Ativos' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByText('2 pedidos encontrados · 1 exibido')).toBeVisible();
+  await page.getByRole('button', { name: 'Carregar mais' }).click();
+  await expect(page.getByText('2 pedidos encontrados · 2 exibidos')).toBeVisible();
+  await expect(page.getByText('Segundo pedido E2E')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Histórico' }).click();
+  await expect(page.getByText('Cliente Histórico')).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Concluído' })).toBeVisible();
+  await page.getByRole('button', { name: 'Ativos' }).click();
+
+  await page.getByLabel('Modalidade').selectOption('delivery');
+  await page.getByRole('button', { name: 'Aplicar filtros' }).click();
+  await expect(page.getByText('Nenhum pedido ativo.')).toBeVisible();
+  await page.getByRole('button', { name: 'Limpar', exact: true }).click();
+  await expect(page.getByText('Cliente E2E')).toBeVisible();
+  await page.getByRole('button', { name: /Abrir pedido 81/ }).click();
+  await expect(page.getByRole('heading', { name: 'Pedido #81' })).toBeFocused();
 });

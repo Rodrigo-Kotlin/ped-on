@@ -6,7 +6,13 @@ vi.mock('../supabase', () =>
 );
 
 import { emitSupabaseRealtime, resetSupabaseMock, supabaseMock } from '../../test/supabaseMock';
-import { unitOrderDetailKey, unitOrdersListPrefix } from './orders';
+import type { AdminOrdersV2Result } from './orders';
+import {
+  unitOrderDetailKey,
+  unitOrdersListKey,
+  unitOrdersListPrefix,
+  unitOrdersV2ListKey,
+} from './orders';
 import { subscribeToUnitOrders } from './useOrdersRealtime';
 
 describe('orders realtime', () => {
@@ -42,5 +48,40 @@ describe('orders realtime', () => {
 
     expect(invalidate).toHaveBeenCalledTimes(1);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: unitOrdersListPrefix('unit-2') });
+  });
+
+  it('reinicia a sequência v2 na primeira página sem alterar cache v1 ou aplicar payload', () => {
+    const queryClient = new QueryClient();
+    const v2Key = unitOrdersV2ListKey('unit-1', { view: 'active' });
+    const v1Key = unitOrdersListKey('unit-1', null);
+    const firstPage = {
+      orders: [{ id: 'order-1', status: 'new' }],
+      page_info: { has_more: true, next_cursor: 'abc' },
+    } as unknown as AdminOrdersV2Result;
+    const secondPage = {
+      orders: [{ id: 'order-2', status: 'confirmed' }],
+      page_info: { has_more: false, next_cursor: null },
+    } as unknown as AdminOrdersV2Result;
+    const v1Cache = { orders: [{ id: 'legacy-order' }] };
+    queryClient.setQueryData(v2Key, {
+      pages: [firstPage, secondPage],
+      pageParams: [null, 'abc'],
+    });
+    queryClient.setQueryData(v1Key, v1Cache);
+    vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+
+    subscribeToUnitOrders('unit-1', queryClient);
+    emitSupabaseRealtime('UPDATE', {
+      new: { id: 'order-1', status: 'cancelled', customer_phone: '11999999999' },
+    });
+
+    expect(queryClient.getQueryData(v2Key)).toEqual({
+      pages: [firstPage],
+      pageParams: [null],
+    });
+    expect(queryClient.getQueryData(v1Key)).toBe(v1Cache);
+    expect((queryClient.getQueryData(v2Key) as { pages: AdminOrdersV2Result[] }).pages[0]).toBe(
+      firstPage,
+    );
   });
 });

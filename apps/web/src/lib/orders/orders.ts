@@ -6,7 +6,8 @@ export type OrderStatus =
   'new' | 'confirmed' | 'preparing' | 'ready' | 'out_for_delivery' | 'completed' | 'cancelled';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded';
 
-export type AdminOrderErrorCode = 'PED10' | 'PED11' | 'PED12' | 'PED46' | 'PED47' | 'PED48';
+export type AdminOrderErrorCode =
+  'PED10' | 'PED11' | 'PED12' | 'PED46' | 'PED47' | 'PED48' | 'PED79';
 
 export type PublicOrderErrorCode =
   | 'PED33'
@@ -105,6 +106,7 @@ export const ADMIN_ORDER_ERROR_MESSAGES: Record<AdminOrderErrorCode, string> = {
   PED46: 'Pedido não encontrado.',
   PED47: 'Este pedido foi atualizado. Recarregue os dados e tente novamente.',
   PED48: 'O pagamento foi atualizado. Recarregue os dados e tente novamente.',
+  PED79: 'Os filtros de pedidos não são válidos. Revise os filtros e tente novamente.',
 };
 
 export interface PublicOrderItemInput {
@@ -222,6 +224,157 @@ export interface AdminOrdersResult {
   orders: AdminOrderSummary[];
 }
 
+export type OrderAdminView = 'active' | 'history';
+
+export interface OrderAdminFilters {
+  readonly view?: OrderAdminView;
+  readonly statuses?: readonly OrderStatus[];
+  readonly service_mode?: ServiceMode;
+  readonly payment_status?: PaymentStatus;
+  readonly payment_method?: PaymentMethodCode;
+  readonly order_number?: number;
+  readonly date_from?: string;
+  readonly date_to?: string;
+  readonly limit?: number;
+}
+
+export interface NormalizedAdminOrderFilters extends OrderAdminFilters {
+  readonly view: OrderAdminView;
+  readonly limit: number;
+}
+
+export interface AdminOrderSummaryV2 extends AdminOrderSummary {
+  expected_at: string | null;
+}
+
+export interface AdminOrdersV2AppliedFilters {
+  view: OrderAdminView;
+  statuses: OrderStatus[];
+  service_mode: ServiceMode | null;
+  payment_status: PaymentStatus | null;
+  payment_method: PaymentMethodCode | null;
+  order_number: number | null;
+  date_from: string | null;
+  date_to: string | null;
+  limit: number;
+}
+
+export interface AdminOrdersV2Result {
+  unit: { id: string; name: string };
+  view: OrderAdminView;
+  filters: AdminOrdersV2AppliedFilters;
+  snapshot_at: string | null;
+  total_count: number;
+  orders: AdminOrderSummaryV2[];
+  page_info: {
+    has_more: boolean;
+    next_cursor: string | null;
+  };
+}
+
+export const ACTIVE_ORDER_STATUSES = [
+  'new',
+  'confirmed',
+  'preparing',
+  'ready',
+  'out_for_delivery',
+] as const satisfies readonly OrderStatus[];
+
+export const HISTORY_ORDER_STATUSES = [
+  'completed',
+  'cancelled',
+] as const satisfies readonly OrderStatus[];
+
+export function normalizeAdminOrderFilters(
+  filters: OrderAdminFilters = {},
+): NormalizedAdminOrderFilters {
+  const view = filters.view ?? 'active';
+  const allowedStatuses = view === 'active' ? ACTIVE_ORDER_STATUSES : HISTORY_ORDER_STATUSES;
+  const requestedStatuses = new Set(filters.statuses ?? []);
+  const statuses = allowedStatuses.filter((status) => requestedStatuses.has(status));
+  if (
+    filters.limit !== undefined &&
+    (!Number.isInteger(filters.limit) || filters.limit < 1 || filters.limit > 100)
+  ) {
+    throw new AdminOrderError(ADMIN_ORDER_ERROR_MESSAGES.PED79, 'PED79');
+  }
+  if (
+    filters.order_number !== undefined &&
+    (!Number.isSafeInteger(filters.order_number) || filters.order_number <= 0)
+  ) {
+    throw new AdminOrderError(ADMIN_ORDER_ERROR_MESSAGES.PED79, 'PED79');
+  }
+  const limit = filters.limit ?? 50;
+  const normalized: {
+    view: OrderAdminView;
+    limit: number;
+    statuses?: OrderStatus[];
+    service_mode?: ServiceMode;
+    payment_status?: PaymentStatus;
+    payment_method?: PaymentMethodCode;
+    order_number?: number;
+    date_from?: string;
+    date_to?: string;
+  } = { view, limit };
+
+  if (statuses.length > 0) normalized.statuses = [...statuses];
+  if (filters.service_mode !== undefined) normalized.service_mode = filters.service_mode;
+  if (filters.payment_status !== undefined) normalized.payment_status = filters.payment_status;
+  if (filters.payment_method !== undefined) normalized.payment_method = filters.payment_method;
+  if (filters.order_number !== undefined) normalized.order_number = filters.order_number;
+  if (filters.date_from !== undefined) normalized.date_from = filters.date_from;
+  if (filters.date_to !== undefined) normalized.date_to = filters.date_to;
+
+  return normalized;
+}
+
+function localDateTimeToIso(value: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim());
+  if (match === null) return null;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText = '0'] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const local = new Date(year, month - 1, day, hour, minute, second, 0);
+
+  if (
+    local.getFullYear() !== year ||
+    local.getMonth() !== month - 1 ||
+    local.getDate() !== day ||
+    local.getHours() !== hour ||
+    local.getMinutes() !== minute ||
+    local.getSeconds() !== second
+  ) {
+    return null;
+  }
+  return local.toISOString();
+}
+
+export type AdminOrderDateRange =
+  { date_from?: string; date_to?: string; error: null } | { error: string };
+
+export function normalizeAdminOrderDateRange(
+  dateFrom: string,
+  dateTo: string,
+): AdminOrderDateRange {
+  const date_from = dateFrom.trim() === '' ? undefined : localDateTimeToIso(dateFrom);
+  const date_to = dateTo.trim() === '' ? undefined : localDateTimeToIso(dateTo);
+  if (date_from === null || date_to === null) {
+    return { error: 'Informe datas e horários válidos.' };
+  }
+  if (date_from !== undefined && date_to !== undefined && date_from > date_to) {
+    return { error: 'A data inicial não pode ser posterior à data final.' };
+  }
+  return {
+    ...(date_from === undefined ? {} : { date_from }),
+    ...(date_to === undefined ? {} : { date_to }),
+    error: null,
+  };
+}
+
 export interface AdminDeliveryAddress {
   street: string;
   number: string;
@@ -328,12 +481,13 @@ export function extractPublicOrderError(error: RpcError): PublicOrderError {
 
 export function extractAdminOrderError(error: RpcError): AdminOrderError {
   const content = `${error.code ?? ''} ${error.message ?? ''}`;
-  const matched = content.match(/\bPED(?:1[0-2]|4[6-8])\b/)?.[0] as AdminOrderErrorCode | undefined;
+  const matched = content.match(/\bPED(?:1[0-2]|4[6-8]|79)\b/)?.[0] as
+    AdminOrderErrorCode | undefined;
   if (matched !== undefined) {
     return new AdminOrderError(ADMIN_ORDER_ERROR_MESSAGES[matched], matched);
   }
   return new AdminOrderError(
-    'Não foi possível carregar os pedidos. Verifique sua conexão e tente novamente.',
+    'Não foi possível atualizar os pedidos. Verifique sua conexão e tente novamente.',
     null,
   );
 }
@@ -363,6 +517,14 @@ export function unitOrdersListKey(unitId: string, status: OrderStatus | null) {
   return ['unit-orders', unitId, 'list', status ?? 'all'] as const;
 }
 
+export function unitOrdersV2ListPrefix(unitId: string) {
+  return ['unit-orders', unitId, 'list', 'v2'] as const;
+}
+
+export function unitOrdersV2ListKey(unitId: string, filters: OrderAdminFilters) {
+  return [...unitOrdersV2ListPrefix(unitId), normalizeAdminOrderFilters(filters)] as const;
+}
+
 export function unitOrderDetailKey(unitId: string, orderId: string) {
   return ['unit-orders', unitId, 'detail', orderId] as const;
 }
@@ -375,6 +537,19 @@ export function fetchUnitOrdersAdmin(
     p_unit_id: unitId,
     p_status: status,
     p_limit: 100,
+  });
+}
+
+export function fetchUnitOrdersAdminV2(
+  unitId: string,
+  filters: OrderAdminFilters,
+  cursor: string | null = null,
+): Promise<AdminOrdersV2Result> {
+  const p_filters: Record<string, unknown> = { ...normalizeAdminOrderFilters(filters) };
+  if (cursor !== null) p_filters.cursor = cursor;
+  return adminOrderRpc('get_unit_orders_admin_v2', {
+    p_unit_id: unitId,
+    p_filters,
   });
 }
 

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useAdmin } from '../lib/admin/admin-context';
 import { formatBRL } from '../lib/money';
@@ -6,8 +6,12 @@ import { assertOnline } from '../lib/offline/useOnline';
 import { orderOptionLabel } from '../lib/orders/order-option-label';
 import { useCriticalOperation } from '../lib/pwa/critical-operation';
 import {
+  ACTIVE_ORDER_STATUSES,
   fetchOrderAdmin,
-  fetchUnitOrdersAdmin,
+  fetchUnitOrdersAdminV2,
+  HISTORY_ORDER_STATUSES,
+  normalizeAdminOrderDateRange,
+  normalizeAdminOrderFilters,
   ORDER_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_LABELS,
@@ -15,28 +19,36 @@ import {
   setOrderPaymentStatus,
   setOrderStatus,
   unitOrderDetailKey,
-  unitOrdersListKey,
   unitOrdersListPrefix,
+  unitOrdersV2ListKey,
 } from '../lib/orders/orders';
 import type {
   AdminOrderDetail,
   AdminOrderEvent,
+  AdminOrderSummaryV2,
+  NormalizedAdminOrderFilters,
+  OrderAdminView,
   OrderStatus,
+  PaymentMethodCode,
   PaymentStatus,
   ServiceMode,
 } from '../lib/orders/orders';
+import {
+  elapsedMinutes,
+  remainingMinutes,
+  useOperationalNow,
+} from '../lib/orders/useOperationalNow';
 import { useOrdersRealtime } from '../lib/orders/useOrdersRealtime';
 
-const FILTERS: Array<{ value: OrderStatus | null; label: string }> = [
-  { value: null, label: 'Todos' },
-  { value: 'new', label: 'Novos' },
-  { value: 'confirmed', label: 'Confirmados' },
-  { value: 'preparing', label: 'Em preparo' },
-  { value: 'ready', label: 'Prontos' },
-  { value: 'out_for_delivery', label: 'Saiu para entrega' },
-  { value: 'completed', label: 'Concluídos' },
-  { value: 'cancelled', label: 'Cancelados' },
-];
+const STATUS_FILTER_LABELS: Record<OrderStatus, string> = {
+  new: 'Novo',
+  confirmed: 'Confirmado',
+  preparing: 'Em preparo',
+  ready: 'Pronto',
+  out_for_delivery: 'Saiu para entrega',
+  completed: 'Concluído',
+  cancelled: 'Cancelado',
+};
 
 const ACTION_LABELS: Partial<Record<OrderStatus, string>> = {
   confirmed: 'Confirmar',
@@ -59,6 +71,79 @@ function time(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+}
+
+interface OrderFiltersDraft {
+  statuses: OrderStatus[];
+  service_mode: ServiceMode | '';
+  payment_status: PaymentStatus | '';
+  payment_method: PaymentMethodCode | '';
+  order_number: string;
+  date_from: string;
+  date_to: string;
+}
+
+function emptyFiltersDraft(): OrderFiltersDraft {
+  return {
+    statuses: [],
+    service_mode: '',
+    payment_status: '',
+    payment_method: '',
+    order_number: '',
+    date_from: '',
+    date_to: '',
+  };
+}
+
+function minutesText(value: number): string {
+  return `${value} min`;
+}
+
+function isOrderOverdue(order: AdminOrderSummaryV2, now: number): boolean {
+  return order.expected_at !== null && Date.parse(order.expected_at) < now;
+}
+
+function OrderOperationalTime({
+  order,
+  view,
+  now,
+}: {
+  order: AdminOrderSummaryV2;
+  view: OrderAdminView;
+  now: number;
+}) {
+  if (view === 'history') {
+    const finalTimestamp = order.status === 'completed' ? order.completed_at : order.cancelled_at;
+    return (
+      <div className="mt-2 space-y-0.5 text-xs text-pedon-text/70">
+        <p>Recebido há {minutesText(elapsedMinutes(order.created_at, now))}</p>
+        {finalTimestamp !== null && (
+          <p>
+            {order.status === 'completed' ? 'Concluído' : 'Cancelado'} às {time(finalTimestamp)}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const overdue = isOrderOverdue(order, now);
+  return (
+    <div className="mt-2 space-y-0.5 text-xs text-pedon-text/70">
+      <p>Recebido há {minutesText(elapsedMinutes(order.created_at, now))}</p>
+      <p>No status há {minutesText(elapsedMinutes(order.status_updated_at, now))}</p>
+      {order.expected_at !== null &&
+        (overdue ? (
+          <p className="font-bold text-red-800">
+            Atrasado há {minutesText(elapsedMinutes(order.expected_at, now))}
+          </p>
+        ) : (
+          <p>
+            Previsto {time(order.expected_at)} · Restam{' '}
+            {minutesText(remainingMinutes(order.expected_at, now))}
+          </p>
+        ))}
+    </div>
+  );
 }
 
 function formatPhone(value: string): string {
@@ -404,14 +489,37 @@ function OrderDetail({
 function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string }) {
   const { canManageUnit } = useAdmin();
   const orderButtonRefs = useRef(new Map<string, HTMLButtonElement>());
-  const [status, setStatus] = useState<OrderStatus | null>(null);
+  const [draftFilters, setDraftFilters] = useState<OrderFiltersDraft>(emptyFiltersDraft);
+  const [appliedFilters, setAppliedFilters] = useState<NormalizedAdminOrderFilters>(() =>
+    normalizeAdminOrderFilters({ view: 'active' }),
+  );
+  const [filterError, setFilterError] = useState<string | null>(null);
+  const [hasChangedQuery, setHasChangedQuery] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const now = useOperationalNow();
   useOrdersRealtime(unitId);
-  const ordersQuery = useQuery({
-    queryKey: unitOrdersListKey(unitId, status),
-    queryFn: () => fetchUnitOrdersAdmin(unitId, status),
-    refetchInterval: 30_000,
+  const ordersQuery = useInfiniteQuery({
+    queryKey: unitOrdersV2ListKey(unitId, appliedFilters),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => fetchUnitOrdersAdminV2(unitId, appliedFilters, pageParam),
+    getNextPageParam: (lastPage) =>
+      lastPage.page_info.has_more && lastPage.page_info.next_cursor !== null
+        ? lastPage.page_info.next_cursor
+        : undefined,
   });
+  const pages = ordersQuery.data?.pages ?? [];
+  const orders = pages.flatMap((page) => page.orders);
+  const totalCount = pages[0]?.total_count ?? 0;
+  const view = appliedFilters.view;
+  const statusOptions = view === 'active' ? ACTIVE_ORDER_STATUSES : HISTORY_ORDER_STATUSES;
+
+  function rejectOfflineQueryChange(): boolean {
+    if (navigator.onLine) return false;
+    setFilterError(
+      'Você está offline. Os pedidos carregados continuam visíveis; reconecte para atualizar os filtros.',
+    );
+    return true;
+  }
 
   function closeDetail() {
     const orderId = selectedOrderId;
@@ -421,19 +529,94 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
     }
   }
 
+  function changeView(nextView: OrderAdminView) {
+    if (nextView === view) return;
+    if (rejectOfflineQueryChange()) return;
+    const nextDraftStatuses = normalizeAdminOrderFilters({
+      view: nextView,
+      statuses: draftFilters.statuses,
+    }).statuses;
+    setDraftFilters((current) => ({
+      ...current,
+      statuses: nextDraftStatuses === undefined ? [] : [...nextDraftStatuses],
+    }));
+    setAppliedFilters((current) => normalizeAdminOrderFilters({ ...current, view: nextView }));
+    setSelectedOrderId(null);
+    setFilterError(null);
+    setHasChangedQuery(true);
+  }
+
+  function toggleDraftStatus(status: OrderStatus) {
+    setDraftFilters((current) => ({
+      ...current,
+      statuses: current.statuses.includes(status)
+        ? current.statuses.filter((value) => value !== status)
+        : [...current.statuses, status],
+    }));
+  }
+
+  function applyFilters() {
+    const orderNumberText = draftFilters.order_number.trim();
+    const orderNumber = Number(orderNumberText);
+    if (
+      orderNumberText !== '' &&
+      (!/^\d+$/.test(orderNumberText) || !Number.isSafeInteger(orderNumber) || orderNumber <= 0)
+    ) {
+      setFilterError('Informe um número de pedido maior que zero.');
+      return;
+    }
+    const dates = normalizeAdminOrderDateRange(draftFilters.date_from, draftFilters.date_to);
+    if (dates.error !== null) {
+      setFilterError(dates.error);
+      return;
+    }
+    if (rejectOfflineQueryChange()) return;
+
+    setAppliedFilters(
+      normalizeAdminOrderFilters({
+        view,
+        statuses: draftFilters.statuses,
+        ...(draftFilters.service_mode === '' ? {} : { service_mode: draftFilters.service_mode }),
+        ...(draftFilters.payment_status === ''
+          ? {}
+          : { payment_status: draftFilters.payment_status }),
+        ...(draftFilters.payment_method === ''
+          ? {}
+          : { payment_method: draftFilters.payment_method }),
+        ...(orderNumberText === '' ? {} : { order_number: orderNumber }),
+        ...(dates.date_from === undefined ? {} : { date_from: dates.date_from }),
+        ...(dates.date_to === undefined ? {} : { date_to: dates.date_to }),
+      }),
+    );
+    setSelectedOrderId(null);
+    setFilterError(null);
+    setHasChangedQuery(true);
+  }
+
+  function clearFilters() {
+    if (rejectOfflineQueryChange()) return;
+    setDraftFilters(emptyFiltersDraft());
+    setAppliedFilters(normalizeAdminOrderFilters({ view }));
+    setSelectedOrderId(null);
+    setFilterError(null);
+    setHasChangedQuery(true);
+  }
+
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">
-            Central
+            Central 2.0
           </p>
           <h2 className="mt-1 text-2xl font-bold text-pedon-navy">Pedidos</h2>
           <p className="mt-1 text-sm text-pedon-text/70">{unitName}</p>
         </div>
         <button
           type="button"
-          onClick={() => void ordersQuery.refetch()}
+          onClick={() => {
+            if (!rejectOfflineQueryChange()) void ordersQuery.refetch();
+          }}
           disabled={ordersQuery.isFetching}
           className="min-h-11 rounded-md border border-pedon-navy/25 px-4 font-semibold text-pedon-navy disabled:opacity-50"
         >
@@ -441,32 +624,181 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
         </button>
       </div>
 
-      <div className="mt-5 overflow-x-auto pb-1" aria-label="Filtros de pedidos">
-        <div className="flex min-w-max gap-2">
-          {FILTERS.map((filter) => (
-            <button
-              key={filter.value ?? 'all'}
-              type="button"
-              aria-pressed={status === filter.value}
-              onClick={() => {
-                setStatus(filter.value);
-                setSelectedOrderId(null);
-              }}
-              className={
-                status === filter.value
-                  ? 'min-h-11 rounded-full bg-pedon-navy px-4 text-sm font-semibold text-white'
-                  : 'min-h-11 rounded-full border border-pedon-navy/20 bg-white px-4 text-sm font-semibold text-pedon-navy'
-              }
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
+      <div className="mt-5 flex gap-2 border-b border-pedon-navy/15" aria-label="Visão dos pedidos">
+        {(
+          [
+            { value: 'active', label: 'Ativos' },
+            { value: 'history', label: 'Histórico' },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            aria-pressed={view === tab.value}
+            onClick={() => changeView(tab.value)}
+            className={
+              view === tab.value
+                ? 'min-h-11 border-b-2 border-pedon-orange px-4 font-bold text-pedon-navy'
+                : 'min-h-11 px-4 font-semibold text-pedon-text/65'
+            }
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      <section
+        aria-labelledby="filters-heading"
+        className="mt-5 rounded-xl border border-pedon-navy/15 bg-white p-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="filters-heading" className="font-bold text-pedon-navy">
+            Filtros
+          </h3>
+          <p className="text-xs text-pedon-text/60">Aplicados somente ao confirmar</p>
+        </div>
+
+        <fieldset className="mt-4">
+          <legend className="text-sm font-semibold">Status</legend>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {statusOptions.map((status) => (
+              <label
+                key={status}
+                className="flex min-h-11 cursor-pointer items-center gap-2 rounded-full border border-pedon-navy/20 px-3 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={draftFilters.statuses.includes(status)}
+                  onChange={() => toggleDraftStatus(status)}
+                  className="size-4 accent-pedon-orange"
+                />
+                {STATUS_FILTER_LABELS[status]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-sm font-medium">
+            Modalidade
+            <select
+              value={draftFilters.service_mode}
+              onChange={(event) =>
+                setDraftFilters((current) => ({
+                  ...current,
+                  service_mode: event.target.value as ServiceMode | '',
+                }))
+              }
+              className="mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 bg-white px-3"
+            >
+              <option value="">Todas</option>
+              <option value="pickup">Retirada</option>
+              <option value="delivery">Entrega</option>
+            </select>
+          </label>
+          <label className="text-sm font-medium">
+            Pagamento
+            <select
+              value={draftFilters.payment_status}
+              onChange={(event) =>
+                setDraftFilters((current) => ({
+                  ...current,
+                  payment_status: event.target.value as PaymentStatus | '',
+                }))
+              }
+              className="mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 bg-white px-3"
+            >
+              <option value="">Todos</option>
+              <option value="pending">Pendente</option>
+              <option value="paid">Pago</option>
+              <option value="refunded">Reembolsado</option>
+            </select>
+          </label>
+          <label className="text-sm font-medium">
+            Forma de pagamento
+            <select
+              value={draftFilters.payment_method}
+              onChange={(event) =>
+                setDraftFilters((current) => ({
+                  ...current,
+                  payment_method: event.target.value as PaymentMethodCode | '',
+                }))
+              }
+              className="mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 bg-white px-3"
+            >
+              <option value="">Todas</option>
+              <option value="cash">Dinheiro</option>
+              <option value="pix">Pix</option>
+              <option value="credit_card">Cartão de crédito</option>
+              <option value="debit_card">Cartão de débito</option>
+            </select>
+          </label>
+          <label className="text-sm font-medium">
+            Número do pedido
+            <input
+              type="text"
+              inputMode="numeric"
+              value={draftFilters.order_number}
+              onChange={(event) =>
+                setDraftFilters((current) => ({
+                  ...current,
+                  order_number: event.target.value,
+                }))
+              }
+              className="mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 px-3"
+              placeholder="Ex.: 83"
+            />
+          </label>
+          <label className="text-sm font-medium sm:col-span-1 lg:col-span-2">
+            Data inicial
+            <input
+              type="datetime-local"
+              value={draftFilters.date_from}
+              onChange={(event) =>
+                setDraftFilters((current) => ({ ...current, date_from: event.target.value }))
+              }
+              className="mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 px-3"
+            />
+          </label>
+          <label className="text-sm font-medium sm:col-span-1 lg:col-span-2">
+            Data final
+            <input
+              type="datetime-local"
+              value={draftFilters.date_to}
+              onChange={(event) =>
+                setDraftFilters((current) => ({ ...current, date_to: event.target.value }))
+              }
+              className="mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 px-3"
+            />
+          </label>
+        </div>
+
+        {filterError !== null && (
+          <p role="alert" className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-800">
+            {filterError}
+          </p>
+        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={applyFilters}
+            className="min-h-11 rounded-md bg-pedon-navy px-5 font-semibold text-white"
+          >
+            Aplicar filtros
+          </button>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="min-h-11 rounded-md border border-pedon-navy/25 px-5 font-semibold text-pedon-navy"
+          >
+            Limpar
+          </button>
+        </div>
+      </section>
 
       {ordersQuery.isLoading && (
         <p role="status" className="mt-6">
-          Carregando pedidos…
+          {hasChangedQuery ? 'Aplicando filtros…' : 'Carregando pedidos…'}
         </p>
       )}
       {ordersQuery.isError && (
@@ -476,6 +808,8 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
       )}
       {ordersQuery.data !== undefined && (
         <div
+          id="orders-tabpanel"
+          aria-label={view === 'active' ? 'Pedidos ativos' : 'Histórico de pedidos'}
           className={
             selectedOrderId === null
               ? 'mt-5'
@@ -484,65 +818,106 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
         >
           <section aria-label="Lista de pedidos" className="min-w-0">
             <p className="mb-3 text-sm text-pedon-text/70" aria-live="polite">
-              {ordersQuery.data.count} {ordersQuery.data.count === 1 ? 'pedido' : 'pedidos'}
-              {ordersQuery.data.count > ordersQuery.data.orders.length
-                ? `, exibindo os ${ordersQuery.data.orders.length} mais recentes`
-                : ''}
+              {totalCount} {totalCount === 1 ? 'pedido encontrado' : 'pedidos encontrados'} ·{' '}
+              {orders.length} {orders.length === 1 ? 'exibido' : 'exibidos'}
+              {ordersQuery.isFetching && !ordersQuery.isFetchingNextPage ? ' · Atualizando…' : ''}
             </p>
-            {ordersQuery.data.orders.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-pedon-navy/25 bg-white p-6 text-center">
-                Nenhum pedido neste filtro.
-              </p>
+            {orders.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-pedon-navy/25 bg-white p-6 text-center">
+                <p>
+                  {view === 'active'
+                    ? 'Nenhum pedido ativo.'
+                    : 'Nenhum pedido no histórico para estes filtros.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="mt-3 min-h-11 font-semibold underline"
+                >
+                  Limpar filtros
+                </button>
+              </div>
             ) : (
               <ul className="space-y-3">
-                {ordersQuery.data.orders.map((order) => (
-                  <li key={order.id}>
-                    <button
-                      ref={(node) => {
-                        if (node === null) orderButtonRefs.current.delete(order.id);
-                        else orderButtonRefs.current.set(order.id, node);
-                      }}
-                      type="button"
-                      onClick={() => setSelectedOrderId(order.id)}
-                      aria-label={`Abrir pedido ${order.order_number} de ${order.customer_name}`}
-                      aria-current={selectedOrderId === order.id ? 'true' : undefined}
-                      className={`min-h-11 w-full rounded-xl border bg-white p-4 text-left shadow-sm transition hover:border-pedon-orange focus:outline-none focus:ring-2 focus:ring-pedon-orange ${
-                        order.status === 'new'
-                          ? 'border-l-4 border-l-pedon-orange border-y-pedon-orange/40 border-r-pedon-orange/40'
-                          : 'border-pedon-navy/15'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-bold text-pedon-navy">
-                            #{order.order_number} · {time(order.created_at)}
-                          </p>
-                          <p className="mt-1 truncate font-medium">{order.customer_name}</p>
+                {orders.map((order) => {
+                  const overdue = view === 'active' && isOrderOverdue(order, now);
+                  return (
+                    <li key={order.id}>
+                      <button
+                        ref={(node) => {
+                          if (node === null) orderButtonRefs.current.delete(order.id);
+                          else orderButtonRefs.current.set(order.id, node);
+                        }}
+                        type="button"
+                        onClick={() => setSelectedOrderId(order.id)}
+                        aria-label={`Abrir pedido ${order.order_number} de ${order.customer_name}`}
+                        aria-current={selectedOrderId === order.id ? 'true' : undefined}
+                        className={`min-h-11 w-full rounded-xl border bg-white p-4 text-left shadow-sm transition hover:border-pedon-orange focus:outline-none focus:ring-2 focus:ring-pedon-orange ${
+                          overdue
+                            ? 'border-l-4 border-l-red-700 border-y-red-300 border-r-red-300'
+                            : order.status === 'new'
+                              ? 'border-l-4 border-l-pedon-orange border-y-pedon-orange/40 border-r-pedon-orange/40'
+                              : order.status === 'ready'
+                                ? 'border-l-4 border-l-pedon-navy border-y-pedon-navy/25 border-r-pedon-navy/25'
+                                : 'border-pedon-navy/15'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-bold text-pedon-navy">
+                              #{order.order_number} · {time(order.created_at)}
+                            </p>
+                            <p className="mt-1 truncate font-medium">{order.customer_name}</p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-pedon-surface px-2.5 py-1 text-xs font-bold text-pedon-navy">
+                            {ORDER_STATUS_LABELS[order.status]}
+                          </span>
                         </div>
-                        <span className="shrink-0 rounded-full bg-pedon-surface px-2.5 py-1 text-xs font-bold text-pedon-navy">
-                          {ORDER_STATUS_LABELS[order.status]}
-                        </span>
-                      </div>
-                      {order.status === 'new' && (
-                        <p className="mt-2 text-xs font-bold uppercase tracking-wide text-pedon-orange">
-                          Novo pedido
-                        </p>
-                      )}
-                      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm sm:grid-cols-3">
-                        <span>{SERVICE_MODE_LABELS[order.service_mode]}</span>
-                        <span>
-                          {order.item_count} {order.item_count === 1 ? 'item' : 'itens'}
-                        </span>
-                        <span className="font-bold">{formatBRL(order.total)}</span>
-                        <span className="col-span-2 break-words sm:col-span-2">
-                          {PAYMENT_METHOD_LABELS[order.payment_method]} ·{' '}
-                          {PAYMENT_STATUS_LABELS[order.payment_status]}
-                        </span>
-                      </div>
-                    </button>
-                  </li>
-                ))}
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wide">
+                          {order.status === 'new' && (
+                            <span className="rounded-full bg-orange-50 px-2 py-1 text-pedon-orange">
+                              Novo pedido
+                            </span>
+                          )}
+                          {overdue && (
+                            <span className="rounded-full bg-red-50 px-2 py-1 text-red-800">
+                              Atrasado
+                            </span>
+                          )}
+                          {order.status === 'ready' && (
+                            <span className="rounded-full bg-pedon-surface px-2 py-1 text-pedon-navy">
+                              Pronto para {order.service_mode === 'pickup' ? 'retirada' : 'entrega'}
+                            </span>
+                          )}
+                        </div>
+                        <OrderOperationalTime order={order} view={view} now={now} />
+                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-sm sm:grid-cols-3">
+                          <span>{SERVICE_MODE_LABELS[order.service_mode]}</span>
+                          <span>
+                            {order.item_count} {order.item_count === 1 ? 'item' : 'itens'}
+                          </span>
+                          <span className="font-bold">{formatBRL(order.total)}</span>
+                          <span className="col-span-2 break-words sm:col-span-2">
+                            {PAYMENT_METHOD_LABELS[order.payment_method]} ·{' '}
+                            {PAYMENT_STATUS_LABELS[order.payment_status]}
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
+            )}
+
+            {ordersQuery.hasNextPage && (
+              <button
+                type="button"
+                onClick={() => void ordersQuery.fetchNextPage()}
+                disabled={ordersQuery.isFetching}
+                className="mt-4 min-h-11 w-full rounded-md border border-pedon-navy/25 px-4 font-semibold text-pedon-navy disabled:opacity-50"
+              >
+                {ordersQuery.isFetchingNextPage ? 'Carregando mais…' : 'Carregar mais'}
+              </button>
             )}
           </section>
 
