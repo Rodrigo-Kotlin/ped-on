@@ -1219,6 +1219,34 @@ possível no sistema inteiro seja matematicamente impossível.
 - **Não implementado (consciente):** push notifications (Web Push / FCM / APNs), servidor de webhook realtime, mensagens no mobile do operador, alertas por e-mail/SMS, multi-device sync do `soundEnabled`, persistência do opt-in sonoro entre sessões, telemetria de alertas (quando/disparou/fechou), toast/snackbar alternativo, modal de "novos pedidos chegaram enquanto você estava offline", e qualquer cache runtime em rotas Supabase mutáveis.
 - **Migration:** nenhuma (nenhuma mudança de banco/RPC nesta etapa — todos os dados continuam fluindo via `get_kds_orders_minimal`, DEC-121, e `orders` SELECT/INSERT/UPDATE do Supabase realtime).
 
+### DEC-125 — Etapa 13.6 hardening audit sem alteração de código e fechamento do RELEASE_CANDIDATE_CHECKPOINT
+
+- **Status:** APROVADA
+- **Data:** 2026-08-16
+- **Decisão:** a Etapa 13.6 executa a auditoria de hardening do Prompt 13 sobre o baseline congelado
+  `ddd11b44` (Etapa 13.5B), nas 12 áreas (Central, KDS, Realtime+Polling, Alertas, Impressão,
+  Offline, Multi-tenant, PII, PWA, Acessibilidade, Responsividade, Segurança). A auditoria não
+  encontrou nenhum achado P0/P1/P2 reproduzível, preservando integralmente os contratos das DEC-120
+  a DEC-124 (realtime único com owner no AppShell, polling 15s gated, baseline conservador,
+  dedup de alertas, som sessão-only, `runtimeCaching: NONE`, KDS/print/alerts sem PII, mutações
+  fail-closed, anti double-click, foco pós-mutação). A Fase B reproduziu todos os gates locais PASS
+  (vitest 46/46 = 503 testes, build 37 precache, audit-precache `runtimeCaching: NONE`, E2E
+  505/3/0). A Fase C não adicionou testes (sem lacuna de cobertura reproduzível) e a Fase D não
+  alterou código (nenhum finding real). A etapa é fechada com commit DOCUMENTAL e o Prompt 13 passa a
+  `COMPLETED`, com `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED` e `OPERATION_READY — ACHIEVED`; o
+  `PILOT_GATE` permanece `READY / NOT STARTED` (nenhuma ação de rollout nesta execução). Foram
+  registrados dois achados P3 descartados: (P3-1) DEC-124 descreve persistência do som em
+  `sessionStorage`, mas a implementação usa estado React sem persistência alguma — contrato
+  "sessão-only" satisfeito de forma mais estrita (E2E D), apenas o texto documental poderia ser
+  ajustado; (P3-2) `OrderSeenTracker.prune` (teto 1000/unidade) pode, em volume extremo, re-disparar
+  um alerta único — aceito para o piloto.
+- **Justificativa:** auditoria concluída sem findings reais; manter código estável é o princípio do
+  RC. Mudanças não reproduzíveis introduziriam risco no limiar do piloto sem benefício objetivo.
+- **Não implementado (consciente):** nenhuma correção de código; nenhum teste novo; nenhuma migration
+  nova; nenhuma mudança de backend/RPC/schema/RLS (backend permanece no contrato da Etapa 13.2 /
+  migration 23). Correção do texto da DEC-124 (P3-1) fica para edição documental futura.
+- **Migration:** nenhuma.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

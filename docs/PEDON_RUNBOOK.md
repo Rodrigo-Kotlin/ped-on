@@ -1,8 +1,8 @@
 # PED-ON — Runbook
 
-> Guia operacional do Ped-On no Prompt 13 `IN PROGRESS`, checkpoint
-> `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`. Backend técnico/remoto validado no HEAD
-> `0e171c55afe3a88a699f1ee81b8f937a70659226`, CI `31859960640`.
+> Guia operacional do Ped-On no Prompt 13 `COMPLETED`, checkpoint
+> `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`. Backend técnico/remoto validado no HEAD
+> `ddd11b44`, CI `31924328717`.
 
 ## 1. Pré-requisitos
 
@@ -581,8 +581,9 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 
 ## 13. Próximo passo
 
-Prompt 13 permanece `IN PROGRESS`. Etapas 13.1, 13.2, 13.3, 13.4B e 13.5A estão `COMPLETED`
-(13.5A registrada como DEC-124 — alertas operacionais locais + audit-precache endurecido);
-`NEW-MEDIUM-1` está `RESOLVED` pela migration 23. O próximo passo é a Etapa 13.5B
-(`NOT STARTED — READY`), que não deve ser iniciada nesta etapa documental.
-`OPERATION_READY: NOT ACHIEVED`.
+Prompt 13 está `COMPLETED`. Etapas 13.1, 13.2, 13.3, 13.4B, 13.5A, 13.5B e 13.6 estão
+`COMPLETED` (13.5A registrada como DEC-124 — alertas operacionais locais + audit-precache
+endurecido; 13.5B polimento UI operacional; 13.6 hardening audit sem alteração de código —
+DEC-125); `NEW-MEDIUM-1` está `RESOLVED` pela migration 23. `RELEASE_CANDIDATE_CHECKPOINT —
+ACHIEVED` e `OPERATION_READY — ACHIEVED`. O próximo passo é o piloto (`PILOT_GATE — READY /
+NOT STARTED`), que não deve ser iniciado nesta etapa documental.

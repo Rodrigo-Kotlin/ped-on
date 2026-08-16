@@ -12,26 +12,27 @@
 | MODELO                   | Main-First monitorado                                                                                                                                                                                                                                        |
 | FASE ATUAL               | Fase 4A — Pilot Ready                                                                                                                                                                                                                                        |
 | PROMPT ATUAL             | Prompt 13 — Operação de Pedidos 2.0                                                                                                                                                                                                                          |
-| STATUS                   | `IN PROGRESS`                                                                                                                                                                                                                                                 |
-| CHECKPOINT               | `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                                  |
-| MILESTONE                | `OPERATION_READY — NOT ACHIEVED`                                                                                                                                                                                                                             |
-| HEAD INICIAL DA ETAPA    | `0354e92f9b329ea999589f3984de3d004fda1fd5`                                                                                                                                                                                                                   |
-| HEAD TÉCNICO VALIDADO    | `cdbfb09bdec664ccbd105d1700c3b65c15dcfed4` — CI `31912058296` SUCCESS (Quality + Backend + E2E) com remoto 23/23/23                                                                                                                                    |
-| HEAD FINAL DE FECHAMENTO | `a97f541` (docs: DEC-124)                                                                                                                                                                                                                                     |
+| STATUS                   | `COMPLETED`                                                                                                                                                                                                                                                  |
+| CHECKPOINT               | `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                                    |
+| MILESTONE                | `OPERATION_READY — ACHIEVED`                                                                                                                                                                                                                                 |
+| HEAD INICIAL DA ETAPA    | `ddd11b44afa61792d51b6fba023e5fd4015bcd5c`                                                                                                                                                                                                                   |
+| HEAD TÉCNICO VALIDADO    | `ddd11b44` — CI `31924328717` SUCCESS (Etapa 13.5B) + gates locais 13.6 PASS (format, lint, typecheck, vitest 46/46 503 testes, build, audit-precache `runtimeCaching: NONE`, E2E 505/3/0)                                                             |
+| HEAD FINAL DE FECHAMENTO | `ddd11b44` (nenhuma alteração de código na Etapa 13.6; commit documental registrado no relatório final)                                                                                        |
 | ETAPA 13.1               | `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`                                                                                                                                                                                                      |
 | ETAPA 13.2               | `COMPLETED` — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                   |
 | ETAPA 13.3               | `COMPLETED` — Central de Pedidos v2, KDS, comanda digital e UI operacional (Fase 4A — Pilot Ready)                                                                                                                                                        |
 | ETAPA 13.4B              | `COMPLETED` — Comanda de cozinha 80 mm via Browser Print (DEC-123)                                                                                                                                                                                           |
 | ETAPA 13.5A              | `COMPLETED` — Alertas operacionais locais + audit-precache endurecido (DEC-124)                                                                                                                                                                              |
-| ETAPA 13.5B              | `NOT STARTED — READY`                                                                                                                                                                                                                                        |
+| ETAPA 13.5B              | `COMPLETED` — Polimento UI operacional tablet/desktop (`ddd11b4`)                                                                                                                                                                                           |
+| ETAPA 13.6               | `COMPLETED` — Hardening audit + Release Candidate sem alteração de código (DEC-125)                                                                                                                                                                        |
 | BACKEND                  | Sem mudança nesta etapa (migration 23 inalterada); `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED` permanece válido                                                                                                                                            |
-| FRONTEND                 | Etapa 13.5A entregue: badge "N pedidos novos", banner "Novo pedido #N recebido.", som opt-in (sessão-only), baseline conservador em troca de unidade, resync offline→online sem alerta em lote, indicador "Tempo real indisponível" e realtime endurecido (typed payload + reset hook) |
-| TESTES VERIFICADOS       | CI `31912058296`: Frontend vitest 503/503 (46 arquivos); E2E 505/505 com 3 skips; DB 1494/1494 (12 suítes); Edge 15/15; fresh rebuild de 23 migrations, alinhamento e DB lint PASS; audit-precache `runtimeCaching: NONE`                              |
+| FRONTEND                 | Etapa 13.6 = auditoria de hardening das 12 áreas com NENHUM achado P0/P1/P2; contratos das DEC-120 a DEC-124 integralmente preservados (realtime único, polling 15s gated, baseline conservador, dedup, som sessão-only, `runtimeCaching: NONE`, mutações fail-closed) |
+| TESTES VERIFICADOS       | Gates locais Etapa 13.6: vitest 503/503 (46 arquivos); E2E 505/505 com 3 skips intencionais (4 viewports); lint/typecheck/format PASS; build 37 precache; audit-precache `runtimeCaching: NONE`; `git diff --check` PASS. CI HEAD técnico `31924328717` SUCCESS (Etapa 13.5B) |
 | PWA                      | Gate `audit-precache` endurecido: `runtimeCaching` deve permanecer `NONE` para `/auth/**`, `/rest/**`, `/storage/**`, `/realtime/**` e RPCs de mutação (helper + regressão vitest cobrem o invariante — DEC-124)                                       |
-| GITHUB ACTIONS           | CI técnico `31912058296` SUCCESS nos três jobs; CI documental do novo SHA registrado no relatório final                                                                                                                                                      |
-| PENDÊNCIAS               | Nenhum finding aberto na Etapa 13.5A; Etapa 13.5B permanece por iniciar                                                                                                                                                                                       |
-| NEXT_STEP                | Etapa 13.5B (`NOT STARTED — READY`); não iniciar nesta etapa documental                                                                                                                                                                                       |
-| PROMPT 13                | `IN PROGRESS`                                                                                                                                                                                                                                                 |
+| GITHUB ACTIONS           | CI técnico `31924328717` SUCCESS (Etapa 13.5B); CI do commit documental da Etapa 13.6 registrado no relatório final                                                                              |
+| PENDÊNCIAS               | Nenhum finding aberto na Etapa 13.6; 2 achados P3 registrados e descartados (P3-1 texto DEC-124 vs estado React; P3-2 evicção do OrderSeenTracker)                                                                                                           |
+| NEXT_STEP                | PILOT_GATE `READY / NOT STARTED`; piloto não iniciado nesta etapa documental                                                                                                                                                                                |
+| PROMPT 13                | `COMPLETED`                                                                                                                                                                                                                                                 |
 | PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
 | LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
 | LOCAL DB TESTS           | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
@@ -83,6 +84,30 @@
   pedido bloqueia a opção de catálogo disponível, serializando checkout contra toggle/delete.
 - O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
   carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
+
+## Checkpoint Prompt 13 — `RELEASE_CANDIDATE_CHECKPOINT` (Etapa 13.6 — DEC-125)
+
+- Prompt 13 está `COMPLETED`. Etapas 13.1–13.6 `COMPLETED` (13.2 `BACKEND_OPERATIONAL_CHECKPOINT —
+  ACHIEVED`; 13.5B polimento UI operacional `ddd11b4`; 13.6 hardening audit sem alteração de código,
+  DEC-125). `OPERATION_READY — ACHIEVED`; `PILOT_GATE — READY / NOT STARTED`.
+- Baseline congelado da auditoria: `ddd11b44afa61792d51b6fba023e5fd4015bcd5c` (tree limpo).
+- Auditoria das 12 áreas (6.1 Central, 6.2 KDS, 6.3 Realtime+Polling, 6.4 Alertas, 6.5 Impressão,
+  6.6 Offline/Fail-closed, 6.7 Multi-tenant, 6.8 PII, 6.9 PWA, 6.10 Acessibilidade, 6.11
+  Responsividade, 6.12 Segurança): NENHUM achado P0/P1/P2. Dois achados P3 registrados e descartados
+  (P3-1: DEC-124 descreve som em `sessionStorage` e a implementação usa estado React sem persistência
+  — contrato sessão-only satisfeito, apenas texto documental ajustável; P3-2: evicção do
+  `OrderSeenTracker` em volume extremo — aceito).
+- Gates locais 13.6: format:check PASS, lint PASS, typecheck PASS (4 workspaces), vitest 46/46
+  (503 testes) PASS, build PASS (37 precache), audit-precache `runtimeCaching: NONE` PASS (37
+  entries, uniqueUrls 37, duplicateOccurrences 0, 978789 bytes), `git diff --check` PASS, E2E
+  505/505 com 3 skips intencionais em mobile-360, tablet-768, desktop-1024 e desktop-1440.
+- Nenhuma mudança de código, migration, RPC, schema ou RLS nesta etapa; backend permanece no contrato
+  da Etapa 13.2 / migration 23 (23/23/23 reconciliado).
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- Detalhes completos em `docs/PROMPT13_ETAPA_13_6_HARDENING.md`. Decisão registrada:
+  `DEC-125 — Etapa 13.6 hardening audit sem alteração de código e fechamento do RELEASE_CANDIDATE_CHECKPOINT`.
+- Próxima etapa: piloto (PILOT_GATE `READY / NOT STARTED`); não iniciado nesta etapa documental.
 
 ## Checkpoint Prompt 13 — Etapa 13.5A — Alertas Operacionais Locais (DEC-124)
 
