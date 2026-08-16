@@ -1313,6 +1313,35 @@ possível no sistema inteiro seja matematicamente impossível.
 - **Evidência:** commit técnico `0753c18`; correções de CI `776bba7`/`a53120b`/`8714d1d`; CI final
   `31962585865` SUCCESS (Backend release gates, Quality gates, E2E smoke tests).
 
+### DEC-128 — Implantação da DEC-127 em PRODUCTION (PILOT GATE Parte 2C-R1)
+
+- **Status:** APROVADA / EXECUTADA
+- **Data:** 2026-08-16
+- **Contexto:** a Parte 2C confirmou, por inspeção read-only, que produção estava na migration 23 (a
+  migration 24 da DEC-127 não estava aplicada) e que `organization_member_invites` e as 5 RPCs não
+  existiam no ambiente — `DRIFT STRUCTURAL`/BLOCKER para o fluxo de convite. Autorização humana
+  concedida: `AUTHORIZE DEC-127 PRODUCTION DEPLOYMENT ONLY` (somente o release homologado da DEC-127;
+  nenhuma escrita de negócio ou onboarding do PILOT-P01).
+- **Decisão:** aplicar a migration 24 em PRODUCTION pelo mecanismo oficial documentado no RUNBOOK
+  (§5.2 `supabase db push --linked`). Sem improviso: dry-run antes do push; confirmação de identidade
+  do projeto pelo mecanismo oficial (`supabase projects list` → `zmuxkztnilnzjyyojbbr` — ped-on, São
+  Paulo); host direto `db.<ref>.supabase.co` indisponível nesta rede (somente IPv6) — conexão ao
+  pooler session-mode da região via `--db-url` (flag oficial do CLI), senha do banco lida em UTF-8
+  sem ser impressa.
+- **Resultado:** migrações de produção `23 → 24`; `20260816120000` registrada no histórico remoto;
+  tabela, RLS (ON, policy SELECT owner-only), check `role in ('manager','operator')`, expiração 7
+  dias, índice único parcial de pendência e as 5 RPCs (`SECURITY DEFINER`, `search_path=''`, grants
+  somente `authenticated`) verificados read-only pós-deploy. Nenhuma migration inesperada.
+- **Frontend:** Cloudflare Pages (production branch `main`) já servia o release compatível — bundle
+  com `CF_PAGES_COMMIT_SHA` `599256a` no estável `https://ped-on.pages.dev`, contendo a UI de convite
+  do EquipePage (DEC-127). Sem redeploy necessário.
+- **Nenhuma escrita de negócio:** ZERO organizações/unidades/usuários/convites/memberships/catálogo/
+  pedidos criados ou alterados.
+- **Evidência:** dry-run e push via `supabase db push --linked` (pooler session-mode); verificação
+  read-only via `pg` no pooler; bundle publicado `599256ac23106a0116ef5b9480a763f71cf1a0a3`; registro
+  documental `docs/PEDON_IMPLEMENTATION_STATUS.md` (checkpoint Parte 2C-R1).
+- **Migração:** `20260816120000_pilot_finding_member_onboarding.sql` (24 de 24 em produção).
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

@@ -18,7 +18,7 @@
 | PILOT_OPERATION | `NOT STARTED` |
 | PROMPT 14 | `NOT STARTED` |
 | TARGET ENVIRONMENT | `PRODUCTION` (selecionado em 2026-08-16; escrita NÃO autorizada) |
-| PRODUCTION STRUCTURAL STATE | migration 24 (DEC-127) NÃO aplicada em produção — BLOCKER para o fluxo de convite |
+| PRODUCTION STRUCTURAL STATE | migration 24 (DEC-127) **APLICADA** em produção (DEC-128, 2026-08-16) — fluxo de convite disponível |
 
 Plano de onboarding do PILOT-P01: `docs/PEDON_PILOT_ONBOARDING.md` (GATEs 1–7, Data Pack, Remote
 Write Plan e HUMAN GATES). `TARGET ENVIRONMENT: PRODUCTION` definido; dados mínimos em parte
@@ -307,12 +307,14 @@ automaticamente virar alteração durante o piloto.
 
 Parte 2C — `ONBOARDING` do PILOT-P01 em andamento (planejado): `TARGET ENVIRONMENT: PRODUCTION`
 definido; estado de produção inspecionado **read-only** (org "Mr. Burger" e owner existem; unidade a
-renomear para Matriz; operator sem conta; **migration 24 NÃO implantada — BLOCKER** — ver seção 16 de
-`PEDON_PILOT_ONBOARDING.md`). O achado de adição de membros foi **RESOLVIDO** pelo hotfix P1
-(DEC-127) — o fluxo oficial de convite/aceite (`manager`/`operator`) está disponível no repositório
-(baseline `8714d1d`, CI `31962585865`), mas depende de o release ser implantado em produção.
-Pendências antes de qualquer escrita: aplicar o release com migration 24, fornecer o catálogo real e
-obter `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`. Parte 2D — `CONTROLLED ORDER` (validar
-cardápio, checkout, Central, alertas, KDS, status, POS-58, reimpressão e tenant isolation) somente
-após o onboarding e com autorização própria. Parte 3 — `PILOT OPERATION` (Daily Pilot Check,
-Evidence Register, decisão de saída) exige aprovação humana separada.
+renomear para Matriz; operator sem conta — ver seção 16 de `PEDON_PILOT_ONBOARDING.md`). O achado de
+adição de membros foi **RESOLVIDO** pelo hotfix P1 (DEC-127) — o fluxo oficial de convite/aceite
+(`manager`/`operator`) está disponível no repositório (baseline `8714d1d`, CI `31962585865`) e a
+**migration 24 foi implantada em PRODUCTION** em 2026-08-16 (`AUTHORIZE DEC-127 PRODUCTION DEPLOYMENT
+ONLY` — DEC-128; `supabase db push`, 23→24, verificação pós-deploy read-only PASS; frontend verificado
+com `CF_PAGES_COMMIT_SHA` `599256a` no estável). Pendências antes de qualquer escrita: fornecer o
+catálogo real e obter `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`. `REMOTE ONBOARDING WRITES:
+NOT AUTHORIZED`. Parte 2D — `CONTROLLED ORDER` (validar cardápio, checkout, Central, alertas, KDS,
+status, POS-58, reimpressão e tenant isolation) somente após o onboarding e com autorização própria.
+Parte 3 — `PILOT OPERATION` (Daily Pilot Check, Evidence Register, decisão de saída) exige aprovação
+humana separada.

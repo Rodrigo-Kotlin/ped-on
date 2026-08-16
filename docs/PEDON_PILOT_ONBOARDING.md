@@ -20,11 +20,11 @@
 | PROMPT 14 | `NOT STARTED` |
 | MEMBER ONBOARDING FINDING | `RESOLVED` (HOTFIX P1 — DEC-127; ver seção 13) |
 | TARGET ENVIRONMENT | `PRODUCTION` — selecionado; escrita NÃO autorizada |
-| PRODUCTION STRUCTURAL STATE | migration 24 **NÃO aplicada** em produção — **BLOCKER** para o fluxo de convite (seção 16) |
+| PRODUCTION STRUCTURAL STATE | migration 24 **APLICADA** em produção (DEC-128, Parte 2C-R1) — fluxo de convite disponível (seção 16) |
 
 Aguardando: `ONBOARDING DATA` (catálogo real) e `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`.
-O hotfix de adição de membros (DEC-127) está liberado no repositório e no CI, mas **ainda não foi
-implantado no ambiente de produção** (migration 24 ausente — ver seção 16). Nenhuma escrita executada.
+O hotfix de adição de membros (DEC-127) está liberado no repositório, no CI e **implantado em
+produção** (Parte 2C-R1 — DEC-128). Nenhuma escrita de negócio executada.
 
 ## 2. Participante e baseline
 
@@ -221,15 +221,15 @@ Status: `READY FOR ONBOARDING` (papéis definidos; canal autorizado).
 ```text
 TARGET ENVIRONMENT: PRODUCTION (selecionado; escrita NÃO autorizada)
 
-CURRENT PRODUCTION STATE (inspeção read-only — seção 16):
-  Migrations: 23 aplicadas — migration 24 (DEC-127) AUSENTE  ==> BLOCKER
+CURRENT PRODUCTION STATE (seção 16 — inspeção read-only + deploy DEC-128):
+  Migrations: 24 aplicadas — migration 24 (DEC-127) APLICADA em produção (2026-08-16)
   Organization "Mr. Burger": EXISTS (1) — NÃO criar
   Unit "Matriz": NÃO existe — existe "Unidade principal" (renomear, não criar)
   PILOT-P01-OWNER: Auth EXISTS, role owner, onboarding completed, membro único
   PILOT-P01-OPERATOR-01: Auth NÃO existe
-  Invites/memberships adicionais: nenhum; tabela de convites ausente (migration 24)
+  Invites/memberships adicionais: nenhum; tabela de convites PRESENTE (migration 24 aplicada)
 
-CREATE (quando autorizado E com migration 24 implantada):
+CREATE (quando autorizado):
   Organizations: 0 (existente)
   Units: 0 novas (renomear "Unidade principal" -> Matriz via update_unit)
   Auth users: 1 (PILOT-P01-OPERATOR-01)
@@ -249,8 +249,8 @@ SUPPORT: DEFINED (seção 10)
 PRINT: TO BE VALIDATED IN PART 2D
 
 NO CODE CHANGES: YES
-NO DATABASE STRUCTURAL CHANGES: YES (aguarda release com migration 24 — ver seção 16)
-NO MIGRATIONS: YES (nesta execução; aplicação do release é pré-requisito fora deste escopo)
+NO DATABASE STRUCTURAL CHANGES: YES
+NO MIGRATIONS: YES (nesta execução; migration 24 já aplicada em produção — DEC-128)
 NO RLS CHANGES: YES
 NO RPC CHANGES: YES
 NO EDGE CHANGES: YES
@@ -313,8 +313,9 @@ Sem senha, token, payload sensível ou PII. E-mails reais fora do Git (placehold
 ## 15. REQUIRED FROM HUMAN (lista objetiva)
 
 1. `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION` (autorização explícita; pré-requisito absoluto).
-2. Confirmar implantação do release com a **migration 24** (DEC-127) em produção — BLOCKER atual
-   (seção 16); sem isso o fluxo de convite/aceite não existe no ambiente.
+2. ~~Confirmar implantação do release com a **migration 24** (DEC-127) em produção~~ — **CONCLUÍDO**:
+   migration 24 aplicada em produção em 2026-08-16 (DEC-128, Parte 2C-R1 — seção 16). O fluxo de
+   convite/aceite já existe no ambiente.
 3. Dados do catálogo real (manual — método aprovado): categorias, produtos, preços, disponibilidade,
    opções/variações/adicionais/remoções e regras min/max. **CATALOG DATA: MISSING** — bloqueia o
    GATE 3 (nenhum item inventado; preço ausente ⇒ `BLOCK CATALOG ENTRY`).
@@ -353,3 +354,22 @@ Nenhuma escrita foi executada.
 (`service_role`/SQL direto), proibido pela governança — portanto o operator permanece `NOT FOUND` até o
 release ser implantado. (3) O owner e a organização já existentes em produção devem ser **reutilizados**
 (seção 5), nunca recriados.
+
+**BLOCKER — RESOLVIDO (Parte 2C-R1, 2026-08-16):** autorização `AUTHORIZE DEC-127 PRODUCTION
+DEPLOYMENT ONLY` concedida e o release homologado da DEC-127 foi implantado pelo mecanismo oficial
+(`supabase db push` — RUNBOOK §5.2; verificação em `docs/PEDON_IMPLEMENTATION_STATUS.md`, checkpoint
+Parte 2C-R1, e DEC-128). Estado pós-deploy verificado read-only:
+
+| Verificação (pós-deploy) | Resultado |
+| --- | --- |
+| Migrations | 24 (24/24; `20260816120000` presente; nenhuma inesperada) |
+| `organization_member_invites` | PRESENTE; RLS `ON`; única policy SELECT owner-only (`is_org_owner`); sem policies I/U/D |
+| Constraints | `role in ('manager','operator')`; `status`; e-mail não vazio; `expires_at` NOT NULL |
+| Índice de pendência | único parcial `(organization_id, email) where status='pending'` |
+| 5 RPCs DEC-127 | PRESENTES — `SECURITY DEFINER`, `search_path=''`, grants somente `authenticated` |
+| Grants de tabela | padrão idêntico às tabelas existentes (sem exposição nova) |
+| Frontend | estável `https://ped-on.pages.dev` com `CF_PAGES_COMMIT_SHA` `599256a` (contém UI de convite DEC-127) |
+
+Após este deploy, as pendências de onboarding são somente o **catálogo real** e a **autorização de
+escrita** (`AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`). Nenhuma escrita de negócio executada;
+nenhum dado do Mr. Burger alterado.

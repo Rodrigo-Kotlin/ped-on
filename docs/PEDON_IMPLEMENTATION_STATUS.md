@@ -15,7 +15,7 @@
 | STATUS                   | `COMPLETED`                                                                                                                                                                                                                                                  |
 | CHECKPOINT               | `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                                    |
 | MILESTONE                | `OPERATION_READY — ACHIEVED`                                                                                                                                                                                                                                 |
-| HOTFIX P1 (DEC-127)      | `COMPLETED` — adição segura de membros (`manager`/`operator`) por convite VERIFIED-EMAIL; migration 24; CI `31962585865` SUCCESS                                                                                                                            |
+| HOTFIX P1 (DEC-127)      | `COMPLETED` — adição segura de membros (`manager`/`operator`) por convite VERIFIED-EMAIL; migration 24; CI `31962585865` SUCCESS; **implantado em PRODUCTION em 2026-08-16 (DEC-128)**                                                                     |
 | HEAD TÉCNICO VALIDADO    | `8714d1d` (hotfix P1) — CI `31962585865` SUCCESS (Backend release gates com 24 migrations e 13 suítes DB, Quality gates, E2E smoke tests); baseline técnico anterior `ddd11b44` (Prompt 13)                                                                 |
 | HEAD FINAL DE FECHAMENTO | `ddd11b44` (Etapa 13.6 sem alteração de código; commit documental do PILOT GATE Parte 1 registrado no relatório final)                                                                       |
 | ETAPA 13.1               | `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`                                                                                                                                                                                                      |
@@ -38,7 +38,7 @@
 | PILOT_OPERATION          | `NOT STARTED`                                                                                                                                                                                                                                               |
 | PROMPT 14                | `NOT STARTED`                                                                                                                                                                                                                                               |
 | TARGET ENVIRONMENT       | `PRODUCTION` (selecionado em 2026-08-16; escrita NÃO autorizada)                                                                                                                                                                                           |
-| NEXT_STEP                | Hotfix P1 `COMPLETED`; Parte 2C `IN PROGRESS` — PRODUCTION definido, inspeção read-only feita (org/owner existem; operator sem conta; **migration 24 NÃO implantada — BLOCKER**). Pendências: aplicar release com migration 24, catálogo real e `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION` |
+| NEXT_STEP                | DEC-127 implantado em PRODUCTION (DEC-128); Parte 2C `IN PROGRESS` — `REMOTE ONBOARDING WRITES: NOT AUTHORIZED`. Pendências: catálogo real (MANUAL) e `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`                                                    |
 | PROMPT 13                | `COMPLETED`                                                                                                                                                                                                                                                 |
 | PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
 | LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
@@ -151,6 +151,38 @@
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 - `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
+## Checkpoint — DEC-127 PRODUCTION DEPLOYMENT (Parte 2C-R1, 2026-08-16)
+
+- Autorização humana: `AUTHORIZE DEC-127 PRODUCTION DEPLOYMENT ONLY` — exclusivamente o release
+  homologado da DEC-127; nenhuma escrita de negócio/onboarding do PILOT-P01.
+- **Mecanismo oficial:** `supabase db push --linked` (RUNBOOK §5.2) — dry-run antes do push; o host
+  direto `db.zmuxkztnilnzjyyojbbr.supabase.co` está indisponível nesta rede (somente IPv6) — conexão
+  ao pooler session-mode da região (porta 5432) via `--db-url` (flag oficial do CLI); identidade do
+  projeto confirmada pelo mecanismo oficial (`supabase projects list` → `● zmuxkztnilnzjyyojbbr` —
+  ped-on, South America/São Paulo); senha do banco lida de `.env` em UTF-8, sem ser impressa.
+- **BEFORE (read-only):** migrações `23` (última `20260814100000`); `organization_member_invites` e
+  as 5 RPCs AUSENTES; nenhuma migration desconhecida.
+- **DEPLOYMENT:** dry-run listou somente `20260816120000_pilot_finding_member_onboarding.sql`
+  (PENDING COUNT: 1) e o push aplicou a migration — `23 → 24`, exit 0, registrada no histórico
+  remoto `supabase_migrations.schema_migrations`.
+- **AFTER (read-only):** 24 migrações; migration 24 `APPLIED`; tabela `organization_member_invites`
+  PRESENTE com RLS ON; única policy = `organization_member_invites_select_owner` (SELECT
+  `authenticated` via `is_org_owner`); sem policies de I/U/D (escrita exclusiva via RPCs); check
+  `role in ('manager','operator')`, `status`, e-mail não vazio; índice único parcial
+  `(organization_id, email) where status='pending'`; `expires_at` NOT NULL; grants de tabela idênticos
+  ao padrão das tabelas existentes (sem exposição nova); 5 RPCs PRESENTES, `SECURITY DEFINER`,
+  `search_path=''`, grants somente `authenticated`.
+- **FRONTEND:** Cloudflare Pages (production branch `main`) já servia o release compatível — bundle
+  estável `https://ped-on.pages.dev` com `CF_PAGES_COMMIT_SHA` `599256ac23106a0116ef5b9480a763f71cf1a0a3`
+  (descendente de `8714d1d`); UI de convite do EquipePage (marcadores `convite`/`manager`/`operator`)
+  presente no bundle publicado; sem redeploy necessário. `runtimeCaching: NONE` preservado.
+- **Nenhuma escrita de negócio:** ZERO organizações/unidades/usuários/convites/memberships/catálogo/
+  pedidos criados ou alterados; nenhum dado do Mr. Burger tocado.
+- **Estrutural:** CODE `ZERO`; SCHEMA `ZERO` (apenas a migration 24 homologada aplicada); RLS/RPC
+  somente os da DEC-127; nenhum SW/Edge alterado.
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+
 ## Checkpoint — PILOT GATE Parte 2C — `PILOT_PARTICIPANT_01 — ONBOARDING PLANNED`
 
 - Seleção do PILOT-P01 aprovada (`APPROVE PARTICIPANT 01`). Plano de onboarding documentado em
@@ -160,9 +192,11 @@
   `PILOT_OPERATION — NOT STARTED`; `PROMPT 14 — NOT STARTED`.
 - NENHUMA escrita remota executada; `TARGET ENVIRONMENT: PRODUCTION`; dados de produção
   inspecionados read-only (checkpoint anterior); catálogo real pendente; `READ_ONLY` mantido.
-- Achado de adição de membros: **RESOLVIDO** pelo HOTFIX P1 (DEC-127) — ver checkpoint anterior;
-  o fluxo oficial de convite/aceite (`manager`/`operator`) está disponível para o onboarding, sujeito
-  à implantação da migration 24 em produção (BLOCKER estrutural).
+- Achado de adição de membros: **RESOLVIDO** pelo HOTFIX P1 (DEC-127) — ver checkpoints anteriores;
+  o fluxo oficial de convite/aceite (`manager`/`operator`) está disponível para o onboarding; a
+  migration 24 foi **implantada em PRODUCTION** (DEC-128 — checkpoint Parte 2C-R1). Permanecem
+  pendentes o catálogo real e a autorização de escrita (`AUTHORIZE PILOT-P01 REMOTE WRITES IN
+  PRODUCTION`).
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 - `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
