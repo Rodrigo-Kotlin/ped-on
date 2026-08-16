@@ -111,14 +111,14 @@ begin
 
   -- Idempotente: convite pendente existente é retornado; se expirado,
   -- é renovado com um novo prazo (owner pode renovar com segurança).
-  select * into v_invite
+  select i.* into v_invite
   from public.organization_member_invites i
   where i.organization_id = v_org_id
     and i.email = v_email
     and i.status = 'pending'
   limit 1;
 
-  if v_invite is not null then
+  if v_invite.id is not null then
     if v_invite.expires_at <= now() then
       update public.organization_member_invites
       set expires_at = now() + interval '7 days'
@@ -181,11 +181,11 @@ begin
     raise exception 'INVITE_NOT_FOUND' using errcode = 'PED86';
   end if;
 
-  select * into v_invite
+  select i.* into v_invite
   from public.organization_member_invites i
   where i.id = p_invite_id;
 
-  if v_invite is null then
+  if v_invite.id is null then
     raise exception 'INVITE_NOT_FOUND' using errcode = 'PED86';
   end if;
 
@@ -363,12 +363,12 @@ begin
   perform pg_advisory_xact_lock(hashtext(v_user_id::text));
   perform pg_advisory_xact_lock(hashtext('pedon:invite:' || p_invite_id::text));
 
-  select * into v_invite
+  select i.* into v_invite
   from public.organization_member_invites i
   where i.id = p_invite_id
   for update;
 
-  if v_invite is null then
+  if v_invite.id is null then
     raise exception 'INVITE_NOT_FOUND' using errcode = 'PED86';
   end if;
 
