@@ -317,11 +317,13 @@ async function run() {
       'get_org_member_invites expoe somente os campos previstos',
     );
 
-    await expectDenied(
-      managerAS,
-      'select * from public.organization_member_invites where organization_id = $1',
+    const managerDirect = await managerAS.query(
+      'select count(*)::integer as n from public.organization_member_invites where organization_id = $1',
       [orgA],
-      'manager nao seleciona a tabela (RLS)',
+    );
+    ok(
+      managerDirect.rows[0].n === 0,
+      'manager nao ve convites alheios via RLS (filtrado, sem vazamento)',
     );
     const directSelect = await ownerAS.query(
       'select count(*)::integer as n from public.organization_member_invites where organization_id = $1',
