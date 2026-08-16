@@ -79,6 +79,8 @@ Nenhum estabelecimento real entra no piloto sem aprovação explícita do respon
 
 ## 4. Critérios de seleção dos 3–5 estabelecimentos
 
+Modelo de avaliação operacional por candidato em `docs/PEDON_PILOT_EVALUATION.md` (Parte 2A/2B).
+
 ### 4.1 Matriz de elegibilidade
 
 | Critério | Requisito mínimo | Nota |
