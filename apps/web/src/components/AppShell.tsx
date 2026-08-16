@@ -13,6 +13,7 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
 
 function OrderCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
+
   return (
     <span
       aria-label={`${count} ${count === 1 ? 'pedido novo' : 'pedidos novos'}`}
@@ -28,9 +29,10 @@ export function AppShell() {
   const { user, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const isKitchenRoute = location.pathname === '/app/cozinha';
-  const isOrdersRoute =
+
+  const isOperationalRoute =
     location.pathname === '/app/pedidos' || location.pathname === '/app/cozinha';
+
   const bridge = useOperationalOrdersBridge(selectedUnit?.id ?? null);
 
   const unitLabel = units.length === 0 ? 'Nenhuma unidade' : 'Unidade';
@@ -38,20 +40,24 @@ export function AppShell() {
   return (
     <div
       className={`mx-auto flex min-h-svh w-full flex-col px-4 py-6 sm:px-6 ${
-        isKitchenRoute ? 'max-w-[1600px]' : 'max-w-5xl'
+        isOperationalRoute ? 'max-w-[1600px]' : 'max-w-5xl'
       } print:m-0 print:max-w-none print:min-h-0 print:px-0 print:py-0`}
     >
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-pedon-navy/10 pb-4 print:hidden">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-pedon-orange">Painel</p>
+
           <h1 className="mt-1 text-2xl font-bold text-pedon-navy">
             {organization?.name ?? profile?.full_name ?? user?.email ?? 'Ped-On'}
           </h1>
+
           <p className="mt-0.5 text-sm text-pedon-text/70">
             {profile?.full_name ?? ''}
+
             {role !== null && (
               <>
                 {profile?.full_name ? ' · ' : ''}
+
                 <span className="font-medium text-pedon-text">
                   {role === 'owner' ? 'Proprietário' : role === 'manager' ? 'Gerente' : 'Operador'}
                 </span>
@@ -63,6 +69,7 @@ export function AppShell() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-pedon-text/80">
             <span className="font-medium">{unitLabel}:</span>
+
             <select
               value={selectedUnit?.id ?? ''}
               onChange={(event) => selectUnit(event.target.value)}
@@ -93,42 +100,51 @@ export function AppShell() {
         <NavLink to="/app" end className={navLinkClass}>
           Visão geral
         </NavLink>
+
         {role !== null && (
           <>
             <NavLink to="/app/pedidos" className={navLinkClass}>
               Pedidos
               <OrderCountBadge count={bridge.newCount} />
             </NavLink>
+
             <NavLink to="/app/cozinha" className={navLinkClass}>
               Cozinha
               <OrderCountBadge count={bridge.newCount} />
             </NavLink>
+
             <NavLink to="/app/catalogo" className={navLinkClass}>
               Catálogo
             </NavLink>
+
             <NavLink to="/app/vouchers" className={navLinkClass}>
               Vouchers
             </NavLink>
           </>
         )}
+
         {(role === 'owner' || role === 'manager') && (
           <>
             <NavLink to="/app/cardapio" className={navLinkClass}>
               Cardápio
             </NavLink>
+
             <NavLink to="/app/configuracoes" className={navLinkClass}>
               Configurações
             </NavLink>
           </>
         )}
+
         {role === 'owner' && (
           <>
             <NavLink to="/app/clube" className={navLinkClass}>
               Clube Ped-On
             </NavLink>
+
             <NavLink to="/app/equipe" className={navLinkClass}>
               Equipe
             </NavLink>
+
             <NavLink to="/app/diagnostico" className={navLinkClass}>
               Diagnóstico
             </NavLink>
@@ -136,7 +152,7 @@ export function AppShell() {
         )}
       </nav>
 
-      {isOrdersRoute && (
+      {isOperationalRoute && (
         <OperationalOrderStatus
           realtimeStatus={bridge.realtimeStatus}
           alert={bridge.alert}
@@ -149,7 +165,7 @@ export function AppShell() {
         />
       )}
 
-      <div className="mt-4 print:hidden">
+      <div className="print:hidden">
         <OfflineBanner />
       </div>
 

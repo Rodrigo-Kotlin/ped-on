@@ -24,12 +24,12 @@ export function OperationalOrderStatus({
   onViewOrders,
 }: OperationalOrderStatusProps) {
   return (
-    <div className="print:hidden">
+    <div className="mt-3 space-y-2 print:hidden">
       {realtimeStatus === 'degraded' && (
         <div
           role="status"
           aria-live="polite"
-          className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900"
+          className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900"
         >
           Tempo real indisponível. Atualização periódica continua ativa.
         </div>
@@ -39,9 +39,10 @@ export function OperationalOrderStatus({
         <div
           role="status"
           aria-live="polite"
-          className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-pedon-orange/50 bg-orange-50 px-4 py-3"
+          className="flex flex-wrap items-center gap-3 rounded-md border border-pedon-orange/50 bg-orange-50 px-4 py-3"
         >
-          <p className="font-semibold text-pedon-navy">{orderAlertMessage(alert)}</p>
+          <p className="min-w-0 font-semibold text-pedon-navy">{orderAlertMessage(alert)}</p>
+
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -50,6 +51,7 @@ export function OperationalOrderStatus({
             >
               Ver cozinha
             </button>
+
             <button
               type="button"
               onClick={onViewOrders}
@@ -57,6 +59,7 @@ export function OperationalOrderStatus({
             >
               Ver pedidos
             </button>
+
             <button
               type="button"
               onClick={dismissAlert}
@@ -69,22 +72,34 @@ export function OperationalOrderStatus({
         </div>
       )}
 
-      {soundUnavailable ? (
-        <p role="status" className="mt-3 text-sm text-pedon-text/60">
-          Som indisponível neste navegador.
-        </p>
-      ) : (
-        <div className="mt-3 flex justify-end">
+      <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-md border border-pedon-navy/10 bg-white px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-pedon-text/55">
+            Alertas operacionais
+          </p>
+
+          {soundUnavailable ? (
+            <p role="status" className="text-sm text-pedon-text/70">
+              Som indisponível neste navegador.
+            </p>
+          ) : (
+            <p className="text-sm text-pedon-text/70">
+              {soundEnabled ? 'Aviso sonoro ativado.' : 'Aviso sonoro desativado.'}
+            </p>
+          )}
+        </div>
+
+        {!soundUnavailable && (
           <button
             type="button"
             onClick={onToggleSound}
             aria-pressed={soundEnabled}
-            className="min-h-11 rounded-md border border-pedon-navy/25 px-4 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5"
+            className="min-h-11 shrink-0 rounded-md border border-pedon-navy/25 px-4 text-sm font-medium text-pedon-navy transition hover:bg-pedon-navy/5"
           >
             {soundEnabled ? 'Silenciar som' : 'Ativar som'}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

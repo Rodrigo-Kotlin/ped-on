@@ -276,6 +276,8 @@ function OrderCard({
     <article
       aria-busy={busy}
       className={`overflow-hidden rounded-xl border bg-white shadow-sm transition hover:border-pedon-orange ${
+        isSelected ? 'ring-2 ring-pedon-orange/70 ring-offset-2 ' : ''
+      }${
         overdue
           ? 'border-l-4 border-l-red-700 border-y-red-300 border-r-red-300'
           : order.status === 'new'
@@ -463,7 +465,7 @@ function OrderDetail({
   return (
     <section
       aria-labelledby="order-detail-title"
-      className="min-w-0 rounded-xl border border-pedon-navy/15 bg-white p-4 shadow-sm sm:p-5"
+      className="min-w-0 rounded-xl border border-pedon-navy/15 bg-white p-4 shadow-sm sm:p-5 lg:sticky lg:top-4 lg:max-h-[calc(100svh-2rem)] lg:self-start lg:overflow-y-auto"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -915,7 +917,7 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
           </div>
         </fieldset>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
           <label className="text-sm font-medium">
             Modalidade
             <select
@@ -986,7 +988,7 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
               placeholder="Ex.: 83"
             />
           </label>
-          <label className="text-sm font-medium sm:col-span-1 lg:col-span-2">
+          <label className="text-sm font-medium sm:col-span-1 lg:col-span-2 xl:col-span-1">
             Data inicial
             <input
               type="datetime-local"
@@ -997,7 +999,7 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
               className="mt-1 min-h-11 w-full rounded-md border border-pedon-navy/20 px-3"
             />
           </label>
-          <label className="text-sm font-medium sm:col-span-1 lg:col-span-2">
+          <label className="text-sm font-medium sm:col-span-1 lg:col-span-2 xl:col-span-1">
             Data final
             <input
               type="datetime-local"
@@ -1050,7 +1052,7 @@ function OrdersForUnit({ unitId, unitName }: { unitId: string; unitName: string 
           className={
             selectedOrderId === null
               ? 'mt-5'
-              : 'mt-5 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(20rem,3fr)]'
+              : 'mt-5 grid min-w-0 gap-5 lg:grid-cols-[minmax(22rem,0.9fr)_minmax(28rem,1.1fr)] xl:grid-cols-[minmax(26rem,0.85fr)_minmax(36rem,1.15fr)]'
           }
         >
           <section aria-label="Lista de pedidos" className="min-w-0">
