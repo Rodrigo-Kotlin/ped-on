@@ -13,11 +13,14 @@
 | --- | --- |
 | PILOT_GATE | `IN PROGRESS` |
 | PILOT_PREPARATION_CHECKPOINT | `ACHIEVED` |
-| PILOT_ONBOARDING | `READY / NOT STARTED` |
+| PILOT_ONBOARDING | `IN PROGRESS` |
+| PILOT_PARTICIPANT_01 | `ONBOARDING PLANNED` (Mr. Burger — Oriximiná/PA; seleção `APPROVED`) |
 | PILOT_OPERATION | `NOT STARTED` |
 | PROMPT 14 | `NOT STARTED` |
 
-Decisão registrada: `DEC-126 — Pilot Charter e preparação do piloto controlado` (3–5
+Plano de onboarding do PILOT-P01: `docs/PEDON_PILOT_ONBOARDING.md` (GATEs 1–7, Data Pack, Remote
+Write Plan e HUMAN GATES). `TARGET ENVIRONMENT` e dados mínimos pendentes; nenhuma escrita remota
+executada. Decisão registrada: `DEC-126 — Pilot Charter e preparação do piloto controlado` (3–5
 estabelecimentos).
 
 ## 2. Freeze do Release Candidate
@@ -292,5 +295,9 @@ automaticamente virar alteração durante o piloto.
 
 ## 18. Próximo passo
 
-Parte 2 — `SELEÇÃO CONTROLADA + ONBOARDING` (somente após aprovação humana explícita deste relatório).
-Parte 3 — `PILOT OPERATION` (Daily Pilot Check, Evidence Register, decisão de saída).
+Parte 2C — `ONBOARDING` do PILOT-P01 em andamento (planejado): definir `TARGET ENVIRONMENT`, coletar
+os dados mínimos, decidir o achado de adição de membros e obter
+`AUTHORIZE PILOT-P01 REMOTE WRITES` antes de qualquer escrita. Parte 2D — `CONTROLLED ORDER` (validar
+cardápio, checkout, Central, alertas, KDS, status, POS-58, reimpressão e tenant isolation) somente
+após o onboarding e com autorização própria. Parte 3 — `PILOT OPERATION` (Daily Pilot Check, Evidence
+Register, decisão de saída) exige aprovação humana separada.

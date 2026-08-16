@@ -31,12 +31,13 @@
 | PWA                      | Gate `audit-precache` endurecido: `runtimeCaching` deve permanecer `NONE` para `/auth/**`, `/rest/**`, `/storage/**`, `/realtime/**` e RPCs de mutação (helper + regressão vitest cobrem o invariante — DEC-124)                                       |
 | GITHUB ACTIONS           | CI técnico `31924328717` SUCCESS (Etapa 13.5B); CI do commit documental da Etapa 13.6 registrado no relatório final                                                                              |
 | PENDÊNCIAS               | Nenhum finding aberto na Etapa 13.6; 2 achados P3 registrados e descartados (P3-1 texto DEC-124 vs estado React; P3-2 evicção do OrderSeenTracker)                                                                                                           |
-| PILOT GATE               | `IN PROGRESS` (Parte 1 — preparação concluída; DEC-126)                                                                                                                                                                                                    |
+| PILOT GATE               | `IN PROGRESS` (Parte 2C — onboarding do PILOT-P01 planejado; DEC-126 normativa)                                                                                                                                                                            |
 | PILOT_PREPARATION_CHECKPOINT | `ACHIEVED`                                                                                                                                                                                                                                                |
-| PILOT_ONBOARDING         | `READY / NOT STARTED`                                                                                                                                                                                                                                      |
+| PILOT_ONBOARDING         | `IN PROGRESS`                                                                                                                                                                                                                                               |
+| PILOT_PARTICIPANT_01     | `ONBOARDING PLANNED` (Mr. Burger — Oriximiná/PA; seleção `APPROVED`)                                                                                                                                                                                      |
 | PILOT_OPERATION          | `NOT STARTED`                                                                                                                                                                                                                                               |
 | PROMPT 14                | `NOT STARTED`                                                                                                                                                                                                                                               |
-| NEXT_STEP                | PILOT GATE Parte 2 — `SELEÇÃO CONTROLADA + ONBOARDING` (somente após aprovação humana deste relatório)                                                                                      |
+| NEXT_STEP                | Definir `TARGET ENVIRONMENT` + dados mínimos de onboarding + `AUTHORIZE PILOT-P01 REMOTE WRITES`; depois executar GATEs 2–7 e Parte 2D (sem operação real)                                                                                                   |
 | PROMPT 13                | `COMPLETED`                                                                                                                                                                                                                                                 |
 | PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
 | LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
@@ -89,6 +90,21 @@
   pedido bloqueia a opção de catálogo disponível, serializando checkout contra toggle/delete.
 - O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
   carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
+
+## Checkpoint — PILOT GATE Parte 2C — `PILOT_PARTICIPANT_01 — ONBOARDING PLANNED`
+
+- Seleção do PILOT-P01 aprovada (`APPROVE PARTICIPANT 01`). Plano de onboarding documentado em
+  `docs/PEDON_PILOT_ONBOARDING.md` (Data Pack A–G, TENANT/CATALOG/OPERATION/SECURITY/TRAINING/SUPPORT
+  plans, Remote Write Plan, Evidence Register e HUMAN GATES).
+- `PILOT_ONBOARDING: IN PROGRESS`; `PILOT_PARTICIPANT_01 — ONBOARDING PLANNED`;
+  `PILOT_OPERATION — NOT STARTED`; `PROMPT 14 — NOT STARTED`.
+- NENHUMA escrita remota executada; `TARGET ENVIRONMENT: UNDEFINED` (aguardando decisão humana);
+  dados mínimos de onboarding ainda não coletados; `READ_ONLY` mantido.
+- Achado registrado (não implementado): não existe mecanismo oficial para adicionar membros
+  (`manager`/`operator`) a uma organização — `complete_onboarding` cria apenas o owner e `/app/equipe`
+  só vincula unidades. Decisão humana pendente (ver `docs/PEDON_PILOT_ONBOARDING.md` seção 13).
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
 ## Checkpoint — PILOT GATE Parte 1 — `PILOT_PREPARATION_CHECKPOINT` (DEC-126)
 
