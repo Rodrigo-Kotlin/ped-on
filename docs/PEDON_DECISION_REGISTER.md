@@ -1278,6 +1278,41 @@ possível no sistema inteiro seja matematicamente impossível.
   reais dos papéis de governança (placeholders).
 - **Migration:** nenhuma.
 
+### DEC-127 — Hotfix P1: adição segura de membros (manager/operator) via convite por e-mail verificado
+
+- **Status:** APROVADA
+- **Data:** 2026-08-16
+- **Contexto:** durante a Parte 2C do PILOT GATE (onboarding planejado do PILOT-P01), o achado da seção
+  13 de `docs/PEDON_PILOT_ONBOARDING.md` confirmou que `complete_onboarding` é o único mecanismo que
+  insere membro na organização (papel `owner`) e que não havia fluxo oficial para adicionar usuários
+  existentes como `manager`/`operator`. Classificado como **P1 — PILOT BLOCKER** (impede a operação de
+  ~6 usuários operacionais e cozinha do primeiro participante sem escrita SQL direta, proibida).
+- **Decisão:** autorizado o hotfix com escopo mínimo e seguro — fluxo de **convite por e-mail
+  verificado** (VERIFIED-EMAIL) sem token secreto, sem Edge Function e sem conta compartilhada:
+  1. Nova tabela `organization_member_invites` (RLS ON, policy SELECT owner-only, sem I/U/D diretos),
+     índice único parcial `(organization_id, email) where status='pending'` e check `role in
+     ('manager','operator')`.
+  2. Cinco RPCs `SECURITY DEFINER set search_path=''` com SQLSTATEs `PED80`–`PED90`, revoke de
+     `PUBLIC`/`anon` e grant somente a `authenticated`:
+     `create_org_member_invite(uuid,text,text)`, `list_org_member_invites(uuid)`,
+     `revoke_org_member_invite(uuid,uuid)`, `get_my_pending_member_invites()`,
+     `accept_org_member_invite(uuid)`.
+  3. Idempotência: convite duplicado pendente retorna o mesmo convite (nunca novo INSERT; evita
+     colisão 23505 no índice parcial). Inválido ⇒ novo convite pendente; aceito ⇒ `PED89`.
+  4. O aceite vincula o convite ao **e-mail autenticado** (`profiles.email` do usuário atual) —
+     `PED90 EMAIL_MISMATCH` se divergir; preserva ONE USER → AT MOST ONE ORGANIZATION (`PED85`) e
+     bloqueia duplo aceite (advisory lock `(user, invite)` + atualização de status atômica).
+  5. NENHUMA `membership_units` automática: o owner atribui unidade posteriormente via
+     `assign_unit_to_member` (semântica histórica preservada).
+  6. Migrations 24/24; CI isolado valida fresh rebuild e a suíte `member_onboarding_integrity`
+     (7 cenários). Sem reuso de `service_role`, sem SQL direto, sem desativar RLS.
+- **Lições aplicadas:** checagens de row-type em plpgsql seguem a convenção do repositório
+  (`if <var>.id is null/is not null` — o composto inteiro sempre é considerado não-nulo); RLS em
+  SELECT filtra silenciosamente (0 linhas), não lança `42501`.
+- **Migração:** `20260816120000_pilot_finding_member_onboarding.sql` (24 de 24).
+- **Evidência:** commit técnico `0753c18`; correções de CI `776bba7`/`a53120b`/`8714d1d`; CI final
+  `31962585865` SUCCESS (Backend release gates, Quality gates, E2E smoke tests).
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

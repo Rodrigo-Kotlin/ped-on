@@ -39,6 +39,7 @@
 | `organization_members`      | ON  | `organization_members_select_same_org`       | `is_org_member(organization_id)`                   |
 | `units`                     | ON  | `units_select_authorized`                    | owner da org ou `can_access_unit(id)`              |
 | `membership_units`          | ON  | `membership_units_select_own_access`         | vínculo próprio ou owner da org                    |
+| `organization_member_invites` | ON | `organization_member_invites_select_owner` | owner da org (SELECT); escrita só por RPC (migration 24) |
 | `unit_operational_settings` | ON  | nenhuma                                      | acesso exclusivamente via RPC operacional          |
 | `unit_business_hours`       | ON  | nenhuma                                      | acesso exclusivamente via RPC operacional          |
 | `unit_payment_methods`      | ON  | nenhuma                                      | acesso exclusivamente via RPC operacional          |
@@ -116,6 +117,11 @@ role sem escopo.
 | Listar equipe e vínculos                                      |   Sim |               Não |                Não |
 | Atribuir/remover acesso por unidade                           |   Sim |               Não |                Não |
 | Acessar `/app/equipe` e `/app/diagnostico`                    |   Sim |               Não |                Não |
+| Convidar membro (`create_org_member_invite`)                  |   Sim |               Não |                Não |
+| Listar convites (`list_org_member_invites`)                   |   Sim |               Não |                Não |
+| Revogar convite (`revoke_org_member_invite`)                  |   Sim |               Não |                Não |
+| Ver próprios convites pendentes (`get_my_pending_member_invites`) | Sim (próprios) | Sim (próprios) | Sim (próprios) |
+| Aceitar convite (`accept_org_member_invite`)                  |   Sim |               Sim |                Sim |
 
 `is_active` é estrutural; `is_available` é operacional. Desativar categoria não altera produtos e
 desativar produto não altera disponibilidade. Operator não acessa nenhuma RPC estrutural nem a
@@ -175,6 +181,13 @@ As RPCs `get_org_pilot_readiness`, `get_org_members_admin`, `assign_unit_to_memb
 `remove_unit_from_member` têm `EXECUTE` somente para `authenticated` entre os papéis de navegador;
 `PUBLIC`/`anon` estão revogados. Todas validam tenant/role no servidor, usam `SECURITY DEFINER` e
 `search_path=''`. Atribuição rejeita membro externo, unidade de outro tenant, inexistente ou inativa.
+
+As cinco RPCs de convite/aceite de membro (migration 24 — `create_org_member_invite`,
+`list_org_member_invites`, `revoke_org_member_invite`, `get_my_pending_member_invites` e
+`accept_org_member_invite`) seguem o mesmo padrão: `SECURITY DEFINER`, `search_path=''`, `EXECUTE`
+somente para `authenticated` (revogado de `PUBLIC`/`anon`) e autorização validada no servidor
+(`is_org_owner` para convite/lista/revogação; `auth.uid()` + `profiles.email` verificado para aceite).
+Nenhuma expõe token — o modelo é VERIFIED-EMAIL sem segredo.
 
 `PUBLIC` e `anon` foram explicitamente revogados das funções administrativas. O helper
 `_validate_catalog_price(text)` não possui `EXECUTE` para `PUBLIC`, `anon` ou `authenticated`.
@@ -289,6 +302,22 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 - Owner/manager/operator consultam e consomem vouchers somente em unidade ativa autorizada. Código
   cross-tenant/desconhecido não é enumerado pelo lookup; consumo é terminal e auditável.
 
+### 6.8 Convite e aceite de membro (migration 24 — DEC-127)
+
+- `create_org_member_invite` exige `is_org_owner`; valida e-mail e role (`manager`/`operator`),
+  normaliza o e-mail por `lower(btrim(...))` e é **idempotente**: convite pendente existente é
+  retornado (nunca colide no índice único parcial). Rejeita `PED84 ALREADY_MEMBER` e
+  `PED85 ALREADY_IN_ORGANIZATION` para usuários já vinculados a organizações.
+- `list_org_member_invites`/`revoke_org_member_invite` exigem `is_org_owner`; revogação só age em
+  `pending` (`PED86`/`PED87`/`PED88`).
+- `accept_org_member_invite` liga o convite ao **e-mail autenticado** (`profiles.email` do
+  `auth.uid()` corrente) — `PED90 EMAIL_MISMATCH` se divergir. Preserva ONE USER → AT MOST ONE
+  ORGANIZATION (`PED85`), impede membro duplicado (`PED84`) e duplo aceite (`PED89`) via atualização
+  atômica de status sob advisory locks. A criação do `organization_members` usa o papel do convite.
+- **Nenhuma `membership_units` é criada no aceite**: o owner atribui unidade depois com
+  `assign_unit_to_member`. O aceite também finaliza o onboarding do perfil quando pendente.
+- Nenhum token/segredo existe no modelo; não há Edge Function nem e-mail transacional nessa etapa.
+
 ## 7. Isolamento e integridade anti-IDOR
 
 | Vetor                                                 | Defesa                                                                 |
@@ -327,6 +356,12 @@ unidade, valida o payload completo e aplica regras server-authoritative para
 | Token é reutilizado após checkout                     | DELETE atômico no checkout; consulta posterior `found=false`           |
 | Programa é desligado após emissão                     | token existente só lê; nova identificação/checkout/earn bloqueados     |
 | Recovery tenta outro hash/chave/slug                  | `get_public_order_by_attempt` retorna `found=false`                    |
+| Manager lê convites da organização via SELECT direto  | policy `is_org_owner` filtra: zero linhas (sem vazamento; sem 42501)   |
+| Atacante tenta aceitar convite de outro e-mail        | convite comparado ao `profiles.email` do usuário: `PED90`              |
+| Usuário já em outra organização aceita convite        | guarda ONE USER → AT MOST ONE ORGANIZATION: `PED85`                    |
+| Duplo aceite/replay do mesmo convite                  | advisory lock + status `pending→accepted` atômico: `PED89`             |
+| Convidado para e-mail já membro da org                | `PED84`; convite nunca criado                                          |
+| Replay de `create_org_member_invite`                  | idempotente: retorna o convite pendente existente                      |
 | Tracking tenta obter nota livre                       | serializador público omite `order_items.note`                          |
 | Público tenta inferir estoque exato                   | catálogo expõe somente `available`                                    |
 | Browser envia custo de resgate                        | RPC não aceita custo; lê reward sob lock                              |
@@ -385,9 +420,20 @@ payload/nome/estoque inválidos. O contrato completo está no schema, Seção 10
 inválido, limit, timestamp, cursor, view/status incompatível e filtro estruturalmente inválido de
 `get_unit_orders_admin_v2`.
 
+Convite e aceite de membro usam `PED80`–`PED90`:
+
+| Código  | Significado                 | Código  | Significado                  |
+| ------- | --------------------------- | ------- | ---------------------------- |
+| `PED80` | `NOT_AUTHENTICATED`         | `PED86` | `INVITE_NOT_FOUND`           |
+| `PED81` | `FORBIDDEN`                 | `PED87` | `INVITE_EXPIRED`             |
+| `PED82` | `EMAIL_REQUIRED`            | `PED88` | `INVITE_REVOKED`             |
+| `PED83` | `INVALID_ROLE`              | `PED89` | `INVITE_ALREADY_ACCEPTED`    |
+| `PED84` | `ALREADY_MEMBER`            | `PED90` | `EMAIL_MISMATCH`             |
+| `PED85` | `ALREADY_IN_ORGANIZATION`   |         |                              |
+
 ## 9. Testes executados
 
-As doze suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
+As treze suítes DB rodam sequencialmente no PostgreSQL descartável do GitHub Actions. O projeto
 oficial não substitui esse ambiente destrutivo:
 
 | Script                                       | Resultado oficial | Cobertura principal                                                                       |
@@ -404,6 +450,7 @@ oficial não substitui esse ambiente destrutivo:
 | `loyalty_rewards_integrity.test.mjs`         |           254/254 | rewards, replay secret, FKs, estoque, vouchers e concorrência real                         |
 | `pilot_readiness_team_integrity.test.mjs`    |             84/84 | readiness, grants, owner-only, IDOR, vínculos e configuração segura das RPCs               |
 | `prompt13_order_operations.test.mjs`         |             89/89 | orders v2, PED79, keyset, KDS privacy/RBAC e concorrência NEW-MEDIUM-1                      |
+| `member_onboarding_integrity.test.mjs`       |            7/7  | convite/aceite: RBAC, idempotência, expiração, revogação, single-org e RLS do manager       |
 
 O cardápio valida expressamente: menu vazio (`PED31`), grants e RLS das seis tabelas de cardápio, escrita
 direta bloqueada no snapshot, snapshot congelado após mutações do catálogo, numeração crescente,
@@ -418,6 +465,9 @@ concorrência de saldo/estoque, recovery, ACL/RLS, RBAC staff, trilhas append-on
 
 O CI `31859960640` aprovou fresh rebuild das 23 migrations, alinhamento, DB lint, as doze suítes
 sequenciais com 1494/1494 checks e Edge unit 15/15. Quality gates e E2E smoke tests também passaram.
+O CI `31962585865` (hotfix P1 — DEC-127) aprovou fresh rebuild das **24** migrations, alinhamento, DB
+lint, as **treze** suítes DB (1494 + `member_onboarding_integrity` 7/7) e Edge 15/15, além de Quality
+gates e E2E smoke tests.
 O remote smoke 36/36 permanece evidência histórica do Prompt 10. Os smokes remotos do checkpoint
 Prompt 13 foram limitados, mas passaram nos casos executados; paginação com massa real não foi
 executada no remoto. Paginação e concorrência têm cobertura autoritativa no CI isolado.
@@ -457,6 +507,6 @@ Os scripts devem rodar sequencialmente. O teste RBAC herdado verifica uma contag
   referência entre entidades escopadas.
 - Não transformar `SELECT` concedido ao `anon` nas tabelas mutáveis em policy pública. Publicação de
   cardápio e leitura pública devem usar o modelo imutável do Prompt 07.
-- Alterações de autorização exigem execução sequencial das doze suítes DB e DB lint no CI isolado.
+- Alterações de autorização exigem execução sequencial das treze suítes DB e DB lint no CI isolado.
 - Nunca usar pooler de sessão nos testes que fazem `SET ROLE`/claims; usar conexão direta conforme
   DEC-044.

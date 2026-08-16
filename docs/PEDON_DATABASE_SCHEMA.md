@@ -1,9 +1,9 @@
 # PED-ON — Database Schema
 
 > Referência cumulativa da Fase 4A — Prompt 13 `COMPLETED`, checkpoint
-> `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`.
-> Fonte autoritativa: 23 migrations versionadas; Git/filesystem/remoto em 23/23/23, post-push dry-run
-> up to date, linked lint com zero erros e drift remoto `NONE`.
+> `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`, hotfix P1 (DEC-127) `COMPLETED`.
+> Fonte autoritativa: 24 migrations versionadas; hotfix validado no CI `31962585865` (fresh rebuild,
+> alinhamento, DB lint, 13 suítes DB, Edge 15/15); base anterior 23/23/23 com drift remoto `NONE`.
 
 ## 1. Estado das migrations
 
@@ -32,6 +32,7 @@
 | 21    | `20260814010000_prompt12_final_hardening.sql`                       | regra `single`, locks de publicação/mutação e disponibilidade atômica no checkout           |
 | 22    | `20260814020000_prompt12_remediation_a_hardening.sql`               | lock estrutural unit-scoped, publicação PED73 sem versão parcial e vínculo relacional de `order_item_options` |
 | 23    | `20260814100000_prompt13_backend_operational_core.sql`               | NEW-MEDIUM-1, orders admin v2 keyset, KDS minimizado, PED79, índice active urgency e grants/revokes |
+| 24    | `20260816120000_pilot_finding_member_onboarding.sql`                 | hotfix P1: `organization_member_invites`, 5 RPCs de convite/aceite (VERIFIED-EMAIL) e PED80–PED90 |
 
 Estado reconciliado de 2026-08-15: DB push PASS; Git/filesystem/remoto em 23/23/23; post-push dry-run
 PASS/up to date; linked DB lint PASS com zero erros; drift remoto `NONE`. Remote smokes limitados
@@ -40,12 +41,17 @@ passaram para os casos executados, sem alegação de paginação com massa real 
 Edge 15/15. `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`; `LOCAL DB TESTS: NOT RUN — BY
 DESIGN / NO LOCAL DOCKER`.
 
+Hotfix P1 (DEC-127, migration 24): a partir de `0753c18`, o CI isolado `31962585865` aprovou fresh
+rebuild das **24** migrations, alinhamento, DB lint, as 13 suítes DB (incluindo
+`member_onboarding_integrity` 7 cenários) e Edge 15/15. `LOCAL DB REBUILD/TESTS` permanecem
+`NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+
 ## 2. Convenções
 
 - PostgreSQL 17 no Supabase; objetos de negócio no schema `public`.
 - Identificadores em `snake_case`; UUIDs gerados por `gen_random_uuid()`.
 - `organization_id` é o tenant e `unit_id` é o escopo operacional.
-- Todas as 35 tabelas `public` possuem RLS habilitado.
+- Todas as 36 tabelas `public` possuem RLS habilitado (migration 24 adiciona `organization_member_invites`).
 - Dinheiro usa `numeric(12,2)`, nunca `float`/`double`; RPCs devolvem valores monetários como
   string decimal.
 - Mutações administrativas e de domínio são server-authoritative via RPC; grants diretos são
@@ -62,6 +68,7 @@ DESIGN / NO LOCAL DOCKER`.
 | `organization_members`      | usuário na organização com role `owner`/`manager`/`operator`                  |
 | `units`                     | unidade operacional do tenant                                                 |
 | `membership_units`          | autorização explícita de manager/operator por unidade                         |
+| `organization_member_invites` | convite pendente/aceito/revogado por e-mail verificado (migration 24)        |
 | `unit_operational_settings` | configuração operacional 1:1 da unidade                                       |
 | `unit_business_hours`       | sete horários semanais por unidade                                            |
 | `unit_payment_methods`      | meios de pagamento externos aceitos pela unidade                              |
@@ -155,6 +162,46 @@ alvo das FKs compostas de tabelas escopadas por unidade.
 
 Índices: `membership_units_user_id_idx`, `membership_units_unit_id_idx`. A FK composta para
 `units` impede vínculos cross-tenant/cross-org.
+
+### 4.6 `public.organization_member_invites` (migration 24 — DEC-127)
+
+| Coluna            | Tipo                                   | Regras                                                                  |
+| ----------------- | -------------------------------------- | ----------------------------------------------------------------------- |
+| `id`              | `uuid` PK default `gen_random_uuid()`  |                                                                         |
+| `organization_id` | `uuid` NOT NULL                        | FK `organizations(id) ON DELETE CASCADE`                                |
+| `email`           | `text` NOT NULL                        | e-mail de destino, normalizado por `lower(btrim(...))`                  |
+| `role`            | `text` NOT NULL                        | check em `manager`, `operator` (owner nunca é convidado)                |
+| `status`          | `text` NOT NULL default `'pending'`    | check em `pending`, `accepted`, `revoked`                               |
+| `created_by`      | `uuid` NOT NULL                        | FK `auth.users(id) ON DELETE CASCADE` (owner autenticado)               |
+| `created_at`      | `timestamptz` NOT NULL default `now()` |                                                                         |
+| `expires_at`      | `timestamptz` NOT NULL default `now()+interval '7 days'` | `expires_at > created_at`                                     |
+| `accepted_at`     | `timestamptz`                          | preenchido no aceite                                                    |
+| `accepted_user_id`| `uuid`                                 | FK `auth.users(id) ON DELETE CASCADE`; o usuário que aceitou            |
+
+- Índice único parcial `organization_member_invites_org_email_pending_key
+  (organization_id, email) where status = 'pending'` — no máximo um convite pendente por
+  (organização, e-mail); `create_org_member_invite` é idempotente e nunca colide nele.
+- RLS habilitada com policy `organization_member_invites_select_owner` (`TO authenticated`
+  `using is_org_owner(organization_id)`). Sem policies/grant de INSERT/UPDATE/DELETE diretos;
+  escrita exclusivamente pelas RPCs da subseção 4.7.
+- Modelo VERIFIED-EMAIL: **nenhum token/segredo**; o aceite autentica o destinatário pelo e-mail do
+  `profiles` vinculado a `auth.uid()`.
+
+### 4.7 RPCs de convite e aceite (migration 24)
+
+| RPC                                          | Semântica                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------- |
+| `create_org_member_invite(uuid,text,text)`   | owner convida `email` para `manager`/`operator`; idempotente (retorna o pendente existente); `PED80`–`PED85` |
+| `list_org_member_invites(uuid)`              | owner lista convites da organização (sem token); `PED80`/`PED81`          |
+| `revoke_org_member_invite(uuid,uuid)`        | owner revoga convite pendente; `PED80`/`PED81`/`PED86`/`PED87`/`PED88`    |
+| `get_my_pending_member_invites()`            | usuário autenticado consulta os próprios convites pendentes por e-mail verificado |
+| `accept_org_member_invite(uuid)`             | aceita pelo e-mail autenticado; cria `organization_members` + atualiza convite e perfil atomicamente; `PED80`–`PED90` |
+
+Semânticas de aceite: e-mail divergente `PED90`; usuário já membro da org `PED84`; usuário já em
+outra organização `PED85` (ONE USER → AT MOST ONE ORGANIZATION); expirado `PED87`; revogado `PED88`;
+já aceito `PED89`. **Nenhuma `membership_units` é criada automaticamente** — o owner atribui unidade
+depois via `assign_unit_to_member`. Locking: advisory lock `(org, email)` na criação e
+`hashtext(v_user_id::text)` + `hashtext('pedon:invite:' || id)` no aceite (impede duplo aceite/reuso).
 
 ## 5. Configuração operacional da unidade (Prompt 05)
 
@@ -1064,7 +1111,8 @@ usa `PED60`. Voucher consumido não pode ser consumido novamente (`PED61`).
 | RPCs da Seção 10.3                                                                | Reward management owner-only e operação staff de vouchers                            |
 | `get_org_pilot_readiness(uuid)`                                                    | readiness derivada; owner/manager; nove checks bloqueantes e loyalty opcional         |
 | `get_org_members_admin(uuid)`                                                      | membros e vínculos minimizados; owner-only                                            |
-| `assign_unit_to_member(uuid,uuid,uuid)` / `remove_unit_from_member(uuid,uuid,uuid)` | gestão transacional owner-only, sem escrita direta do browser                         |
+| `assign_unit_to_member(uuid,uuid,uuid)` / `remove_unit_from_member(uuid,uuid,uuid)` | gestão transacional owner-only, sem escrita direta do browser             |
+| cinco RPCs da Seção 4.7                                                            | convite/aceite de membro `manager`/`operator` por e-mail verificado (PED80–PED90) |
 | sete RPCs da Seção 6.7                                                             | grupos e opções de produto server-authoritative                                      |
 | `_validate_option_delta_by_kind()` / `_guard_option_group_kind_change()`           | triggers de integridade entre `kind` do grupo e `price_delta` das opções             |
 | `_validate_option_delta(text,text)` / `_options_fingerprint(uuid[])`               | validadores internos de `price_delta` e ordenação                                    |
@@ -1093,6 +1141,22 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `PED04`  | `LAST_ACTIVE_UNIT`   |
 | `PED05`  | `UNIT_NAME_TOO_LONG` |
 
+As RPCs de convite/aceite de membro (migration 24) usam o contrato `PED80`–`PED90`:
+
+| SQLSTATE | Mensagem                 |
+| -------- | ------------------------ |
+| `PED80`  | `NOT_AUTHENTICATED`      |
+| `PED81`  | `FORBIDDEN`              |
+| `PED82`  | `EMAIL_REQUIRED`         |
+| `PED83`  | `INVALID_ROLE`           |
+| `PED84`  | `ALREADY_MEMBER`         |
+| `PED85`  | `ALREADY_IN_ORGANIZATION`|
+| `PED86`  | `INVITE_NOT_FOUND`       |
+| `PED87`  | `INVITE_EXPIRED`         |
+| `PED88`  | `INVITE_REVOKED`         |
+| `PED89`  | `INVITE_ALREADY_ACCEPTED`|
+| `PED90`  | `EMAIL_MISMATCH`         |
+
 ## 12. RLS e ACLs
 
 | Tabela                            | SELECT autenticado                                                       | Escrita direta                                             |
@@ -1117,6 +1181,7 @@ unidade ativa. RPCs de unidade usam o contrato histórico `PED00..PED05`:
 | `order_items`                     | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
 | `order_item_options`              | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; escrita por RPC                           |
 | `order_events`                    | policy `can_access_unit(unit_id)`                                        | I/U/D revogados; append-only por RPC                       |
+| `organization_member_invites`     | policy `is_org_owner(organization_id)` (SELECT)                          | I/U/D sem grant/policy; escrita por RPC (migration 24)     |
 | 13 tabelas do Clube (Seções 9 e 10) | sem policy seletora; acesso via RPC `security definer` ou `service_role` | grants de `public`/`anon`/`authenticated` revogados (zero) |
 
 Nas tabelas do catálogo e do cardápio publicado, `SELECT` foi concedido a `authenticated` (e a

@@ -15,8 +15,8 @@
 | STATUS                   | `COMPLETED`                                                                                                                                                                                                                                                  |
 | CHECKPOINT               | `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                                    |
 | MILESTONE                | `OPERATION_READY — ACHIEVED`                                                                                                                                                                                                                                 |
-| HEAD INICIAL DA ETAPA    | `1cf27ee07733e09b796b08c13b5e644e789f6948`                                                                                                                                                                                                                 |
-| HEAD TÉCNICO VALIDADO    | `ddd11b44` — CI `31924328717` SUCCESS (Etapa 13.5B) + gates locais 13.6 PASS (format, lint, typecheck, vitest 46/46 503 testes, build, audit-precache `runtimeCaching: NONE`, E2E 505/3/0)                                                             |
+| HOTFIX P1 (DEC-127)      | `COMPLETED` — adição segura de membros (`manager`/`operator`) por convite VERIFIED-EMAIL; migration 24; CI `31962585865` SUCCESS                                                                                                                            |
+| HEAD TÉCNICO VALIDADO    | `8714d1d` (hotfix P1) — CI `31962585865` SUCCESS (Backend release gates com 24 migrations e 13 suítes DB, Quality gates, E2E smoke tests); baseline técnico anterior `ddd11b44` (Prompt 13)                                                                 |
 | HEAD FINAL DE FECHAMENTO | `ddd11b44` (Etapa 13.6 sem alteração de código; commit documental do PILOT GATE Parte 1 registrado no relatório final)                                                                       |
 | ETAPA 13.1               | `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`                                                                                                                                                                                                      |
 | ETAPA 13.2               | `COMPLETED` — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                   |
@@ -37,12 +37,12 @@
 | PILOT_PARTICIPANT_01     | `ONBOARDING PLANNED` (Mr. Burger — Oriximiná/PA; seleção `APPROVED`)                                                                                                                                                                                      |
 | PILOT_OPERATION          | `NOT STARTED`                                                                                                                                                                                                                                               |
 | PROMPT 14                | `NOT STARTED`                                                                                                                                                                                                                                               |
-| NEXT_STEP                | Definir `TARGET ENVIRONMENT` + dados mínimos de onboarding + `AUTHORIZE PILOT-P01 REMOTE WRITES`; depois executar GATEs 2–7 e Parte 2D (sem operação real)                                                                                                   |
+| NEXT_STEP                | Hotfix P1 de adição de membros `COMPLETED` (migration 24, CI verde). Próximo: definir `TARGET ENVIRONMENT` + dados mínimos de onboarding + `AUTHORIZE PILOT-P01 REMOTE WRITES`; depois executar GATEs 2–7 e Parte 2D (sem operação real)                    |
 | PROMPT 13                | `COMPLETED`                                                                                                                                                                                                                                                 |
 | PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
 | LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
 | LOCAL DB TESTS           | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
-| CI ISOLATED DB REBUILD   | `PASS` — fresh rebuild das 23 migrations no CI `31859960640`                                                                                                                                                                                                |
+| CI ISOLATED DB REBUILD   | `PASS` — fresh rebuild das 24 migrations e 13 suítes DB no CI `31962585865` (hotfix P1); rebuild anterior das 23 no CI `31859960640`                                                                |
 
 ---
 
@@ -91,6 +91,38 @@
 - O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
   carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
 
+## Checkpoint — HOTFIX P1 — `MEMBER ONBOARDING FINDING — RESOLVED` (DEC-127)
+
+- O achado de adição de membros do onboarding do PILOT-P01 (seção 13 de
+  `docs/PEDON_PILOT_ONBOARDING.md`) foi **RESOLVIDO** com escopo mínimo: fluxo oficial de convite e
+  aceite de membros (`manager`/`operator`) por **e-mail verificado**, sem token, sem Edge Function e
+  sem conta compartilhada.
+- Migration 24 `20260816120000_pilot_finding_member_onboarding.sql`: tabela
+  `organization_member_invites` (RLS ON, policy SELECT owner-only, sem I/U/D diretos), índice único
+  parcial `(organization_id, email) where status='pending'`, check `role in ('manager','operator')`
+  e 5 RPCs `SECURITY DEFINER set search_path=''` com `PED80`–`PED90` (`create_org_member_invite`,
+  `list_org_member_invites`, `revoke_org_member_invite`, `get_my_pending_member_invites`,
+  `accept_org_member_invite`). Convite é idempotente; aceite preserva ONE USER → AT MOST ONE
+  ORGANIZATION (`PED85`) e NÃO cria `membership_units` automáticas (owner atribui depois via
+  `assign_unit_to_member`).
+- Frontend: convite/revogação em `/app/equipe`, aceite em `/onboarding` (redirect pós-aceite),
+  mapa PT-BR de `PED80`–`PED90`; testes frontend (5 convite + 3 onboarding) e E2E spec
+  `pilot-finding-member-onboarding` (12/12 em 4 viewports, somente mocks REST, sem escrita real).
+- Correções aplicadas durante o CI: idempotência de convite passou a usar o padrão de check por
+  `.id` da row-type (a checagem do composto inteiro em plpgsql sempre é considerada não-nula) e a
+  asserção de RLS do manager passou a verificar **filtragem silenciosa** (0 linhas) em vez de
+  `42501` (SELECT com policy sem match filtra; não lança erro).
+- Evidência: commits `0753c18` (feat), `e073bf0`/`d8e96bb` (debug no CI), `776bba7` (fix `.id`),
+  `a53120b` (remove probes), `8714d1d` (assert RLS); CI final `31962585865` SUCCESS nos três jobs
+  (Backend release gates: fresh rebuild das 24 migrations, alinhamento, DB lint, 13 suítes DB
+  1501 checks, Edge 15/15; Quality gates; E2E smoke tests).
+- Gates locais PASS: format, lint, typecheck, vitest 511/511 (46 arquivos), build, audit-precache
+  `runtimeCaching: NONE`, E2E, `git diff --check`.
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- O onboarding real do PILOT-P01 permanece **BLOQUEADO** até `TARGET ENVIRONMENT` + dados mínimos +
+  `AUTHORIZE PILOT-P01 REMOTE WRITES` (decisão humana). Nenhuma escrita remota executada.
+
 ## Checkpoint — PILOT GATE Parte 2C — `PILOT_PARTICIPANT_01 — ONBOARDING PLANNED`
 
 - Seleção do PILOT-P01 aprovada (`APPROVE PARTICIPANT 01`). Plano de onboarding documentado em
@@ -100,9 +132,8 @@
   `PILOT_OPERATION — NOT STARTED`; `PROMPT 14 — NOT STARTED`.
 - NENHUMA escrita remota executada; `TARGET ENVIRONMENT: UNDEFINED` (aguardando decisão humana);
   dados mínimos de onboarding ainda não coletados; `READ_ONLY` mantido.
-- Achado registrado (não implementado): não existe mecanismo oficial para adicionar membros
-  (`manager`/`operator`) a uma organização — `complete_onboarding` cria apenas o owner e `/app/equipe`
-  só vincula unidades. Decisão humana pendente (ver `docs/PEDON_PILOT_ONBOARDING.md` seção 13).
+- Achado de adição de membros: **RESOLVIDO** pelo HOTFIX P1 (DEC-127) — ver checkpoint anterior;
+  o fluxo oficial de convite/aceite (`manager`/`operator`) está disponível para o onboarding.
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 - `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 

@@ -41,6 +41,13 @@ Regras:
    SHA → CI verde → decisão de continuidade (seção 12).
 5. Nenhuma mudança silenciosa de baseline é permitida.
 
+**Homologação de sucessor do baseline (hotfix P1 — DEC-127):** o finding de adição de membros do
+onboarding (PILOT_PARTICIPANT_01) foi classificado **P1 — PILOT BLOCKER** e corrigido conforme o
+hotfix flow. O baseline técnico homologado do piloto passa a ser o HEAD do hotfix (`8714d1d`, CI
+`31962585865` SUCCESS — 24 migrations, 13 suítes DB, Quality gates e E2E smoke tests), sucessor
+explícito de `ddd11b44`. Nenhuma feature nova foi incorporada; a mudança é a adição oficial de
+membro (`manager`/`operator`) por e-mail verificado (migration 24).
+
 ## 3. Pilot Charter
 
 1. **Objetivo do piloto:** validar a operação de pedidos 2.0 em ambiente controlado real — Central de
@@ -296,8 +303,10 @@ automaticamente virar alteração durante o piloto.
 ## 18. Próximo passo
 
 Parte 2C — `ONBOARDING` do PILOT-P01 em andamento (planejado): definir `TARGET ENVIRONMENT`, coletar
-os dados mínimos, decidir o achado de adição de membros e obter
-`AUTHORIZE PILOT-P01 REMOTE WRITES` antes de qualquer escrita. Parte 2D — `CONTROLLED ORDER` (validar
-cardápio, checkout, Central, alertas, KDS, status, POS-58, reimpressão e tenant isolation) somente
-após o onboarding e com autorização própria. Parte 3 — `PILOT OPERATION` (Daily Pilot Check, Evidence
-Register, decisão de saída) exige aprovação humana separada.
+os dados mínimos e obter `AUTHORIZE PILOT-P01 REMOTE WRITES` antes de qualquer escrita. O achado de
+adição de membros foi **RESOLVIDO** pelo hotfix P1 (DEC-127) — o fluxo oficial de convite/aceite
+(`manager`/`operator`) está disponível (baseline do piloto atualizado: `8714d1d`, CI `31962585865`).
+Parte 2D — `CONTROLLED ORDER` (validar cardápio, checkout, Central, alertas, KDS, status, POS-58,
+reimpressão e tenant isolation) somente após o onboarding e com autorização própria. Parte 3 —
+`PILOT OPERATION` (Daily Pilot Check, Evidence Register, decisão de saída) exige aprovação humana
+separada.

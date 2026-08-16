@@ -15,8 +15,10 @@
 | PILOT_PARTICIPANT_01 | `ONBOARDING PLANNED` |
 | PILOT_OPERATION | `NOT STARTED` |
 | PROMPT 14 | `NOT STARTED` |
+| MEMBER ONBOARDING FINDING | `RESOLVED` (HOTFIX P1 — DEC-127; ver seção 13) |
 
 Aguardando: `TARGET ENVIRONMENT` e/ou `ONBOARDING DATA` e/ou `AUTHORIZE PILOT-P01 REMOTE WRITES`.
+O hotfix de adição de membros já está disponível; nenhum dado de onboarding real foi gravado.
 
 ## 2. Participante e baseline
 
@@ -65,7 +67,7 @@ MESAS: `OUT OF SCOPE FOR FIRST PILOT CYCLE`.
 | --- | --- | --- |
 | Usuário owner | MISSING | responsável operacional; e-mail fora do Git |
 | Manager/operator | MISSING | quem, papel e e-mail (mínimo necessário; ~6 é estimativa) |
-| Mecanismo oficial de adição de membro | GAP | ver seção 14 — achado |
+| Mecanismo oficial de adição de membro | RESOLVED | HOTFIX P1 (DEC-127): convite/aceite por e-mail verificado em `/app/equipe` + `/onboarding`; migration 24 |
 
 Roles reais do produto: `owner`, `manager`, `operator` (nenhuma role nova). Menor privilégio.
 Contas individuais; conta compartilhada não é aceita silenciosamente.
@@ -216,20 +218,29 @@ Sem senha, token, payload sensível ou PII.
 
 ## 13. Achado principal — adição de membros à organização
 
-- **Observado:** `complete_onboarding` é o único mecanismo oficial que insere membro na organização
-  (papel `owner`). `/app/equipe` apenas lista membros e atribui/remove vínculo de unidade
-  (`get_org_members_admin`, `assign_unit_to_member`, `remove_unit_from_member`). Não existe RPC nem UI
-  para adicionar um usuário existente à organização como `manager`/`operator` ou alterar papel.
-- **Impacto no onboarding:** para habilitar os ~6 usuários operacionais (e cozinha via `operator`),
-  o produto hoje não oferece fluxo oficial — escrita SQL direta/`service_role` é proibida pela
-  governança (seção 30 do prompt e seção 6.1 da RLS), e criar a feature viola o change freeze.
-- **Classificação:** `PILOT_FINDING` (lacuna de processo/produto), pendente de decisão humana.
-  NÃO implementada nesta execução.
-- **Opções para decisão humana (não executadas):**
-  1. primeiro ciclo com o menor número de usuários (owner) e revisar a necessidade de equipe;
-  2. autorizar explicitamente o desenvolvimento do fluxo oficial de adição de membro
-     (hotfix/feature com autorização fora do change freeze padrão);
-  3. outro processo administrativo documentado e autorizado.
+- **Observado (original):** `complete_onboarding` é o único mecanismo oficial que insere membro na
+  organização (papel `owner`). `/app/equipe` apenas lista membros e atribui/remove vínculo de unidade
+  (`get_org_members_admin`, `assign_unit_to_member`, `remove_unit_from_member`). Não existia RPC nem
+  UI para adicionar um usuário existente à organização como `manager`/`operator` ou alterar papel.
+- **Classificação original:** `PILOT_FINDING` (P1 — PILOT BLOCKER), pendente de decisão humana.
+- **Status: `RESOLVED` — HOTFIX P1 (DEC-127).** O fluxo oficial de convite/aceite por e-mail
+  verificado foi implementado e liberado com CI verde:
+  - migration 24 `20260816120000_pilot_finding_member_onboarding.sql`:
+    `organization_member_invites` + 5 RPCs (`create_org_member_invite`, `list_org_member_invites`,
+    `revoke_org_member_invite`, `get_my_pending_member_invites`, `accept_org_member_invite`) com
+    `PED80`–`PED90`;
+  - owner convida em `/app/equipe` (papel `manager`/`operator`, idempotente) e revoga; o convidado
+    aceita em `/onboarding` usando o **e-mail verificado** da conta (`PED90 EMAIL_MISMATCH` protege o
+    vínculo; `PED85` preserva ONE USER → AT MOST ONE ORGANIZATION);
+  - o aceite NÃO cria `membership_units` automáticas: o owner atribui unidade em `/app/equipe` via
+    `assign_unit_to_member`, preservando a semântica de autorização por unidade;
+  - evidência: commits `0753c18` → `8714d1d`, CI `31962585865` SUCCESS (24 migrations, 13 suítes DB,
+    Quality gates, E2E smoke tests).
+- **Uso no onboarding do PILOT-P01:** após a autorização humana, o owner do Mr. Burger poderá
+  convidar os usuários operacionais pelo mecanismo oficial; nenhuma escrita SQL direta será necessária
+  e a governança (seção 30 do prompt / seção 6.1 da RLS) permanece respeitada.
+- **Próximos passos humanos (inalterados):** opções 1–3 da decisão original não são mais necessárias
+  para o fluxo de adição; resta apenas coletar os dados mínimos e obter a autorização de escrita.
 
 ## 14. HUMAN GATES desta etapa
 

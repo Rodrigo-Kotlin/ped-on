@@ -58,14 +58,14 @@ gitleaks git --redact --log-level warn .
 
 Não executar Docker, `supabase start`, `supabase db reset` nem stack Supabase local na máquina de
 desenvolvimento. O GitHub Actions é o ambiente oficial e descartável para fresh rebuild, aplicação
-das 23 migrations, doze suítes DB, DB lint e Edge unit.
+das 24 migrations, treze suítes DB, DB lint e Edge unit.
 
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
 - `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`;
-- `CI ISOLATED DB REBUILD: PASS` no run `31859960640`, com fresh rebuild das 23 migrations e
-  DB 1494/1494 em 12 suítes;
-- migration 23 aplicada remotamente; Git/filesystem/remoto em 23/23/23; post-push dry-run up to date,
-  linked lint com zero erros e drift remoto `NONE`.
+- `CI ISOLATED DB REBUILD: PASS` no run `31962585865`, com fresh rebuild das 24 migrations e
+  13 suítes DB (1494 + `member_onboarding_integrity` 7/7);
+- migration 24 aplicada via hotfix P1 (DEC-127); CI técnico anterior `31859960640` validava 23
+  migrations com 1494/1494 em 12 suítes.
 
 ## 4. Variáveis e secrets
 
@@ -149,14 +149,14 @@ Regras:
 - nunca editar/apagar migration já aplicada;
 - nunca aplicar SQL silencioso pelo Dashboard;
 - executar o dry-run antes do push real; somente o comando com `--dry-run` é não destrutivo;
-- confirmar Git/filesystem/remoto em 23/23/23; o dry-run linked deve informar que o remoto está up to
+- confirmar Git/filesystem/remoto em 24/24/24; o dry-run linked deve informar que o remoto está up to
   date;
 - não usar `supabase db reset` no projeto oficial.
 
 ## 6. Testes DB e Edge
 
 Os testes DB usam conexão PostgreSQL administrativa para setup/cleanup e sessões dedicadas com
-`SET ROLE`/claims. As doze suítes destrutivas rodam sequencialmente apenas no banco descartável do
+`SET ROLE`/claims. As treze suítes destrutivas rodam sequencialmente apenas no banco descartável do
 GitHub Actions:
 
 ```powershell
@@ -173,6 +173,7 @@ node supabase/tests/loyalty_integrity.test.mjs
 node supabase/tests/loyalty_rewards_integrity.test.mjs
 node supabase/tests/pilot_readiness_team_integrity.test.mjs
 node supabase/tests/prompt13_order_operations.test.mjs
+node supabase/tests/member_onboarding_integrity.test.mjs
 ```
 
 | Script                                       |   Checkpoint |
@@ -189,12 +190,13 @@ node supabase/tests/prompt13_order_operations.test.mjs
 | `loyalty_rewards_integrity.test.mjs`         | 254/254 PASS |
 | `pilot_readiness_team_integrity.test.mjs`    |   84/84 PASS |
 | `prompt13_order_operations.test.mjs`         |   89/89 PASS |
+| `member_onboarding_integrity.test.mjs`       |    7/7 PASS |
 
 A execução sequencial evita interferência na contagem global herdada de `membership_units`. Cada
 script cria fixtures sintéticas e faz cleanup. Nunca limpar registros reais ao recuperar uma
 execução interrompida.
 
-Baseline atual do CI `31859960640`: doze suítes, 1494/1494 checks. O baseline histórico do Prompt 12
+Baseline atual do CI `31962585865`: treze suítes, 1501/1501 checks. O baseline histórico do Prompt 12
 permanece registrado em seus checkpoints próprios.
 
 ### 6.1 Edge unit
@@ -370,6 +372,10 @@ continua autorizado a exibi-las.
 - `/app/clube`: protegido por `RequireOwner`; programa, métricas, membros e Reward management;
 - `/app/vouchers`: operação por unidade para owner/manager/operator autorizados;
 - `/app/equipe`: gestão de acesso por unidade, owner-only;
+- `/onboarding`: convite de membro aceito (VERIFIED-EMAIL) quando o usuário ainda não tem organização;
+  o convite vincula-se ao e-mail autenticado — um usuário logado com outro e-mail recebe `PED90`;
+- `/app/equipe`: owner também convida (`manager`/`operator`) e revoga convites; aceite do convidado
+  ocorre em `/onboarding`; a unidade é atribuída depois em `/app/equipe` (`assign_unit_to_member`);
 - `/app/diagnostico`: versão/SHA, contexto, conectividade e readiness, owner-only;
 - manager/operator não acessam a página nem as RPCs owner-only;
 - toggle chama RPC server-authoritative e invalida/refaz a query do programa;
@@ -414,7 +420,8 @@ continua autorizado a exibi-las.
 
 Jobs obrigatórias atuais: `Quality gates`, `E2E smoke tests` e `Backend release gates`. Backend
 reconstrói o Supabase local exclusivamente pelas migrations versionadas, valida alinhamento local,
-executa `supabase db lint --local --level error --fail-on error`, as doze suítes DB sequenciais e
+executa `supabase db lint --local --level error --fail-on error`, as treze
+suítes DB sequenciais e
 Edge unit. O job
 não usa service role, senha ou banco remoto. Edge smoke remoto e Cloudflare smoke permanecem gates
 manuais de release por dependerem de ambiente implantado.
@@ -578,7 +585,14 @@ Release técnica histórica do Prompt 10, não utilizável como evidência do Pr
 | KDS retorna `truncated=true`             | mais de 200 pedidos de cozinha; tratar como refetch/alerta operacional       |
 | Dados antigos após troca de login        | confirmar `queryClient.clear()` em mudança de user ID                      |
 | Migration ausente                        | `supabase migration list`; revisar antes de `db push --linked`             |
-| DB test falha por contagem               | confirmar execução sequencial das doze suítes                              |
+| DB test falha por contagem               | confirmar execução sequencial das treze suítes                              |
+| Convite retorna `PED82`/`PED83`          | e-mail vazio ou role fora de `manager`/`operator`                          |
+| Convite retorna `PED84`/`PED85`          | e-mail já membro da org ou já vinculado a outra organização               |
+| Reenvio de convite idempotente           | mesmo `(org,email)` pendente retorna o convite existente (sem novo INSERT) |
+| Aceite retorna `PED86`/`PED87`/`PED88`   | convite inexistente, expirado ou revogado                                  |
+| Aceite retorna `PED89`                   | convite já aceito; a transição é terminal                                  |
+| Aceite retorna `PED90`                   | usuário logado com e-mail diferente do convite; sair e logar no e-mail alvo |
+| Manager vê zero convites via RLS         | comportamento esperado; leitura direta é owner-only (filtrada, sem erro)  |
 
 ## 13. Próximo passo
 
@@ -587,6 +601,11 @@ Prompt 13 está `COMPLETED`. Etapas 13.1, 13.2, 13.3, 13.4B, 13.5A, 13.5B e 13.6
 endurecido; 13.5B polimento UI operacional; 13.6 hardening audit sem alteração de código —
 DEC-125); `NEW-MEDIUM-1` está `RESOLVED` pela migration 23. `RELEASE_CANDIDATE_CHECKPOINT —
 ACHIEVED` e `OPERATION_READY — ACHIEVED`. PILOT GATE `IN PROGRESS` — Parte 1 preparação concluída
-(`PILOT_PREPARATION_CHECKPOINT — ACHIEVED`; DEC-126) em `docs/PEDON_PILOT_GATE.md`. O próximo passo
-é a Parte 2 (`SELEÇÃO CONTROLADA + ONBOARDING`), que não deve ser iniciada sem aprovação humana
-explícita do relatório da Parte 1.
+(`PILOT_PREPARATION_CHECKPOINT — ACHIEVED`; DEC-126) em `docs/PEDON_PILOT_GATE.md`.
+
+Hotfix P1 (DEC-127): o achado de adição de membros do onboarding do PILOT-P01 foi **RESOLVIDO** — o
+fluxo oficial de convite/aceite por e-mail verificado (`manager`/`operator`) está implementado
+(migration 24, frontend e CI verde `31962585865`). Ainda pendente para o onboarding real: definir
+`TARGET ENVIRONMENT`, coletar os dados mínimos do Data Pack e obter
+`AUTHORIZE PILOT-P01 REMOTE WRITES` antes de qualquer escrita. O próximo passo da Parte 2 não deve
+ser iniciado sem aprovação humana explícita.
