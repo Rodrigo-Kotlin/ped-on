@@ -246,6 +246,29 @@ async function run() {
       'expires_at dentro da janela de 7 dias',
     );
 
+    const diagRows = await admin.query(
+      `select id, organization_id, email, role, status, expires_at
+       from public.organization_member_invites
+       where organization_id = $1 order by created_at`,
+      [orgA],
+    );
+    console.log(`DIAG invites rows=${diagRows.rows.length}`);
+    for (const r of diagRows.rows) console.log(`DIAG invite row ${JSON.stringify(r)}`);
+    const diagFn = await admin.query(
+      `select pg_get_functiondef('public.invite_org_member(text,text)'::regprocedure) as def`,
+    );
+    console.log(`DIAG fnDef:\n${diagFn.rows[0].def}`);
+    const diagSession = await ownerAS.query(
+      `select auth.uid() as uid, current_user as cu,
+              current_setting('request.jwt.claims', true) as claims`,
+    );
+    console.log(`DIAG session ${JSON.stringify(diagSession.rows[0])}`);
+    const diagIdem = await ownerAS.query(
+      `select id from public.organization_member_invites
+       where organization_id = $1 and email = $2 and status = 'pending' limit 1`,
+      [orgA, inviteeA.email],
+    );
+    console.log(`DIAG idemSelect rows=${diagIdem.rows.length}`);
     const duplicate = await invite(ownerAS, inviteeA.email, 'manager');
     ok(duplicate.created === false, 'convite repetido nao duplica');
     ok(duplicate.renewed === false, 'convite pendente valido nao e renovado');
