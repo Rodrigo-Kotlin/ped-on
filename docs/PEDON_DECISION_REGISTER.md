@@ -1247,6 +1247,37 @@ possível no sistema inteiro seja matematicamente impossível.
   migration 23). Correção do texto da DEC-124 (P3-1) fica para edição documental futura.
 - **Migration:** nenhuma.
 
+### DEC-126 — Pilot Charter e preparação do piloto controlado (PILOT GATE Parte 1)
+
+- **Status:** APROVADA
+- **Data:** 2026-08-16
+- **Decisão:** o Ped-On formaliza a preparação operacional para um piloto controlado de 3–5
+  estabelecimentos via `docs/PEDON_PILOT_GATE.md`, congelando: (1) o Release Candidate de referência
+  (`ddd11b44` HEAD técnico / `1cf27ee` HEAD documental / CI `31925684279` SUCCESS), com proibição de
+  mudança silenciosa de baseline durante o piloto; (2) o Pilot Charter com 16 seções (objetivo,
+  escopo, fora de escopo, RC, quantidade/perfil de estabelecimentos, condições técnicas mínimas,
+  responsabilidades Ped-On e do estabelecimento, suporte, gestão de incidentes, interrupção,
+  continuidade, encerramento, evidências e aprovação de alterações); (3) matriz de elegibilidade e
+  diversidade controlada (simples/intermediário/intenso) sem escolher empresas reais; (4) checklist
+  de entrada reutilizável; (5) sete hard gates de entrada (RELEASE, TENANT, CATÁLOGO, OPERAÇÃO,
+  SEGURANÇA, TREINAMENTO, SUPORTE) que definem `PILOT PARTICIPANT — READY`; (6) classificação de
+  incidentes P0/P1/P2/P3 compatível com o hardening do Prompt 13; (7) stop conditions; (8) hotfix
+  flow com 13 passos; (9) indicadores A–E sem SLA de produção; (10) Evidence Register com minimização
+  de dados; (11) Daily Pilot Check (CONTINUE / CONTINUE_WITH_FINDINGS / PAUSE / STOP); (12) critérios
+  de saída GO / GO_WITH_FINDINGS / NO_GO; (13) papéis de governança com placeholders
+  (PILOT OWNER, TECHNICAL OWNER, ESTABLISHMENT OWNER, SUPPORT CONTACT, INCIDENT OWNER); (14) change
+  freeze (sem Prompt 14, features, billing, integrações, app mobile, redesign ou loyalty fora de
+  finding). Esta parte é exclusivamente documental e NÃO inicia o piloto, NÃO seleciona
+  estabelecimentos reais sem aprovação humana, NÃO faz onboarding e NÃO inicia o Prompt 14.
+- **Justificativa:** o piloto é o gate de validação operacional antes do Prompt 14; sem governança
+  escrita (critérios de entrada, classificação de incidentes, stop/continuidade e evidências) a
+  decisão de GO/NO_GO seria subjetiva e a operação real poderia misturar mudança de baseline com
+  correção legítima. Reutiliza o padrão documental `PEDON_*.md` do repositório e a sequência DEC.
+- **Não implementado (consciente):** nenhuma seleção/onboarding real; nenhum dado real; nenhuma
+  alteração de código/banco/RPC/RLS/Edge/SW/CI; SLA de produção (aguarda volume do piloto); nomes
+  reais dos papéis de governança (placeholders).
+- **Migration:** nenhuma.
+
 ## Decisões em Aberto (OPEN)
 
 Nenhuma decisão em aberto neste momento.

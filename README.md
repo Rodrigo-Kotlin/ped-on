@@ -7,15 +7,18 @@ PWA SaaS multiempresa para restaurantes, hamburguerias, lanchonetes e estabeleci
 ## Estado atual
 
 Fase 4A — Pilot Ready, Prompt 13: Operação de Pedidos 2.0.
-Status `IN PROGRESS`, checkpoint `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`.
-Etapa 13.1 `COMPLETED` (`CONTRACT_FREEZE APPROVED_WITH_FINDINGS`); Etapa 13.2 `COMPLETED`; Etapa 13.3
-`NOT STARTED — READY`.
+Status `COMPLETED`, checkpoint `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`.
+Etapas 13.1–13.6 `COMPLETED` (13.6 = hardening audit + RC sem alteração de código, DEC-125).
 
 `PILOT_READY: ACHIEVED`.
 `MENU_COMMERCIALLY_USABLE: ACHIEVED`.
-`PROMPT 12: COMPLETED / RELEASE_VERIFIED`; `PROMPT 13: IN PROGRESS`.
+`PROMPT 12: COMPLETED / RELEASE_VERIFIED`; `PROMPT 13: COMPLETED`.
 `NEW-MEDIUM-1: RESOLVED — Prompt 13 / migration 23`.
-`OPERATION_READY: NOT ACHIEVED`.
+`OPERATION_READY: ACHIEVED`.
+
+PILOT GATE `IN PROGRESS` (Parte 1 — preparação): `PILOT_PREPARATION_CHECKPOINT — ACHIEVED` (DEC-126);
+`PILOT_ONBOARDING — READY / NOT STARTED`; `PILOT_OPERATION — NOT STARTED`; `PROMPT 14 — NOT STARTED`.
+Governança do piloto controlado (3–5 estabelecimentos) em `docs/PEDON_PILOT_GATE.md`.
 
 `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 `CI ISOLATED DB REBUILD: PASS` (GitHub Actions; nenhum Docker local).
@@ -30,7 +33,7 @@ O produto atual inclui:
 - tracking público por token opaco, com resposta minimizada e sem notas livres dos itens;
 - Central de Pedidos, lifecycle, pagamento operacional separado, auditoria e Realtime para refetch;
 - backend da Central v2 com filtros server-side, paginação keyset e contrato `PED79`, além de RPC KDS
-  dedicada e minimizada; frontend da Etapa 13.3 ainda não iniciado;
+  dedicada e minimizada; frontend da Central, KDS e comanda entregue nas Etapas 13.3–13.5B;
 - Clube Ped-On por organização, com identificação pública por CPF + telefone protegidos por HMAC;
 - consentimento explícito e auditável, saldo, ledger append-only, extrato público e vínculo opcional
   no checkout;
@@ -235,9 +238,13 @@ aprovação da migration. Não reaplicar migrations já aplicadas, editar migrat
 - `docs/PEDON_RLS_SECURITY.md`: RLS, grants, RBAC e testes de isolamento
 - `docs/PEDON_RUNBOOK.md`: operação local, Supabase, testes, CI e deploy
 - `docs/PEDON_POST_MVP_ROADMAP.md`: roadmap oficial pós-Core MVP
+- `docs/PROMPT13_ETAPA_13_6_HARDENING.md`: auditoria de hardening e decisão RC (13.6)
+- `docs/PEDON_PILOT_GATE.md`: governança do piloto controlado (charter, gates, incidentes, evidências)
 
 Prompt 11: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `PILOT_READY: ACHIEVED`.
 Prompt 12: `COMPLETED` / checkpoint `RELEASE_VERIFIED` / marco `MENU_COMMERCIALLY_USABLE: ACHIEVED`
 (reauditoria final `PASS_WITH_FINDINGS` / `GO_WITH_NON_BLOCKING_FINDINGS`).
-Prompt 13: `IN PROGRESS` / checkpoint `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`.
-Etapa 13.3: `NOT STARTED — READY`. `OPERATION_READY: NOT ACHIEVED`.
+Prompt 13: `COMPLETED` / checkpoint `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED` /
+`OPERATION_READY: ACHIEVED`.
+PILOT GATE: `IN PROGRESS` — `PILOT_PREPARATION_CHECKPOINT — ACHIEVED` (DEC-126);
+`PILOT_ONBOARDING: READY / NOT STARTED`; `PILOT_OPERATION: NOT STARTED`; `PROMPT 14: NOT STARTED`.

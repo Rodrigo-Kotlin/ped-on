@@ -2,7 +2,8 @@
 
 > Guia operacional do Ped-On no Prompt 13 `COMPLETED`, checkpoint
 > `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`. Backend técnico/remoto validado no HEAD
-> `ddd11b44`, CI `31924328717`.
+> `ddd11b44`, CI `31924328717`. Piloto controlado preparado em `docs/PEDON_PILOT_GATE.md`
+> (PILOT GATE `IN PROGRESS`, Parte 1; `PILOT_PREPARATION_CHECKPOINT — ACHIEVED`).
 
 ## 1. Pré-requisitos
 
@@ -585,5 +586,7 @@ Prompt 13 está `COMPLETED`. Etapas 13.1, 13.2, 13.3, 13.4B, 13.5A, 13.5B e 13.6
 `COMPLETED` (13.5A registrada como DEC-124 — alertas operacionais locais + audit-precache
 endurecido; 13.5B polimento UI operacional; 13.6 hardening audit sem alteração de código —
 DEC-125); `NEW-MEDIUM-1` está `RESOLVED` pela migration 23. `RELEASE_CANDIDATE_CHECKPOINT —
-ACHIEVED` e `OPERATION_READY — ACHIEVED`. O próximo passo é o piloto (`PILOT_GATE — READY /
-NOT STARTED`), que não deve ser iniciado nesta etapa documental.
+ACHIEVED` e `OPERATION_READY — ACHIEVED`. PILOT GATE `IN PROGRESS` — Parte 1 preparação concluída
+(`PILOT_PREPARATION_CHECKPOINT — ACHIEVED`; DEC-126) em `docs/PEDON_PILOT_GATE.md`. O próximo passo
+é a Parte 2 (`SELEÇÃO CONTROLADA + ONBOARDING`), que não deve ser iniciada sem aprovação humana
+explícita do relatório da Parte 1.

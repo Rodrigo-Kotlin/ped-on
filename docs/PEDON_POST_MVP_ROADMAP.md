@@ -125,6 +125,14 @@ Após o Prompt 13, não avançar automaticamente para o Prompt 14.
 
 Executar o PILOT GATE com aproximadamente 3–5 estabelecimentos controlados.
 
+Estado: `IN PROGRESS` — Parte 1 (preparação) concluída: `PILOT_PREPARATION_CHECKPOINT — ACHIEVED`
+(DEC-126). Governança completa em `docs/PEDON_PILOT_GATE.md`: Pilot Charter, freeze do RC
+(`ddd11b44` técnico / `1cf27ee` documental), matriz de elegibilidade, checklist de entrada,
+GATEs 1–7, classificação P0–P3, stop conditions, hotfix flow, indicadores, Evidence Register,
+Daily Pilot Check, critérios de saída GO / GO_WITH_FINDINGS / NO_GO e change freeze.
+`PILOT_ONBOARDING — READY / NOT STARTED`; `PILOT_OPERATION — NOT STARTED`. Parte 2
+(`SELEÇÃO CONTROLADA + ONBOARDING`) somente após aprovação humana explícita do relatório da Parte 1.
+
 Medir:
 
 - tempo de onboarding;

@@ -15,9 +15,9 @@
 | STATUS                   | `COMPLETED`                                                                                                                                                                                                                                                  |
 | CHECKPOINT               | `RELEASE_CANDIDATE_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                                    |
 | MILESTONE                | `OPERATION_READY — ACHIEVED`                                                                                                                                                                                                                                 |
-| HEAD INICIAL DA ETAPA    | `ddd11b44afa61792d51b6fba023e5fd4015bcd5c`                                                                                                                                                                                                                   |
+| HEAD INICIAL DA ETAPA    | `1cf27ee07733e09b796b08c13b5e644e789f6948`                                                                                                                                                                                                                 |
 | HEAD TÉCNICO VALIDADO    | `ddd11b44` — CI `31924328717` SUCCESS (Etapa 13.5B) + gates locais 13.6 PASS (format, lint, typecheck, vitest 46/46 503 testes, build, audit-precache `runtimeCaching: NONE`, E2E 505/3/0)                                                             |
-| HEAD FINAL DE FECHAMENTO | `ddd11b44` (nenhuma alteração de código na Etapa 13.6; commit documental registrado no relatório final)                                                                                        |
+| HEAD FINAL DE FECHAMENTO | `ddd11b44` (Etapa 13.6 sem alteração de código; commit documental do PILOT GATE Parte 1 registrado no relatório final)                                                                       |
 | ETAPA 13.1               | `COMPLETED` — `CONTRACT_FREEZE APPROVED_WITH_FINDINGS`                                                                                                                                                                                                      |
 | ETAPA 13.2               | `COMPLETED` — `BACKEND_OPERATIONAL_CHECKPOINT — ACHIEVED`                                                                                                                                                                                                   |
 | ETAPA 13.3               | `COMPLETED` — Central de Pedidos v2, KDS, comanda digital e UI operacional (Fase 4A — Pilot Ready)                                                                                                                                                        |
@@ -31,7 +31,12 @@
 | PWA                      | Gate `audit-precache` endurecido: `runtimeCaching` deve permanecer `NONE` para `/auth/**`, `/rest/**`, `/storage/**`, `/realtime/**` e RPCs de mutação (helper + regressão vitest cobrem o invariante — DEC-124)                                       |
 | GITHUB ACTIONS           | CI técnico `31924328717` SUCCESS (Etapa 13.5B); CI do commit documental da Etapa 13.6 registrado no relatório final                                                                              |
 | PENDÊNCIAS               | Nenhum finding aberto na Etapa 13.6; 2 achados P3 registrados e descartados (P3-1 texto DEC-124 vs estado React; P3-2 evicção do OrderSeenTracker)                                                                                                           |
-| NEXT_STEP                | PILOT_GATE `READY / NOT STARTED`; piloto não iniciado nesta etapa documental                                                                                                                                                                                |
+| PILOT GATE               | `IN PROGRESS` (Parte 1 — preparação concluída; DEC-126)                                                                                                                                                                                                    |
+| PILOT_PREPARATION_CHECKPOINT | `ACHIEVED`                                                                                                                                                                                                                                                |
+| PILOT_ONBOARDING         | `READY / NOT STARTED`                                                                                                                                                                                                                                      |
+| PILOT_OPERATION          | `NOT STARTED`                                                                                                                                                                                                                                               |
+| PROMPT 14                | `NOT STARTED`                                                                                                                                                                                                                                               |
+| NEXT_STEP                | PILOT GATE Parte 2 — `SELEÇÃO CONTROLADA + ONBOARDING` (somente após aprovação humana deste relatório)                                                                                      |
 | PROMPT 13                | `COMPLETED`                                                                                                                                                                                                                                                 |
 | PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
 | LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
@@ -84,6 +89,24 @@
   pedido bloqueia a opção de catálogo disponível, serializando checkout contra toggle/delete.
 - O formato persistido do carrinho omite `note`; observações ficam em memória até o checkout. Ao
   carregar qualquer carrinho, registros legados de todos os slugs são saneados ou removidos.
+
+## Checkpoint — PILOT GATE Parte 1 — `PILOT_PREPARATION_CHECKPOINT` (DEC-126)
+
+- Piloto controlado de 3–5 estabelecimentos formalmente preparado via `docs/PEDON_PILOT_GATE.md`:
+  Pilot Charter, freeze do RC (`ddd11b44` técnico / `1cf27ee` documental), matriz de elegibilidade,
+  checklist de entrada, GATEs 1–7 (`PILOT PARTICIPANT — READY`), classificação P0/P1/P2/P3, stop
+  conditions, hotfix flow, indicadores (A–E), Evidence Register, Daily Pilot Check, critérios de
+  saída (GO / GO_WITH_FINDINGS / NO_GO), minimização de dados e change freeze.
+- `PILOT_GATE: IN PROGRESS`; `PILOT_PREPARATION_CHECKPOINT — ACHIEVED`;
+  `PILOT_ONBOARDING — READY / NOT STARTED`; `PILOT_OPERATION — NOT STARTED`; `PROMPT 14 — NOT STARTED`.
+- NENHUM estabelecimento real selecionado, NENHUM onboarding executado, NENHUM dado real alterado.
+- Nenhuma alteração de código, migration, RPC, schema, RLS, Edge, SW ou CI nesta parte
+  (documentação exclusivamente — docs-only).
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- Decisão registrada: `DEC-126 — Pilot Charter e preparação do piloto controlado`.
+- Próxima parte: PILOT GATE Parte 2 — `SELEÇÃO CONTROLADA + ONBOARDING` (somente após aprovação
+  humana explícita deste relatório).
 
 ## Checkpoint Prompt 13 — `RELEASE_CANDIDATE_CHECKPOINT` (Etapa 13.6 — DEC-125)
 
