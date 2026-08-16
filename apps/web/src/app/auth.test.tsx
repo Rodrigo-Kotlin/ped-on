@@ -394,6 +394,101 @@ describe('OnboardingPage', () => {
       p_organization_name: 'Cantina da Praça',
     });
   });
+
+  it('exibe convites pendentes e aceita o convite', async () => {
+    const user = userEvent.setup();
+    supabaseMock.auth.getSession.mockResolvedValue({
+      data: { session: makeSession() },
+      error: null,
+    });
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_pending_member_invites') {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'inv-1',
+              organization_id: 'org-9',
+              organization_name: 'Restaurante do Lado',
+              role: 'manager',
+              created_at: '2026-08-10T00:00:00Z',
+              expires_at: '2026-08-17T00:00:00Z',
+            },
+          ],
+          error: null,
+        });
+      }
+      if (fn === 'accept_org_member_invite') {
+        return Promise.resolve({
+          data: { organization_id: 'org-9', role: 'manager', accepted: true },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    renderWithAuth(<OnboardingPage />);
+
+    expect(await screen.findByText('Restaurante do Lado')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+
+    await waitFor(() => {
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('accept_org_member_invite', {
+        p_invite_id: 'inv-1',
+      });
+    });
+  });
+
+  it('exibe mensagem amigável quando o convite expirou', async () => {
+    const user = userEvent.setup();
+    supabaseMock.auth.getSession.mockResolvedValue({
+      data: { session: makeSession() },
+      error: null,
+    });
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_pending_member_invites') {
+        return Promise.resolve({
+          data: [
+            {
+              id: 'inv-1',
+              organization_id: 'org-9',
+              organization_name: 'Restaurante do Lado',
+              role: 'manager',
+              created_at: '2026-08-01T00:00:00Z',
+              expires_at: '2026-08-08T00:00:00Z',
+            },
+          ],
+          error: null,
+        });
+      }
+      if (fn === 'accept_org_member_invite') {
+        return Promise.resolve({
+          data: null,
+          error: { code: 'PED87', message: 'expired invite' },
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    renderWithAuth(<OnboardingPage />);
+
+    await screen.findByText('Restaurante do Lado');
+    await user.click(screen.getByRole('button', { name: 'Aceitar convite' }));
+
+    expect(await screen.findByText('Convite expirado.')).toBeInTheDocument();
+  });
+
+  it('não mostra a seção de convites quando não há convites', async () => {
+    supabaseMock.auth.getSession.mockResolvedValue({
+      data: { session: makeSession() },
+      error: null,
+    });
+
+    renderWithAuth(<OnboardingPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Você foi convidado(a)')).not.toBeInTheDocument();
+    });
+  });
 });
 
 describe('AppPage', () => {

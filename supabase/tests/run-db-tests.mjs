@@ -13,6 +13,7 @@ const suites = [
   'loyalty_rewards_integrity.test.mjs',
   'pilot_readiness_team_integrity.test.mjs',
   'prompt13_order_operations.test.mjs',
+  'member_onboarding_integrity.test.mjs',
 ];
 
 for (const suite of suites) {

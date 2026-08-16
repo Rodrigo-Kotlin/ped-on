@@ -48,10 +48,24 @@ const members = [
   },
 ];
 
+const pendingInvites = [
+  {
+    id: 'inv-1',
+    email: 'novo@example.com',
+    role: 'manager' as const,
+    status: 'pending' as const,
+    created_at: '2026-08-10T00:00:00Z',
+    expires_at: '2026-08-17T00:00:00Z',
+    accepted_at: null,
+    revoked_at: null,
+  },
+];
+
 function mockRpc() {
   supabaseMock.rpc.mockImplementation((fn: string) => {
     if (fn === 'get_my_admin_context') return Promise.resolve({ data: adminContext, error: null });
     if (fn === 'get_org_members_admin') return Promise.resolve({ data: members, error: null });
+    if (fn === 'get_org_member_invites') return Promise.resolve({ data: [], error: null });
     return Promise.resolve({ data: null, error: null });
   });
 }
@@ -85,8 +99,8 @@ describe('EquipePage', () => {
 
     expect(await screen.findByText('Maria Silva')).toBeInTheDocument();
     expect(screen.getByText('maria@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Gerente')).toBeInTheDocument();
-    expect(screen.getByText('Operador')).toBeInTheDocument();
+    expect(screen.getAllByText('Gerente').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Operador').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('ops@example.com').length).toBeGreaterThanOrEqual(1);
 
     expect(supabaseMock.rpc).toHaveBeenCalledWith('get_org_members_admin', {
@@ -197,5 +211,103 @@ describe('EquipePage', () => {
 
     expect(await screen.findByText('Nenhuma organização.')).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('cria um convite de membro', async () => {
+    const user = userEvent.setup();
+    mockRpc();
+    renderEquipe();
+
+    await user.type(await screen.findByLabelText('E-mail'), 'novo@example.com');
+    await user.selectOptions(await screen.findByLabelText('Função'), 'operator');
+    await user.click(await screen.findByRole('button', { name: 'Convidar membro' }));
+
+    await waitFor(() => {
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('invite_org_member', {
+        p_email: 'novo@example.com',
+        p_role: 'operator',
+      });
+    });
+    expect(await screen.findByText('Convite criado para novo@example.com.')).toBeInTheDocument();
+  });
+
+  it('valida o e-mail antes de convidar', async () => {
+    const user = userEvent.setup();
+    mockRpc();
+    renderEquipe();
+
+    await user.type(await screen.findByLabelText('E-mail'), 'email-invalido');
+    await user.click(await screen.findByRole('button', { name: 'Convidar membro' }));
+
+    expect(await screen.findByText('Informe um e-mail válido.')).toBeInTheDocument();
+    expect(supabaseMock.rpc).not.toHaveBeenCalledWith('invite_org_member', expect.anything());
+  });
+
+  it('mapeia erro do servidor para mensagem amigável', async () => {
+    const user = userEvent.setup();
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_admin_context')
+        return Promise.resolve({ data: adminContext, error: null });
+      if (fn === 'get_org_members_admin') return Promise.resolve({ data: members, error: null });
+      if (fn === 'get_org_member_invites') return Promise.resolve({ data: [], error: null });
+      if (fn === 'invite_org_member') {
+        return Promise.resolve({
+          data: null,
+          error: { code: 'PED84', message: 'duplicate member' },
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    renderEquipe();
+
+    await user.type(await screen.findByLabelText('E-mail'), 'maria@example.com');
+    await user.click(await screen.findByRole('button', { name: 'Convidar membro' }));
+
+    expect(
+      await screen.findByText('Este e-mail já pertence a um membro da organização.'),
+    ).toBeInTheDocument();
+  });
+
+  it('lista convites pendentes', async () => {
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_admin_context')
+        return Promise.resolve({ data: adminContext, error: null });
+      if (fn === 'get_org_members_admin') return Promise.resolve({ data: members, error: null });
+      if (fn === 'get_org_member_invites') {
+        return Promise.resolve({ data: pendingInvites, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    renderEquipe();
+
+    expect(await screen.findByText('novo@example.com')).toBeInTheDocument();
+    expect(screen.getByText(/válido até/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revogar' })).toBeInTheDocument();
+  });
+
+  it('revoga um convite pendente após confirmação', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    supabaseMock.rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_admin_context')
+        return Promise.resolve({ data: adminContext, error: null });
+      if (fn === 'get_org_members_admin') return Promise.resolve({ data: members, error: null });
+      if (fn === 'get_org_member_invites') {
+        return Promise.resolve({ data: pendingInvites, error: null });
+      }
+      if (fn === 'revoke_org_member_invite') {
+        return Promise.resolve({ data: { revoked: true }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    renderEquipe();
+
+    await user.click(await screen.findByRole('button', { name: 'Revogar' }));
+
+    await waitFor(() => {
+      expect(supabaseMock.rpc).toHaveBeenCalledWith('revoke_org_member_invite', {
+        p_invite_id: 'inv-1',
+      });
+    });
   });
 });
