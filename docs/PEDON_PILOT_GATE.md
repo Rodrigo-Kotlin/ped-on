@@ -17,11 +17,14 @@
 | PILOT_PARTICIPANT_01 | `ONBOARDING PLANNED` (Mr. Burger — Oriximiná/PA; seleção `APPROVED`) |
 | PILOT_OPERATION | `NOT STARTED` |
 | PROMPT 14 | `NOT STARTED` |
+| TARGET ENVIRONMENT | `PRODUCTION` (selecionado em 2026-08-16; escrita NÃO autorizada) |
+| PRODUCTION STRUCTURAL STATE | migration 24 (DEC-127) NÃO aplicada em produção — BLOCKER para o fluxo de convite |
 
 Plano de onboarding do PILOT-P01: `docs/PEDON_PILOT_ONBOARDING.md` (GATEs 1–7, Data Pack, Remote
-Write Plan e HUMAN GATES). `TARGET ENVIRONMENT` e dados mínimos pendentes; nenhuma escrita remota
+Write Plan e HUMAN GATES). `TARGET ENVIRONMENT: PRODUCTION` definido; dados mínimos em parte
+coletados (estado de produção inspecionado read-only) e catálogo real pendente; nenhuma escrita remota
 executada. Decisão registrada: `DEC-126 — Pilot Charter e preparação do piloto controlado` (3–5
-estabelecimentos).
+estabelecimentos) e `DEC-127 — hotfix P1: adição segura de membros`.
 
 ## 2. Freeze do Release Candidate
 
@@ -302,11 +305,14 @@ automaticamente virar alteração durante o piloto.
 
 ## 18. Próximo passo
 
-Parte 2C — `ONBOARDING` do PILOT-P01 em andamento (planejado): definir `TARGET ENVIRONMENT`, coletar
-os dados mínimos e obter `AUTHORIZE PILOT-P01 REMOTE WRITES` antes de qualquer escrita. O achado de
-adição de membros foi **RESOLVIDO** pelo hotfix P1 (DEC-127) — o fluxo oficial de convite/aceite
-(`manager`/`operator`) está disponível (baseline do piloto atualizado: `8714d1d`, CI `31962585865`).
-Parte 2D — `CONTROLLED ORDER` (validar cardápio, checkout, Central, alertas, KDS, status, POS-58,
-reimpressão e tenant isolation) somente após o onboarding e com autorização própria. Parte 3 —
-`PILOT OPERATION` (Daily Pilot Check, Evidence Register, decisão de saída) exige aprovação humana
-separada.
+Parte 2C — `ONBOARDING` do PILOT-P01 em andamento (planejado): `TARGET ENVIRONMENT: PRODUCTION`
+definido; estado de produção inspecionado **read-only** (org "Mr. Burger" e owner existem; unidade a
+renomear para Matriz; operator sem conta; **migration 24 NÃO implantada — BLOCKER** — ver seção 16 de
+`PEDON_PILOT_ONBOARDING.md`). O achado de adição de membros foi **RESOLVIDO** pelo hotfix P1
+(DEC-127) — o fluxo oficial de convite/aceite (`manager`/`operator`) está disponível no repositório
+(baseline `8714d1d`, CI `31962585865`), mas depende de o release ser implantado em produção.
+Pendências antes de qualquer escrita: aplicar o release com migration 24, fornecer o catálogo real e
+obter `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`. Parte 2D — `CONTROLLED ORDER` (validar
+cardápio, checkout, Central, alertas, KDS, status, POS-58, reimpressão e tenant isolation) somente
+após o onboarding e com autorização própria. Parte 3 — `PILOT OPERATION` (Daily Pilot Check,
+Evidence Register, decisão de saída) exige aprovação humana separada.

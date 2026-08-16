@@ -37,7 +37,8 @@
 | PILOT_PARTICIPANT_01     | `ONBOARDING PLANNED` (Mr. Burger — Oriximiná/PA; seleção `APPROVED`)                                                                                                                                                                                      |
 | PILOT_OPERATION          | `NOT STARTED`                                                                                                                                                                                                                                               |
 | PROMPT 14                | `NOT STARTED`                                                                                                                                                                                                                                               |
-| NEXT_STEP                | Hotfix P1 de adição de membros `COMPLETED` (migration 24, CI verde). Próximo: definir `TARGET ENVIRONMENT` + dados mínimos de onboarding + `AUTHORIZE PILOT-P01 REMOTE WRITES`; depois executar GATEs 2–7 e Parte 2D (sem operação real)                    |
+| TARGET ENVIRONMENT       | `PRODUCTION` (selecionado em 2026-08-16; escrita NÃO autorizada)                                                                                                                                                                                           |
+| NEXT_STEP                | Hotfix P1 `COMPLETED`; Parte 2C `IN PROGRESS` — PRODUCTION definido, inspeção read-only feita (org/owner existem; operator sem conta; **migration 24 NÃO implantada — BLOCKER**). Pendências: aplicar release com migration 24, catálogo real e `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION` |
 | PROMPT 13                | `COMPLETED`                                                                                                                                                                                                                                                 |
 | PROMPT 12                | `COMPLETED / RELEASE_VERIFIED` — preservado como histórico                                                                                                                                                                                                  |
 | LOCAL DB REBUILD         | `NOT RUN — BY DESIGN / NO LOCAL DOCKER`                                                                                                                                                                                                                      |
@@ -123,6 +124,33 @@
 - O onboarding real do PILOT-P01 permanece **BLOQUEADO** até `TARGET ENVIRONMENT` + dados mínimos +
   `AUTHORIZE PILOT-P01 REMOTE WRITES` (decisão humana). Nenhuma escrita remota executada.
 
+## Checkpoint — PILOT GATE Parte 2C — `PRODUCTION READINESS` (inspeção read-only 2026-08-16)
+
+- **TARGET ENVIRONMENT: `PRODUCTION`** registrado oficialmente (escrita NÃO autorizada;
+  `READ_ONLY` mantido). Inspeção remota feita exclusivamente com `SELECT`/`information_schema` via
+  pooler; nenhuma mutation, nenhum comando de escrita.
+- **Achados estruturais (produção):** migration 24 (DEC-127) **NÃO aplicada** — produção está na
+  migration 23; `organization_member_invites` e as 5 RPCs de convite/aceite **não existem** no
+  ambiente. **BLOCKER**: o fluxo oficial de convite depende da implantação do release homologado
+  (CI `31962585865`). Regra aplicada: ambiente fora do baseline estrutural esperado ⇒ NÃO escrever.
+- **Achados de dados (produção):** organização **"Mr. Burger" já existe** (1) — NÃO recriar; o owner
+  (`PILOT-P01-OWNER`) já possui Auth, é membro `owner` com onboarding `completed` e está em uma única
+  organização (single-org preservado); a unidade existente é `Unidade principal` (default) — plano:
+  **renomear para "Matriz"** via `update_unit`, sem criar duplicada; o operator
+  (`PILOT-P01-OPERATOR-01`) **não possui conta Auth** ainda; sem convites (tabela ausente). E-mails
+  reais fora do Git (placeholders).
+- **GATEs:** G1 `PASS`; G2 `PLANNED` (recursos existentes reutilizados); G3 `PLANNED / DATA MISSING`
+  (catálogo real pendente, método manual; preço ausente ⇒ `BLOCK CATALOG ENTRY`); G4 `PLANNED`
+  (delivery+pickup, taxa R$ 5,00, mínimo R$ 20,00, ETA 30–50 min, pagamentos Pix/Crédito/Débito/
+  Dinheiro, mesas OUT OF SCOPE); G5 `PLANNED`; G6 `PLANNED`; G7 `READY FOR ONBOARDING` (Rodrigo/
+  Valdemir/WhatsApp). POS-58: impressão a validar na Parte 2D.
+- **REMOTE WRITE PLAN:** disponível na seção 11 de `docs/PEDON_PILOT_ONBOARDING.md` — `NOT READY`
+  até (1) release com migration 24 implantado e (2) autorização humana.
+- **Nenhum código, migration, schema, RPC, RLS, Edge ou SW alterado (ZERO).** Docs atualizados
+  somente com dados operacionais não sensíveis.
+- `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+- `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
+
 ## Checkpoint — PILOT GATE Parte 2C — `PILOT_PARTICIPANT_01 — ONBOARDING PLANNED`
 
 - Seleção do PILOT-P01 aprovada (`APPROVE PARTICIPANT 01`). Plano de onboarding documentado em
@@ -130,10 +158,11 @@
   plans, Remote Write Plan, Evidence Register e HUMAN GATES).
 - `PILOT_ONBOARDING: IN PROGRESS`; `PILOT_PARTICIPANT_01 — ONBOARDING PLANNED`;
   `PILOT_OPERATION — NOT STARTED`; `PROMPT 14 — NOT STARTED`.
-- NENHUMA escrita remota executada; `TARGET ENVIRONMENT: UNDEFINED` (aguardando decisão humana);
-  dados mínimos de onboarding ainda não coletados; `READ_ONLY` mantido.
+- NENHUMA escrita remota executada; `TARGET ENVIRONMENT: PRODUCTION`; dados de produção
+  inspecionados read-only (checkpoint anterior); catálogo real pendente; `READ_ONLY` mantido.
 - Achado de adição de membros: **RESOLVIDO** pelo HOTFIX P1 (DEC-127) — ver checkpoint anterior;
-  o fluxo oficial de convite/aceite (`manager`/`operator`) está disponível para o onboarding.
+  o fluxo oficial de convite/aceite (`manager`/`operator`) está disponível para o onboarding, sujeito
+  à implantação da migration 24 em produção (BLOCKER estrutural).
 - `LOCAL DB REBUILD: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 - `LOCAL DB TESTS: NOT RUN — BY DESIGN / NO LOCAL DOCKER`.
 
