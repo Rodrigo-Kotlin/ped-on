@@ -246,69 +246,6 @@ async function run() {
       'expires_at dentro da janela de 7 dias',
     );
 
-    const diagRows = await admin.query(
-      `select id, organization_id, email, role, status, expires_at
-       from public.organization_member_invites
-       where organization_id = $1 order by created_at`,
-      [orgA],
-    );
-    console.log(`DIAG invites rows=${diagRows.rows.length}`);
-    for (const r of diagRows.rows) console.log(`DIAG invite row ${JSON.stringify(r)}`);
-    const diagFn = await admin.query(
-      `select pg_get_functiondef('public.invite_org_member(text,text)'::regprocedure) as def`,
-    );
-    console.log(`DIAG fnDef:\n${diagFn.rows[0].def}`);
-    const diagSession = await ownerAS.query(
-      `select auth.uid() as uid, current_user as cu,
-              current_setting('request.jwt.claims', true) as claims`,
-    );
-    console.log(`DIAG session ${JSON.stringify(diagSession.rows[0])}`);
-    const diagIdem = await ownerAS.query(
-      `select id from public.organization_member_invites
-       where organization_id = $1 and email = $2 and status = 'pending' limit 1`,
-      [orgA, inviteeA.email],
-    );
-    console.log(`DIAG idemSelect rows=${diagIdem.rows.length}`);
-    await admin.query(`create or replace function public.diag_invite(p_email text, p_role text)
-      returns jsonb
-      language plpgsql
-      security definer
-      set search_path = ''
-      as $diag$
-      declare
-        v_user_id uuid := auth.uid();
-        v_org_id uuid;
-        v_email text := lower(btrim(nullif(p_email, '')));
-        v_role text := nullif(btrim(p_role), '');
-        v_invite public.organization_member_invites;
-      begin
-        select om.organization_id into v_org_id
-        from public.organization_members om
-        where om.user_id = v_user_id and om.role = 'owner'
-        order by om.created_at asc, om.organization_id asc
-        limit 1;
-
-        select * into v_invite
-        from public.organization_member_invites i
-        where i.organization_id = v_org_id and i.email = v_email and i.status = 'pending'
-        limit 1;
-
-        return jsonb_build_object(
-          'uid', v_user_id,
-          'v_org', v_org_id,
-          'v_email', v_email,
-          'v_email_len', char_length(v_email),
-          'found_id', v_invite.id,
-          'row_is_not_null', v_invite is not null
-        );
-      end;
-      $diag$;
-      grant execute on function public.diag_invite(text, text) to authenticated;`);
-    const diagIn = await ownerAS.query(
-      `select public.diag_invite($1, $2) as out`,
-      [inviteeA.email, 'manager'],
-    );
-    console.log(`DIAG inside ${JSON.stringify(diagIn.rows[0].out)}`);
     const duplicate = await invite(ownerAS, inviteeA.email, 'manager');
     ok(duplicate.created === false, 'convite repetido nao duplica');
     ok(duplicate.renewed === false, 'convite pendente valido nao e renovado');
