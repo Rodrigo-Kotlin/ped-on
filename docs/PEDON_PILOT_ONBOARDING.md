@@ -22,9 +22,8 @@
 | TARGET ENVIRONMENT | `PRODUCTION` — selecionado; escrita NÃO autorizada |
 | PRODUCTION STRUCTURAL STATE | migration 24 **APLICADA** em produção (DEC-128, Parte 2C-R1) — fluxo de convite disponível (seção 16) |
 
-Aguardando: `ONBOARDING DATA` (catálogo real) e `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`.
-O hotfix de adição de membros (DEC-127) está liberado no repositório, no CI e **implantado em
-produção** (Parte 2C-R1 — DEC-128). Nenhuma escrita de negócio executada.
+Aguardando: `AUTHORIZE PILOT-P01 REMOTE WRITES IN PRODUCTION`. Catálogo estruturado e validado
+(Parte 2C-R2/R3). Nenhuma escrita de negócio executada.
 
 ## 2. Participante e baseline
 
@@ -87,22 +86,23 @@ Contas individuais; conta compartilhada não é aceita silenciosamente. TOTAL US
 
 ### D. CATALOG
 
-| Dado | Status | Observação |
+| Dado | Status | Observacao |
 | --- | --- | --- |
-| Categorias/produtos/preços/opções | MISSING | coletar em CSV/XLSX/JSON ou preenchimento manual |
-| Importador novo | NÃO | usar fluxo administrativo/RPCs oficiais existentes |
+| Categorias/produtos/precos/opcoes | STRUCTURED | `docs/PILOT_P01_CATALOG_DATA_PACK.md` (Parte 2C-R2) |
+| Importador novo | NAO | usar fluxo administrativo/RPCs oficiais existentes |
 
-CATALOG IMPORT SUMMARY (preencher após os dados):
+CATALOG IMPORT SUMMARY (Parte 2C-R2):
 
 ```text
-Categories: N
-Products: N
-Option groups: N
-Options: N
-Products with variations: N
-Products with addons: N
-Products with removals: N
-Potential validation issues: ...
+Categories: 4 (TRADICIONAIS, ARTESANAIS, PORCOES, BEBIDAS)
+Products: 49 (10 + 14 + 10 + 15)
+Option groups: 2 required (variation — A08, A10 — RESOLVED Parte 2C-R3)
+Options: 4 required (Calabresa + Bacon x 2)
+Juice products: 4 independent (HC-12 RESOLVED Parte 2C-R3)
+Products with addons: PENDING (non-blocking, applicability undecided)
+Products with removals: NOT CONFIGURED INITIALLY
+Catalog model blockers: ZERO
+Price validation: 63/63 PASS
 ```
 
 Regras: preço nunca inferido/arredondado/zero por omissão — valor ausente ⇒ `BLOCK CATALOG ENTRY`.
@@ -147,28 +147,16 @@ por bloco, somente após autorização humana.
 
 ## 6. GATE 3 — CATALOG PLAN
 
-- **Status: `PLANNED / DATA MISSING`** — o catálogo real ainda não foi fornecido. `CATALOG DATA:
-  MISSING`; `CATALOG ENTRY METHOD: MANUAL` (aprovado). Não inventar categorias, produtos, preços,
-  adicionais, variações ou remoções.
+- **Status: `READY_FOR_ENTRY`** — `CATALOG DATA: STRUCTURED`;
+  `CATALOG MAPPING: VALIDATED`; `CATALOG AMBIGUITIES: RESOLVED (BLOCKERS)`. Data pack completo em
+  `docs/PILOT_P01_CATALOG_DATA_PACK.md` (Parte 2C-R3). Catálogo mapeado: 49 produtos, 4 categorias,
+  14 adicionais. Preços validados (63/63 PASS). **CATALOG MODEL BLOCKERS: ZERO.** 9 non-blocking
+  confirmations pendentes.
+- Blockers HC-06/HC-07 (variação "Calabresa ou Bacon") e HC-12 (sucos) — **RESOLVIDOS** (Parte 2C-R3).
 - Cadastro manual via RPCs oficiais do catálogo (`create_catalog_category`, `create_catalog_product`,
   grupos/opções) — can_manage_unit (owner). Sem parser/importador novo.
 - Validação de preços antes da publicação. Publicação via `publish_unit_menu` (owner).
-- Sumário de importação apresentado antes de qualquer cadastro em massa.
-- Checklist para o cadastro manual (dados a fornecer pelo humano antes do GATE 3 PASS):
-
-```text
-Categories: nomes e ordem
-Products: nome, categoria, preço, disponibilidade
-Prices: obrigatórios (ausente => BLOCK CATALOG ENTRY)
-Availability: flags is_active / is_available
-Variations: grupos `single` (max_select=1, min_select conforme regra)
-Addons: grupos `multiple` com min/max e price_delta >= 0
-Removals: grupos `removal` com price_delta = 0
-Min/max selections: por grupo (regras satisfazíveis na publicação)
-Publication: somente após revisão e validação
-```
-
-- `CATALOG DATA: MISSING / PARTIAL` — GATE 3 NÃO pode ser declarado PASS nesta execução.
+- Product image: CASE C (NOT IMPLEMENTED) — fotos RECOMENDADAS mas NÃO bloqueiam cadastro.
 
 ## 7. GATE 4 — OPERATION PLAN
 
@@ -242,7 +230,7 @@ CONFIGURE:
   Service modes: delivery + pickup (mesas OUT OF SCOPE)
   Delivery: taxa R$ 5,00 | mínimo R$ 20,00 | ETA 30-50 min
   Payments: pix, credit_card, debit_card, cash
-  Catalog: MANUAL / DATA STILL REQUIRED (bloqueia GATE 3)
+  Catalog: STRUCTURED — READY_FOR_ENTRY (catalog model blockers: ZERO)
 
 TRAINING: PLANNED
 SUPPORT: DEFINED (seção 10)
@@ -271,8 +259,8 @@ PILOT-ID:  PILOT-P01-ONBOARDING-001
 Release SHA: ddd11b44 (RC) / 8714d1d + 45cf3c9 (hotfix P1 DEC-127)
 Environment: PRODUCTION (read-only inspeção 2026-08-16; escrita NÃO autorizada)
 Organization/Unit: Mr. Burger (existente) / Matriz (renomear de "Unidade principal")
-Gates: G1 <PASS> G2 <PLANNED> G3 <PLANNED — DATA MISSING> G4 <PLANNED> G5 <PLANNED> G6 <PLANNED> G7 <READY>
-Result: <PENDING — aguardando autorização humana e dados do catálogo>
+Gates: G1 <PASS> G2 <PLANNED> G3 <READY_FOR_ENTRY> G4 <PLANNED> G5 <PLANNED> G6 <PLANNED> G7 <READY>
+Result: <PENDING — aguardando autorizacao de escrita>
 ```
 
 Sem senha, token, payload sensível ou PII. E-mails reais fora do Git (placeholders).
@@ -316,9 +304,10 @@ Sem senha, token, payload sensível ou PII. E-mails reais fora do Git (placehold
 2. ~~Confirmar implantação do release com a **migration 24** (DEC-127) em produção~~ — **CONCLUÍDO**:
    migration 24 aplicada em produção em 2026-08-16 (DEC-128, Parte 2C-R1 — seção 16). O fluxo de
    convite/aceite já existe no ambiente.
-3. Dados do catálogo real (manual — método aprovado): categorias, produtos, preços, disponibilidade,
-   opções/variações/adicionais/remoções e regras min/max. **CATALOG DATA: MISSING** — bloqueia o
-   GATE 3 (nenhum item inventado; preço ausente ⇒ `BLOCK CATALOG ENTRY`).
+3. ~~Dados do catálogo real~~ — **CONCLUIDO** (Parte 2C-R2/R3): 49 produtos, 4 categorias, 14
+   adicionais mapeados. `CATALOG DATA: STRUCTURED`. Blockers HC-06/HC-07/HC-12 resolvidos.
+   `CATALOG MODEL BLOCKERS: ZERO`. Non-blocking pendências permanecem (descricoes, addons,
+   remocoes).
 4. Confirmar renomeação da unidade `Unidade principal` → `Matriz` (ou manter o nome atual).
 5. Confirmar dados operacionais: taxa R$ 5,00, mínimo R$ 20,00, ETA 30–50 min, horários
    (ter-dom 18:00–23:59, seg fechado), meios: Pix/Crédito/Débito/Dinheiro.
